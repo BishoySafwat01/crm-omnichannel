@@ -48,6 +48,30 @@ class Message(Base):
         "Conversation", back_populates="messages"
     )
 
+    @property
+    def media_url(self) -> Optional[str]:
+        meta = self.metadata_ or {}
+        if not isinstance(meta, dict):
+            return None
+
+        if meta.get("media_url"):
+            return meta.get("media_url")
+
+        attachments = meta.get("attachments", [])
+        if isinstance(attachments, list) and len(attachments) > 0:
+            first = attachments[0]
+            if isinstance(first, dict):
+                img_data = first.get("image_data") or {}
+                payload = first.get("payload") or {}
+                return (
+                    first.get("url")
+                    or payload.get("url")
+                    or img_data.get("url")
+                    or img_data.get("preview_url")
+                    or first.get("file_url")
+                )
+        return None
+
     __table_args__ = (
         UniqueConstraint(
             "conversation_id",

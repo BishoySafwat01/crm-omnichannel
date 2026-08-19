@@ -52,18 +52,42 @@ class MessageResponse(MessageBase):
             metadata = data.get("metadata_") or data.get("metadata") or {}
             atts = data.get("attachments") or metadata.get("attachments") or []
             url = data.get("media_url") or metadata.get("media_url")
-            m_type = data.get("media_type") or metadata.get("media_type")
+            m_type = data.get("media_type") or metadata.get("media_type") or data.get("message_type")
             text_val = (data.get("text") or "").strip()
             loc = data.get("updated_customer_location")
         else:
             metadata = getattr(data, "metadata_", {}) or {}
             atts = metadata.get("attachments") or []
-            url = metadata.get("media_url")
-            m_type = metadata.get("media_type")
+            url = getattr(data, "media_url", None) or metadata.get("media_url")
+            m_type = getattr(data, "media_type", None) or getattr(data, "message_type", None) or metadata.get("media_type")
+            if hasattr(m_type, "value"):
+                m_type = m_type.value
             text_val = (getattr(data, "text", "") or "").strip()
             loc = getattr(data, "updated_customer_location", None)
 
-        if not atts:
+        if atts and isinstance(atts, list) and len(atts) > 0 and isinstance(atts[0], dict):
+            first = atts[0]
+            extracted_url = (
+                first.get("url")
+                or first.get("payload", {}).get("url")
+                or first.get("image_data", {}).get("url")
+                or first.get("image_data", {}).get("preview_url")
+                or first.get("file_url")
+            )
+            if extracted_url and not url:
+                url = extracted_url
+            if first.get("image_data") or (first.get("mime_type") or "").startswith("image/"):
+                m_type = "image"
+
+        if not atts and url:
+            is_img = "image" in str(m_type) or str(url).endswith((".jpg", ".png", ".jpeg", ".webp", ".gif"))
+            atts = [{
+                "url": url,
+                "type": "image" if is_img else "file",
+                "filename": text_val or "attachment",
+            }]
+
+        if not atts and text_val:
             if text_val.startswith("image-") or text_val.startswith("/uploads/") or any(text_val.endswith(ext) for ext in [".ogg", ".mp4", ".m4a", ".webm", ".jpg", ".png", ".jpeg", ".webp"]):
                 url_val = text_val if text_val.startswith("/uploads/") else f"/uploads/{text_val}"
                 is_img = "image" in url_val or url_val.endswith((".jpg", ".png", ".jpeg", ".webp"))
@@ -81,7 +105,7 @@ class MessageResponse(MessageBase):
         if isinstance(data, dict):
             data["attachments"] = atts
             data["media_url"] = url
-            data["media_type"] = m_type
+            data["media_type"] = str(m_type) if m_type else None
             data["updated_customer_location"] = loc
             return data
         else:
@@ -91,12 +115,12 @@ class MessageResponse(MessageBase):
                 "external_message_id": getattr(data, "external_message_id", None),
                 "sender_type": getattr(data, "sender_type"),
                 "sender_external_id": getattr(data, "sender_external_id", None),
-                "message_type": getattr(data, "message_type"),
+                "message_type": m_type or getattr(data, "message_type"),
                 "text": getattr(data, "text", None),
                 "metadata_": metadata,
                 "created_at": getattr(data, "created_at"),
                 "attachments": atts,
                 "media_url": url,
-                "media_type": m_type,
+                "media_type": str(m_type) if m_type else None,
                 "updated_customer_location": loc,
             }

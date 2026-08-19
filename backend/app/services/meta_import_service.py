@@ -429,18 +429,19 @@ class MetaImportService:
 
             for item in items:
                 msg_data = item.get("message", {}) if isinstance(item, dict) else {}
-                if isinstance(msg_data, dict) and (msg_data.get("is_echo") is True or item.get("is_echo") is True):
-                    logger.info("Meta webhook: ignoring echo message from page for mid=%s", msg_data.get("mid"))
-                    continue
+                is_echo = bool(msg_data.get("is_echo") or item.get("is_echo"))
+                echo_mid = msg_data.get("mid")
+                echo_text = msg_data.get("text")
 
                 norm_event = MetaNormalizer.normalize_webhook_event(item, page_id=entry_page_id, channel_hint=channel_hint)
                 total_processed += 1
 
                 logger.info(
-                    "Meta webhook event parsed: message_id=%s, sender_psid=%s, channel=%s",
+                    "Meta webhook event parsed: message_id=%s, sender_psid=%s, channel=%s, is_echo=%s",
                     norm_event.external_message_id,
                     norm_event.sender_psid,
                     norm_event.channel,
+                    is_echo,
                 )
 
                 if not norm_event.sender_psid or not norm_event.sender_psid.strip():
@@ -481,6 +482,42 @@ class MetaImportService:
                 if norm_event.metadata_ and norm_event.metadata_.get("referral"):
                     logger.info("Referral attribution detected: %s", norm_event.metadata_["referral"])
 
+                # Echo handling & Deduplication
+                if is_echo:
+                    logger.info(f"[Webhook Echo] Received echo event for mid: {echo_mid} in Conv: {conv.id}")
+                    
+                    # 1. Check if message already exists with this external_message_id
+                    existing_by_mid = (await session.execute(
+                        select(Message).where(Message.external_message_id == echo_mid)
+                    )).scalar_one_or_none()
+                    
+                    if existing_by_mid:
+                        await session.commit()
+                        logger.info(f"✅ [Echo Handled] Message already exists for mid: {echo_mid}")
+                        last_result_status = "already_processed"
+                        last_result_msg_id = str(existing_by_mid.id)
+                        continue
+
+                    # 2. Check if an agent message was recently created in this conversation with identical text
+                    recent_agent_msg = (await session.execute(
+                        select(Message)
+                        .where(
+                            Message.conversation_id == conv.id,
+                            Message.sender_type == SenderTypeEnum.AGENT,
+                            Message.text == echo_text
+                        )
+                        .order_by(Message.created_at.desc())
+                        .limit(1)
+                    )).scalar_one_or_none()
+
+                    if recent_agent_msg:
+                        recent_agent_msg.external_message_id = echo_mid
+                        await session.commit()
+                        logger.info(f"✅ [Echo Deduplicated] Linked Meta MID {echo_mid} to existing message {recent_agent_msg.id}")
+                        last_result_status = "already_processed"
+                        last_result_msg_id = str(recent_agent_msg.id)
+                        continue
+
                 # 3. Idempotency Check
                 stmt = select(Message).where(
                     Message.conversation_id == conv.id,
@@ -510,7 +547,14 @@ class MetaImportService:
                             continue
 
                         att_type = att.get("type", norm_event.message_type) if isinstance(att, dict) else norm_event.message_type
-                        att_url = att.get("url") if isinstance(att, dict) else None
+                        if isinstance(att, dict) and (att.get("image_data") or (att.get("mime_type") or "").startswith("image/")):
+                            att_type = "image"
+                        att_url = (
+                            att.get("url")
+                            or att.get("payload", {}).get("url")
+                            or att.get("image_data", {}).get("url")
+                            or att.get("image_data", {}).get("preview_url")
+                        ) if isinstance(att, dict) else None
 
                         msg = Message(
                             conversation_id=conv.id,
@@ -519,10 +563,10 @@ class MetaImportService:
                             sender_external_id=norm_event.sender_psid,
                             message_type=att_type,
                             text=norm_event.text if idx == 0 else None,
-                            media_url=att_url,
                             created_at=norm_event.created_at,
                             metadata_={
                                 "attachments": [att],
+                                "media_url": att_url,
                                 "referral": norm_event.metadata_.get("referral"),
                                 "raw": item,
                             },
@@ -547,6 +591,7 @@ class MetaImportService:
                                     "sender_external_id": msg.sender_external_id,
                                     "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
                                     "text": msg.text,
+                                    "media_url": att_url,
                                     "created_at": msg.created_at.isoformat(),
                                     "delivery_status": "delivered",
                                     "attachments": [att],
@@ -556,16 +601,29 @@ class MetaImportService:
                             logger.warning("Failed to broadcast multi-attachment WS: %s", str(ws_err))
                         logger.info(f"[Webhook Multi-Media] Saved attachment {idx+1}/{len(attachments_list)} (ID: {att_mid}) for Conv {conv.id}")
                 else:
+                    first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
+                    single_att_url = (
+                        first_att.get("url")
+                        or first_att.get("payload", {}).get("url")
+                        or first_att.get("image_data", {}).get("url")
+                        or first_att.get("image_data", {}).get("preview_url")
+                    ) if first_att else None
+
+                    single_msg_type = norm_event.message_type
+                    if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
+                        single_msg_type = "image"
+
                     msg = Message(
                         conversation_id=conv.id,
                         external_message_id=norm_event.external_message_id,
                         sender_type=norm_event.sender_type,
                         sender_external_id=norm_event.sender_psid,
-                        message_type=norm_event.message_type,
+                        message_type=single_msg_type,
                         text=norm_event.text,
                         created_at=norm_event.created_at,
                         metadata_={
                             "attachments": attachments_list,
+                            "media_url": single_att_url,
                             "referral": norm_event.metadata_.get("referral"),
                             "raw": item,
                         },

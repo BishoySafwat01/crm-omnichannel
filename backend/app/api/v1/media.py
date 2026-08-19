@@ -14,7 +14,6 @@ logger = logging.getLogger("MediaProxy")
 UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Permitted Meta CDN domain suffixes
 ALLOWED_DOMAIN_SUFFIXES = (
     "fbsbx.com",
     "fbcdn.net",
@@ -93,30 +92,32 @@ async def proxy_meta_media(url: str = Query(..., description="External media URL
         raise HTTPException(status_code=400, detail="Missing media URL")
 
     if not is_trusted_meta_url(url):
-        logger.warning("[Security] Blocked unauthorized media proxy request for URL: %s", url)
-        raise HTTPException(status_code=403, detail="Forbidden media source host")
+        logger.warning(f"[Security] Blocked untrusted URL: {url}")
+        raise HTTPException(status_code=403, detail="Forbidden media host")
 
-    headers = {}
-    if any(k in url for k in ["facebook.com", "fbcdn.net", "fbsbx.com", "cdninstagram.com"]):
+    # Standard browser headers required by Meta CDN
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+    }
+
+    # CRITICAL: Only attach Authorization header to Graph API endpoints (NEVER to pre-signed CDN fbsbx/fbcdn URLs)
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if hostname == "graph.facebook.com" and settings.META_PAGE_ACCESS_TOKEN:
         headers["Authorization"] = f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"
 
     client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
-
     try:
         req = client.build_request("GET", url, headers=headers)
         resp = await client.send(req, stream=True)
 
-        # Fallback without auth headers if CDN link is public and rejects Bearer token
-        if resp.status_code in (401, 403):
-            await resp.aclose()
-            req = client.build_request("GET", url)
-            resp = await client.send(req, stream=True)
-
         if resp.is_error:
+            logger.error(f"[Media Proxy Error] Meta upstream returned HTTP {resp.status_code} for URL: {url}")
             await resp.aclose()
             await client.aclose()
-            logger.error(f"[Media Proxy] Upstream returned status {resp.status_code} for {url}")
-            raise HTTPException(status_code=resp.status_code, detail="Failed to stream upstream media")
+            raise HTTPException(status_code=resp.status_code, detail=f"Upstream CDN returned {resp.status_code}")
 
         async def media_stream():
             try:
@@ -126,11 +127,18 @@ async def proxy_meta_media(url: str = Query(..., description="External media URL
                 await resp.aclose()
                 await client.aclose()
 
-        content_type = resp.headers.get("content-type", "application/octet-stream")
-        return StreamingResponse(media_stream(), media_type=content_type)
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        return StreamingResponse(
+            media_stream(),
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
     except HTTPException:
         raise
     except Exception as e:
         await client.aclose()
-        logger.error("[Media Proxy Exception] %s", e)
-        raise HTTPException(status_code=502, detail="Upstream media connection failed")
+        logger.error(f"[Media Proxy Exception] {e}")
+        raise HTTPException(status_code=502, detail="Failed to connect to media host")

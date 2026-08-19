@@ -122,22 +122,22 @@ const resolveMedia = (msg: any): ResolvedMedia => {
 
   if (msg.attachments && msg.attachments.length > 0) {
     const first = msg.attachments[0];
-    url = first.url || first.file_url;
+    url = first.url || first.payload?.url || first.image_data?.url || first.image_data?.preview_url || first.file_url;
     mime = first.mime_type || '';
-    type = first.type || first.file_type || '';
-    fileName = first.filename || first.title || '';
+    type = first.type || (first.image_data ? 'image' : first.file_type || '');
+    fileName = first.filename || first.name || first.title || '';
   }
 
   if (!url && msg.media_url) {
     url = msg.media_url;
-    type = msg.media_type || '';
+    type = msg.media_type || type || '';
   }
-  if (!url && (msg.metadata_?.attachments?.[0]?.url || msg.metadata?.attachments?.[0]?.url)) {
+  if (!url && (msg.metadata_?.attachments?.[0] || msg.metadata?.attachments?.[0])) {
     const att = msg.metadata_?.attachments?.[0] || msg.metadata?.attachments?.[0];
-    url = att.url;
+    url = att.url || att.payload?.url || att.image_data?.url || att.image_data?.preview_url || att.file_url;
     mime = att.mime_type || '';
-    type = att.type || '';
-    fileName = att.filename || att.title || '';
+    type = att.type || (att.image_data ? 'image' : '');
+    fileName = att.filename || att.name || att.title || '';
   }
 
   const textVal = (msg.text || '').trim();
@@ -154,34 +154,39 @@ const resolveMedia = (msg: any): ResolvedMedia => {
 
   const lower = url.toLowerCase();
   const isSocial = isSocialWebLink(url);
+  const msgType = (msg.message_type || type || '').toLowerCase();
+
+  const isAudio =
+    !isSocial &&
+    (msgType === 'audio' ||
+      type === 'audio' ||
+      mime.startsWith('audio/') ||
+      lower.includes('voice') ||
+      lower.includes('audio') ||
+      /\.(ogg|m4a|mp3|webm|wav|aac)/i.test(lower));
+
+  const isVideo =
+    !isSocial &&
+    !isAudio &&
+    (msgType === 'video' ||
+      type === 'video' ||
+      mime.startsWith('video/') ||
+      lower.includes('vid_') ||
+      /\.(mp4|mov|avi|mkv)/i.test(lower));
+
   const isImage =
     !isSocial &&
-    (type === 'image' ||
+    !isAudio &&
+    !isVideo &&
+    (msgType === 'image' ||
+      type === 'image' ||
       mime.startsWith('image/') ||
       lower.includes('image-') ||
       lower.includes('img_') ||
       lower.includes('img-') ||
-      lower.includes('fbsbx.com') ||
-      lower.includes('fbcdn.net') ||
-      lower.includes('cdninstagram.com') ||
-      /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(lower));
-
-  const isVideo =
-    !isSocial &&
-    (type === 'video' ||
-      mime.startsWith('video/') ||
-      lower.includes('vid_') ||
-      (/\.mp4$/i.test(lower) && mime.includes('video')));
-
-  const isAudio =
-    !isSocial &&
-    !isImage &&
-    !isVideo &&
-    (type === 'audio' ||
-      mime.startsWith('audio/') ||
-      lower.includes('voice') ||
-      lower.includes('audio') ||
-      /\.(ogg|m4a|mp3|webm|wav|aac)$/i.test(lower));
+      /\.(jpg|jpeg|png|webp|gif|svg)/i.test(lower) ||
+      ((lower.includes('fbsbx.com') || lower.includes('fbcdn.net') || lower.includes('cdninstagram.com')) &&
+        !/\.(ogg|m4a|mp3|webm|wav|aac|mp4|mov)/i.test(lower)));
 
   const isShare =
     isSocial ||
@@ -756,7 +761,7 @@ export const ChatCanvas: React.FC = () => {
                       {/* Message Body Router */}
                       <div className="space-y-2">
                         {/* 1. Pure Text Bubble */}
-                        {msg.text && !msg.text.includes('🎬') && msg.text !== 'مرفق وسائط' && !msg.text.startsWith('image-') && !msg.text.startsWith('/uploads/') && !msg.text.includes('📍') && (
+                        {msg.text && !msg.text.includes('🎬') && msg.text !== 'مرفق وسائط' && msg.text !== 'مرفق صورة' && !msg.text.startsWith('image-') && !msg.text.startsWith('/uploads/') && !msg.text.includes('📍') && (
                           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.text}</p>
                         )}
 
