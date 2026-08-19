@@ -7,6 +7,11 @@ interface UserAvatarProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+const COLORS = [
+  'bg-blue-600', 'bg-indigo-600', 'bg-violet-600',
+  'bg-emerald-600', 'bg-amber-600', 'bg-rose-600', 'bg-teal-600'
+];
+
 export const UserAvatar: React.FC<UserAvatarProps> = ({
   name,
   avatarUrl,
@@ -14,7 +19,10 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   size = 'md',
 }) => {
   const [imgError, setImgError] = useState(false);
-  const initial = (name || '?').trim().charAt(0).toUpperCase();
+
+  const initial = (name || 'ع').trim().charAt(0).toUpperCase();
+  const charCode = (name || 'A').charCodeAt(0);
+  const bgColor = COLORS[charCode % COLORS.length];
 
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
@@ -35,7 +43,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
   return (
     <div
-      className={`${sizeClasses} rounded-full bg-slate-200 text-teal-800 font-bold flex items-center justify-center shadow-xs border border-slate-300/60 shrink-0 ${className}`}
+      className={`${sizeClasses} ${bgColor} text-white font-bold rounded-full flex items-center justify-center shadow-xs border border-slate-300/60 shrink-0 ${className}`}
     >
       {initial}
     </div>

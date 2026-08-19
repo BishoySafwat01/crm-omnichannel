@@ -12,6 +12,7 @@ class ConversationBase(BaseModel):
     channel: ChannelEnum = ChannelEnum.MESSENGER
     external_conversation_id: str
     subject: Optional[str] = None
+    brand: Optional[str] = "LAVVA"
     status: ConversationStatusEnum = ConversationStatusEnum.OPEN
     assigned_agent_id: Optional[uuid.UUID] = None
     priority: str = "normal"
@@ -23,6 +24,7 @@ class ConversationCreate(ConversationBase):
 
 class ConversationUpdate(BaseModel):
     status: Optional[ConversationStatusEnum] = None
+    brand: Optional[str] = None
     subject: Optional[str] = None
     last_message_at: Optional[datetime] = None
 
@@ -35,6 +37,7 @@ class ConversationResponse(BaseModel):
     channel: ChannelEnum = ChannelEnum.MESSENGER
     provider: ProviderEnum = ProviderEnum.META
     subject: Optional[str] = None
+    brand: Optional[str] = "LAVVA"
     status: ConversationStatusEnum = ConversationStatusEnum.OPEN
     priority: str = "normal"
     assigned_agent_id: Optional[uuid.UUID] = None

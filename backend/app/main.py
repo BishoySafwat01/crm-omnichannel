@@ -17,15 +17,27 @@ from app.api.v1.respond_io import router as respond_io_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
-from app.core.database import AsyncSessionLocal
-from app.core.redis import close_redis_client, get_redis_client
+from app.core.redis import close_redis_client
+import asyncio
+from app.services.meta_import_service import meta_import_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
+    async def poller_loop():
+        await asyncio.sleep(5)
+        while True:
+            try:
+                await meta_import_service.sync_live_conversations()
+            except Exception:
+                pass
+            await asyncio.sleep(5)
+
+    poller_task = asyncio.create_task(poller_loop())
     yield
     # Shutdown actions
+    poller_task.cancel()
     await close_redis_client()
 
 

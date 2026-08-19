@@ -31,6 +31,10 @@ class CustomerBase(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    location: Optional[str] = None
+    tier: Optional[str] = "درجة أولى"
+    skin_type: Optional[str] = "عادية"
+    stage: Optional[str] = "جديد"
     locale: Optional[str] = None
     tags: Optional[list[str]] = []
 
@@ -43,6 +47,10 @@ class CustomerUpdate(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    location: Optional[str] = None
+    tier: Optional[str] = None
+    skin_type: Optional[str] = None
+    stage: Optional[str] = None
 
 
 class CustomerResponse(CustomerBase):

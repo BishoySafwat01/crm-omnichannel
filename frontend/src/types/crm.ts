@@ -14,7 +14,7 @@ export interface Brand {
 
 export interface Attachment {
   id: string;
-  type: 'image' | 'audio' | 'video' | 'file';
+  type: 'image' | 'audio' | 'video' | 'file' | 'location';
   url: string;
   title?: string;
   file_size?: number;
@@ -39,6 +39,10 @@ export interface Customer {
   phone?: string;
   avatar_url?: string;
   locale?: string;
+  location?: string;
+  tier?: string;
+  skin_type?: string;
+  stage?: string;
   tags?: string[];
   attributes?: Record<string, string>;
   created_at: string;
@@ -50,8 +54,9 @@ export interface Message {
   id: string;
   conversation_id: string;
   sender_type: 'customer' | 'agent' | 'system';
-  message_type: 'text' | 'image' | 'file' | 'audio' | 'video';
+  message_type: 'text' | 'image' | 'file' | 'audio' | 'video' | 'location' | 'share_reel' | 'share_post' | 'share' | 'unknown';
   text?: string;
+  media_url?: string;
   attachments?: Attachment[];
   external_message_id?: string;
   created_at: string;
@@ -70,6 +75,7 @@ export interface Conversation {
   external_conversation_id: string;
   status: ConversationStatus;
   subject?: string;
+  brand?: string;
   brand_id?: string;
   brand_name?: string;
   assigned_agent_id?: string;
@@ -80,6 +86,8 @@ export interface Conversation {
   last_customer_message_at?: string;
   created_at: string;
   customer?: Customer;
+  metadata_?: Record<string, any>;
+  metadata?: Record<string, any>;
 }
 
 export interface PaginatedResponse<T> {

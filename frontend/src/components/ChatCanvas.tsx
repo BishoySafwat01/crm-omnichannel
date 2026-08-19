@@ -21,10 +21,14 @@ import {
   User,
   AlertCircle,
   Plus,
+  MapPin,
+  ExternalLink,
+  Share2,
 } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { Message, MetaMessageTag, Attachment } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
+import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 
 // Custom Inline Audio Player Component (Material 3 SaaS Light)
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
@@ -88,6 +92,28 @@ interface ResolvedMedia {
   fileName: string;
 }
 
+export const getProxiedMediaUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.startsWith('/uploads/') || url.startsWith('/api') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  if (url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('cdninstagram.com')) {
+    return `/api/v1/media/proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+};
+
+export const isSocialWebLink = (url: string | undefined | null): boolean => {
+  if (!url) return false;
+  return (
+    url.includes('instagram.com/reel/') ||
+    url.includes('instagram.com/p/') ||
+    url.includes('instagram.com/stories/') ||
+    url.includes('facebook.com/watch') ||
+    url.includes('facebook.com/story')
+  );
+};
+
 const resolveMedia = (msg: any): ResolvedMedia => {
   let url: string | null = null;
   let mime = '';
@@ -124,31 +150,47 @@ const resolveMedia = (msg: any): ResolvedMedia => {
     return { isAudio: false, isImage: false, isVideo: false, isDoc: false, url: null, fileName: '' };
   }
 
+  url = getProxiedMediaUrl(url);
+
   const lower = url.toLowerCase();
+  const isSocial = isSocialWebLink(url);
   const isImage =
-    type === 'image' ||
-    mime.startsWith('image/') ||
-    lower.includes('image-') ||
-    lower.includes('img_') ||
-    lower.includes('img-') ||
-    /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(lower);
+    !isSocial &&
+    (type === 'image' ||
+      mime.startsWith('image/') ||
+      lower.includes('image-') ||
+      lower.includes('img_') ||
+      lower.includes('img-') ||
+      lower.includes('fbsbx.com') ||
+      lower.includes('fbcdn.net') ||
+      lower.includes('cdninstagram.com') ||
+      /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(lower));
 
   const isVideo =
-    type === 'video' ||
-    mime.startsWith('video/') ||
-    lower.includes('vid_') ||
-    (/\.mp4$/i.test(lower) && mime.includes('video'));
+    !isSocial &&
+    (type === 'video' ||
+      mime.startsWith('video/') ||
+      lower.includes('vid_') ||
+      (/\.mp4$/i.test(lower) && mime.includes('video')));
 
   const isAudio =
+    !isSocial &&
     !isImage &&
     !isVideo &&
     (type === 'audio' ||
       mime.startsWith('audio/') ||
       lower.includes('voice') ||
       lower.includes('audio') ||
-      /\.(ogg|m4a|mp3|webm|wav|aac|mp4)$/i.test(lower));
+      /\.(ogg|m4a|mp3|webm|wav|aac)$/i.test(lower));
 
-  const isDoc = !isImage && !isAudio && !isVideo;
+  const isShare =
+    isSocial ||
+    msg.message_type === 'share_reel' ||
+    msg.message_type === 'share_post' ||
+    msg.message_type === 'share' ||
+    lower.includes('instagram.com');
+
+  const isDoc = !isImage && !isAudio && !isVideo && !isShare;
 
   return { isAudio, isImage, isVideo, isDoc, url, fileName: fileName || url.split('/').pop() || 'file' };
 };
@@ -173,11 +215,21 @@ const AGENTS = [
   { id: 'محمد حسن', name: 'محمد حسن' },
 ];
 
+const AVAILABLE_BRANDS = [
+  { id: 'LAVVA', label: 'LAVVA', code: 'LV' },
+  { id: 'MOON LIGHT', label: 'MOON LIGHT', code: 'ML' },
+  { id: 'LOTUS BLUE', label: 'LOTUS BLUE', code: 'LB' },
+  { id: 'BEAUTY CENTER', label: 'BEAUTY CENTER', code: 'BC' },
+  { id: 'LOXX KING', label: 'LOXX KING', code: 'LK' },
+  { id: 'FLARE', label: 'FLARE', code: 'FL' },
+];
+
 export const ChatCanvas: React.FC = () => {
   const {
     conversations,
     activeConversationId,
     messages,
+    fetchMessages,
     sendMessage,
     retryMessage,
     deleteMessage,
@@ -186,6 +238,7 @@ export const ChatCanvas: React.FC = () => {
     setConversationStatus,
     assignAgentToConversation,
     setConversationPriority,
+    updateConversationBrand,
     isLoadingMessages,
     isFetchingMore,
     loadMoreMessages,
@@ -220,10 +273,82 @@ export const ChatCanvas: React.FC = () => {
     : Date.now();
   const is24hWindowExpired = Date.now() - lastCustomerMsgAt > 24 * 3600 * 1000;
 
-  // Auto-scroll to bottom on new message
+  const bottomAnchorRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef<boolean>(false);
+
+  // Smooth or instant scroll to bottom using anchor
+  const scrollToBottom = React.useCallback((behavior: ScrollBehavior = 'auto') => {
+    if (bottomAnchorRef.current) {
+      bottomAnchorRef.current.scrollIntoView({ behavior, block: 'end' });
+    } else if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    } else if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, []);
+
+  // Monitor user manual scrolling
+  const handleScroll = React.useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+
+    if (scrollTop === 0 && !isFetchingMore) {
+      loadMoreMessages();
+    }
+
+    // Consider scrolled up only if user is more than 150px away from bottom
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    isUserScrolledUpRef.current = distanceFromBottom > 150;
+  }, [isFetchingMore, loadMoreMessages]);
+
+  // 1. Thread switch: Reset user state and force instant scroll to bottom
+  React.useLayoutEffect(() => {
+    isUserScrolledUpRef.current = false;
+    scrollToBottom('auto');
+    const timer = setTimeout(() => scrollToBottom('auto'), 50);
+    return () => clearTimeout(timer);
+  }, [activeConversationId, scrollToBottom]);
+
+  // 2. Message updates: Scroll to bottom if user hasn't scrolled up
+  React.useLayoutEffect(() => {
+    if (!isUserScrolledUpRef.current) {
+      scrollToBottom('auto');
+    }
+  }, [activeMessages.length, activeConv?.last_message_at, isCustomerTyping, scrollToBottom]);
+
+  // 3. ResizeObserver: When images/videos expand container, keep locked to bottom if user was at bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeMessages.length, isCustomerTyping]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (!isUserScrolledUpRef.current) {
+        scrollToBottom('auto');
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [scrollToBottom]);
+
+  // Dedicated live polling loop every 2.5s for active conversation messages
+  useEffect(() => {
+    if (!activeConversationId) return;
+
+    fetchMessages(activeConversationId);
+
+    const msgInterval = setInterval(() => {
+      fetchMessages(activeConversationId);
+    }, 2500);
+
+    return () => clearInterval(msgInterval);
+  }, [activeConversationId, fetchMessages]);
+
+  const handleMediaLoaded = React.useCallback(() => {
+    if (!isUserScrolledUpRef.current) {
+      scrollToBottom('auto');
+    }
+  }, [scrollToBottom]);
 
   // Recording Timer Effect
   useEffect(() => {
@@ -309,12 +434,7 @@ export const ChatCanvas: React.FC = () => {
     audioChunksRef.current = [];
   };
 
-  const handleScroll = () => {
-    if (!scrollContainerRef.current || isFetchingMore) return;
-    if (scrollContainerRef.current.scrollTop === 0) {
-      loadMoreMessages();
-    }
-  };
+
 
   const handleSend = () => {
     if (!draftText.trim() || !activeConversationId) return;
@@ -432,6 +552,22 @@ export const ChatCanvas: React.FC = () => {
 
         {/* Conversation Assignment & Status Controls */}
         <div className="flex items-center gap-2">
+          {/* Store / Brand Selector Dropdown */}
+          <div className="flex items-center gap-1 bg-teal-50/80 px-2.5 py-1 rounded-xl border border-teal-200/80">
+            <span className="text-xs">🏢</span>
+            <select
+              value={activeConv.brand || 'LAVVA'}
+              onChange={(e) => updateConversationBrand(activeConv.id, e.target.value)}
+              className="bg-transparent text-xs font-bold text-teal-800 focus:outline-none cursor-pointer"
+            >
+              {AVAILABLE_BRANDS.map((b) => (
+                <option key={b.id} value={b.id} className="bg-white text-slate-800 font-medium">
+                  {b.label} ({b.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Agent Assignment */}
           <div className="flex items-center gap-1 bg-slate-100/80 px-2.5 py-1 rounded-xl border border-slate-200/60">
             <User className="w-3.5 h-3.5 text-indigo-600" />
@@ -492,135 +628,216 @@ export const ChatCanvas: React.FC = () => {
             جاري تحميل الرسائل...
           </div>
         ) : (
-          [...activeMessages]
-            .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
-            .map((msg) => {
-            const isAgent = msg.sender_type === 'agent';
-            const isPending = msg.delivery_status === 'pending';
-            const isFailed = msg.delivery_status === 'failed';
+          (() => {
+            const sortedMessages = [...activeMessages].sort(
+              (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+            );
 
-            const media = resolveMedia(msg);
+            return sortedMessages.map((msg, index) => {
+              const media = resolveMedia(msg);
+              const hasContent = Boolean(
+                (msg.text && msg.text.trim()) ||
+                msg.media_url ||
+                (media.url && !media.isDoc) ||
+                msg.message_type === 'share_reel' ||
+                msg.message_type === 'share_post' ||
+                msg.message_type === 'share'
+              );
+              if (!hasContent) return null;
 
-            return (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${isAgent ? 'items-start' : 'items-end'}`}
-              >
-                <div
-                  className={`max-w-lg px-4 py-3 rounded-2xl text-xs font-medium leading-relaxed shadow-xs ${
-                    isFailed
-                      ? 'bg-rose-50 text-rose-800 border border-rose-200 rounded-br-xs'
-                      : isAgent
-                      ? 'bg-teal-600 text-white rounded-2xl rounded-tl-xs shadow-xs'
-                      : 'bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tr-xs shadow-xs'
-                  }`}
-                >
-                  {/* Native Audio Waveform Player */}
-                  {media.isAudio && media.url && (
-                    <CustomAudioPlayer url={media.url} />
-                  )}
+              const prevMsg = index > 0 ? sortedMessages[index - 1] : null;
+              const showDateDivider = !prevMsg || isDifferentDay(prevMsg.created_at, msg.created_at);
+              const isAgent = msg.sender_type === 'agent';
+              const isPending = msg.delivery_status === 'pending';
+              const isFailed = msg.delivery_status === 'failed';
 
-                  {/* HTML5 Video Player */}
-                  {media.isVideo && media.url && (
-                    <div className="relative overflow-hidden rounded-2xl max-w-sm mt-1 mb-1">
-                      <video
-                        controls
-                        src={media.url}
-                        className="w-full max-h-72 object-cover rounded-2xl border border-slate-200/80 shadow-xs"
-                      />
+              return (
+                <React.Fragment key={msg.id}>
+                  {/* Centered Date Divider */}
+                  {showDateDivider && (
+                    <div className="my-4 flex items-center justify-center">
+                      <span className="rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1 text-[11px] font-medium text-slate-500 shadow-xs backdrop-blur-sm">
+                        {formatChatDateDivider(msg.created_at)}
+                      </span>
                     </div>
                   )}
 
-                  {/* Inline Image Preview */}
-                  {media.isImage && media.url && (
-                    <div className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-sm mt-1 mb-1">
-                      <img
-                        src={media.url}
-                        alt="مرفق صورة"
-                        className="w-full max-h-72 object-cover rounded-2xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-200/80 shadow-xs"
-                        onClick={() => setPreviewImage(media.url)}
-                        onError={(e) => {
-                          if (media.url && !media.url.endsWith('.jpg')) {
-                            (e.target as HTMLImageElement).src = `${media.url}.jpg`;
-                          }
-                        }}
-                      />
-                    </div>
-                  )}
+                  <div className={`flex flex-col ${isAgent ? 'items-start' : 'items-end'}`}>
+                    <div
+                      className={`max-w-lg px-4 py-3 rounded-2xl text-xs font-medium leading-relaxed shadow-xs ${
+                        isFailed
+                          ? 'bg-rose-50 text-rose-800 border border-rose-200 rounded-br-xs'
+                          : isAgent
+                          ? 'bg-teal-600 text-white rounded-2xl rounded-tl-xs shadow-xs'
+                          : 'bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tr-xs shadow-xs'
+                      }`}
+                    >
+                      {/* Native Audio Waveform Player */}
+                      {media.isAudio && media.url && (
+                        <CustomAudioPlayer url={media.url} />
+                      )}
 
-                  {/* Document Download Card for non-audio, non-image files */}
-                  {media.isDoc && media.url && (
-                    <div className="flex items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-800 my-1">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-teal-600" />
-                        <span className="text-xs font-semibold truncate max-w-[150px]">
-                          {media.fileName}
-                        </span>
+                      {/* HTML5 Video Player */}
+                      {(msg.message_type === 'video' || media.isVideo) && (media.url || msg.media_url) && (
+                        <div className="relative overflow-hidden rounded-2xl max-w-sm mt-1 mb-1 bg-black/10 shadow-xs">
+                          <video
+                            controls
+                            preload="metadata"
+                            onLoadedData={handleMediaLoaded}
+                            src={msg.media_url || media.url || ''}
+                            className="w-full max-h-80 object-contain rounded-2xl border border-slate-200/80 shadow-xs bg-black"
+                          >
+                            <source src={msg.media_url || media.url || ''} />
+                            متصفحك لا يدعم تشغيل الفيديو.
+                          </video>
+                        </div>
+                      )}
+
+                      {/* Inline Image Preview */}
+                      {media.isImage && media.url && (
+                        <div className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-sm mt-1 mb-1">
+                          <img
+                            src={media.url}
+                            alt="مرفق صورة"
+                            onLoad={handleMediaLoaded}
+                            className="w-full max-h-72 object-cover rounded-2xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-200/80 shadow-xs"
+                            onClick={() => setPreviewImage(media.url)}
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              const rawUrl = msg.media_url || (msg as any).metadata_?.attachments?.[0]?.url || (msg as any).metadata?.attachments?.[0]?.url;
+                              if (rawUrl && target.src !== rawUrl) {
+                                target.src = rawUrl;
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Document Download Card for non-audio, non-image files */}
+                      {media.isDoc && media.url && (
+                        <div className="flex items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-800 my-1">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-teal-600" />
+                            <span className="text-xs font-semibold truncate max-w-[150px]">
+                              {media.fileName}
+                            </span>
+                          </div>
+                          <a
+                            href={media.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Interactive Location Card */}
+                      {(msg.message_type === 'location' || msg.text?.includes('📍') || (media.url && media.url.includes('maps.google.com'))) && (
+                        <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col gap-2 my-1.5 text-slate-800">
+                          <div className="flex items-center gap-1.5 text-rose-600 font-bold text-xs">
+                            <MapPin className="w-4 h-4" />
+                            <span>موقع جغرافي مشترك</span>
+                          </div>
+                          <p className="text-xs text-slate-600 font-sans">{msg.text}</p>
+                          <a
+                            href={media.url || `https://www.google.com/maps?q=${encodeURIComponent(msg.text || '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-bold transition-colors border border-rose-200/60"
+                          >
+                            <span>فتح على خرائط Google</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Message Body Router */}
+                      <div className="space-y-2">
+                        {/* 1. Pure Text Bubble */}
+                        {msg.text && !msg.text.includes('🎬') && msg.text !== 'مرفق وسائط' && !msg.text.startsWith('image-') && !msg.text.startsWith('/uploads/') && !msg.text.includes('📍') && (
+                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.text}</p>
+                        )}
+
+                        {/* 2. Instagram Reel / Share Card */}
+                        {(msg.message_type === 'share_reel' || msg.message_type === 'share_post' || msg.message_type === 'share' || (msg.media_url && msg.media_url.includes('instagram.com'))) && (
+                          <div className="overflow-hidden rounded-xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-500/10 to-indigo-500/5 p-3.5 shadow-sm my-1">
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm">
+                                <Share2 className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-pink-700 dark:text-pink-400">
+                                  {msg.message_type === 'share_reel' ? 'مشاركة ريل إنستغرام (Reel)' : 'مشاركة منشور إنستغرام'}
+                                </h4>
+                                <span className="text-[10px] text-slate-500">رابط وسائط تفاعلي</span>
+                              </div>
+                            </div>
+
+                            {(msg.media_url || media.url) && (
+                              <a
+                                href={
+                                  ((msg.media_url || media.url) ?? '').startsWith('http')
+                                    ? ((msg.media_url || media.url) ?? '')
+                                    : `https://${((msg.media_url || media.url) ?? '').replace(/^\/+/, '')}`
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center justify-between gap-2 rounded-lg bg-pink-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-pink-700 active:scale-[0.99]"
+                              >
+                                <span className="truncate">فتح ومشاهدة الفيديو</span>
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </a>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <a
-                        href={media.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700"
+
+                      <div
+                        className={`flex items-center gap-1 mt-1.5 text-[10px] ${
+                          isAgent ? 'text-teal-100 justify-start' : 'text-slate-400 justify-end'
+                        }`}
                       >
-                        <Download className="w-3.5 h-3.5" />
-                      </a>
+                        <span>{formatMessageTime(msg.created_at)}</span>
+                        {isPending && <Clock className="w-3 h-3 text-amber-300 animate-spin" />}
+                        {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
+                        {isAgent && !isPending && !isFailed && (
+                          <CheckCheck className="w-3.5 h-3.5 text-teal-200" />
+                        )}
+                      </div>
                     </div>
-                  )}
 
-                  {/* Text Message Content */}
-                  {msg.text && msg.text !== 'مرفق وسائط' && !msg.text.startsWith('image-') && !msg.text.startsWith('/uploads/') && (
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
-                  )}
-                  {(!msg.text || msg.text === 'مرفق وسائط') && !media.url && (
-                    <div className="flex items-center gap-2 py-1 text-xs">
-                      <Mic className="w-4 h-4 text-teal-200 animate-pulse" />
-                      <span>ملاحظة صوتية...</span>
-                    </div>
-                  )}
-
-                  <div
-                    className={`flex items-center gap-1 mt-1.5 text-[10px] ${
-                      isAgent ? 'text-teal-100 justify-start' : 'text-slate-400 justify-end'
-                    }`}
-                  >
-                    <span>{formatMessageTime(msg.created_at)}</span>
-                    {isPending && <Clock className="w-3 h-3 text-amber-300 animate-spin" />}
-                    {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
-                    {isAgent && !isPending && !isFailed && (
-                      <CheckCheck className="w-3.5 h-3.5 text-teal-200" />
+                    {isFailed && (
+                      <div className="flex items-center gap-2 mt-1 px-1">
+                        <span className="text-[10px] text-rose-600 font-bold">
+                          {typeof msg.error_message === 'string'
+                            ? msg.error_message
+                            : (typeof (msg as any).error === 'string'
+                                ? (msg as any).error
+                                : ((msg as any).error?.message || (msg as any).error?.detail || 'فشلت عملية الإرسال'))}
+                        </span>
+                        <button
+                          onClick={() => retryMessage(msg.id)}
+                          className="flex items-center gap-1 text-[10px] bg-teal-50 text-teal-700 hover:bg-teal-100 px-2 py-0.5 rounded border border-teal-200 font-bold"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          إعادة المحاولة
+                        </button>
+                        <button
+                          onClick={() => deleteMessage(msg.id)}
+                          className="flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 px-2 py-0.5 rounded border border-rose-200 font-bold"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          حذف
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
-
-                {isFailed && (
-                  <div className="flex items-center gap-2 mt-1 px-1">
-                    <span className="text-[10px] text-rose-600 font-bold">
-                      {typeof msg.error_message === 'string'
-                        ? msg.error_message
-                        : (typeof (msg as any).error === 'string'
-                            ? (msg as any).error
-                            : ((msg as any).error?.message || (msg as any).error?.detail || 'فشلت عملية الإرسال'))}
-                    </span>
-                    <button
-                      onClick={() => retryMessage(msg.id)}
-                      className="flex items-center gap-1 text-[10px] bg-teal-50 text-teal-700 hover:bg-teal-100 px-2 py-0.5 rounded border border-teal-200 font-bold"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      إعادة المحاولة
-                    </button>
-                    <button
-                      onClick={() => deleteMessage(msg.id)}
-                      className="flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 px-2 py-0.5 rounded border border-rose-200 font-bold"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      حذف
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
+                </React.Fragment>
+              );
+            });
+          })()
         )}
 
         {isCustomerTyping && (
@@ -635,6 +852,7 @@ export const ChatCanvas: React.FC = () => {
         )}
 
         <div ref={messagesEndRef} />
+        <div ref={bottomAnchorRef} className="h-px w-full" />
       </div>
 
       {/* Image Lightbox Preview Modal */}

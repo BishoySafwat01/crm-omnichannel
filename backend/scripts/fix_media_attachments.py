@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import os
-import shutil
-from sqlalchemy import select
+import subprocess
+import httpx
+from sqlalchemy import select, or_
 from app.core.database import AsyncSessionLocal
 from app.core.config import settings
 from app.models.message import Message
@@ -11,126 +12,120 @@ from app.models.enums import MessageTypeEnum
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fix_media_attachments")
 
+UPLOAD_DIR = "/app/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def detect_audio_extension(file_path: str) -> str:
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(16)
+        if header.startswith(b"OggS"):
+            return ".ogg"
+        if b"ftyp" in header or header.startswith(b"\x00\x00\x00"):
+            return ".m4a"
+        if header.startswith(b"ID3") or header.startswith(b"\xff\xfb"):
+            return ".mp3"
+    except Exception:
+        pass
+    return ".m4a"
+
+
+def transcode_to_m4a(input_path: str, output_path: str) -> bool:
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            output_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception as e:
+        logger.warning("[FFmpeg] Transcoding error for %s: %s", input_path, e)
+        return False
+
 
 async def fix_media_attachments():
-    uploads_dir = settings.UPLOAD_DIR
-    logger.info("Scanning messages and uploads directory: %s", uploads_dir)
+    logger.info("[Media Fix] Scanning messages and uploads directory: %s", UPLOAD_DIR)
 
-    # 1. Fix disk files missing extensions using header magic bytes
-    if os.path.exists(uploads_dir):
-        for fname in os.listdir(uploads_dir):
-            fpath = os.path.join(uploads_dir, fname)
-            if os.path.isfile(fpath) and not os.path.splitext(fname)[1]:
-                new_name = None
-                try:
-                    with open(fpath, "rb") as f:
-                        header = f.read(16)
-                    if header.startswith(b"\xff\xd8\xff"):
-                        new_name = f"{fname}.jpg"
-                    elif header.startswith(b"\x89PNG"):
-                        new_name = f"{fname}.png"
-                    elif b"ftyp" in header or header.startswith(b"OggS"):
-                        new_name = f"{fname}.m4a"
-                except Exception as e:
-                    logger.warning("Error reading file header for %s: %s", fname, e)
-
-                if new_name:
-                    new_fpath = os.path.join(uploads_dir, new_name)
-                    if not os.path.exists(new_fpath):
-                        shutil.move(fpath, new_fpath)
-                        logger.info("Renamed disk file missing extension: %s -> %s", fname, new_name)
-
-    # 2. Update DB records
     async with AsyncSessionLocal() as session:
         stmt = select(Message)
-        res = await session.execute(stmt)
-        messages = list(res.scalars().all())
+        messages = (await session.execute(stmt)).scalars().all()
+        logger.info("[Media Fix] Scanning %d potential media messages...", len(messages))
 
-        fixed_images = 0
-        fixed_audio = 0
+        headers = {"Authorization": f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"} if settings.META_PAGE_ACCESS_TOKEN else {}
 
+        fixed_count = 0
         for msg in messages:
             meta = dict(msg.metadata_ or {})
+            url = meta.get("media_url") or (msg.text if msg.text and msg.text.startswith("/uploads/") else None)
+
+            # Check attachments array in metadata
             atts = list(meta.get("attachments", []))
-            text_val = (msg.text or "").strip()
-            media_url = meta.get("media_url") or getattr(msg, "media_url", None) or ""
+            if not url and atts and isinstance(atts[0], dict):
+                url = atts[0].get("url")
 
-            # Check if text held a raw filename
-            if not atts and (text_val.startswith("image-") or text_val.startswith("/uploads/") or any(text_val.endswith(ext) for ext in [".ogg", ".mp4", ".m4a", ".webm", ".jpg", ".png", ".jpeg", ".webp"])):
-                url_val = text_val if text_val.startswith("/uploads/") else f"/uploads/{text_val}"
-                is_img = "image" in url_val or url_val.endswith((".jpg", ".png", ".jpeg", ".webp"))
-                atts = [{
-                    "url": url_val,
-                    "type": "image" if is_img else "audio",
-                    "filename": text_val,
-                    "mime_type": "image/jpeg" if is_img else "audio/m4a"
-                }]
-                meta["attachments"] = atts
-                meta["media_url"] = url_val
-                meta["media_type"] = "image" if is_img else "audio"
+            if not url:
+                continue
 
-            is_image = False
-            is_audio = False
+            # Case 1: External Meta CDN URL -> Download and transcode
+            if url.startswith("http://") or url.startswith("https://"):
+                try:
+                    ext = ".m4a" if ("audio" in str(msg.message_type) or "voice" in url or "audioclip" in url) else ".jpg"
+                    local_filename = f"media_{msg.id.hex[:12]}{ext}"
+                    local_disk_path = os.path.join(UPLOAD_DIR, local_filename)
 
-            new_atts = []
-            for att in atts:
-                if not isinstance(att, dict):
-                    continue
-                att_dict = dict(att)
-                raw_url_val = att_dict.get("url") or ""
-                url = str(raw_url_val).lower()
-                title = str(att_dict.get("title") or att_dict.get("filename") or "").lower()
-                att_type = str(att_dict.get("type") or "").lower()
+                    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                        resp = await client.get(url, headers=headers)
+                        if resp.status_code == 200:
+                            with open(local_disk_path, "wb") as f:
+                                f.write(resp.content)
 
-                if (
-                    "image" in att_type
-                    or "image-" in url
-                    or "image-" in title
-                    or any(url.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"])
-                ):
-                    is_image = True
-                    att_dict["type"] = "image"
-                    att_dict["mime_type"] = "image/jpeg"
+                            # If audio, transcode to ensure cross-platform AAC compatibility
+                            if ext == ".m4a" or msg.message_type == MessageTypeEnum.AUDIO or "audioclip" in url:
+                                final_m4a = os.path.join(UPLOAD_DIR, f"voice_{msg.id.hex[:12]}.m4a")
+                                if transcode_to_m4a(local_disk_path, final_m4a):
+                                    local_disk_path = final_m4a
+                                    local_filename = os.path.basename(final_m4a)
 
-                    raw_filename = os.path.basename(str(raw_url_val))
-                    if raw_filename and not os.path.splitext(raw_filename)[1]:
-                        new_filename = f"{raw_filename}.jpg"
-                        att_dict["url"] = f"/uploads/{new_filename}"
+                            mapped_url = f"/uploads/{local_filename}"
+                            msg.message_type = MessageTypeEnum.AUDIO if ("voice" in local_filename or ext == ".m4a") else MessageTypeEnum.IMAGE
+                            meta["media_url"] = mapped_url
+                            meta["media_type"] = "audio" if msg.message_type == MessageTypeEnum.AUDIO else "image"
+                            meta["attachments"] = [{
+                                "url": mapped_url,
+                                "type": "audio" if msg.message_type == MessageTypeEnum.AUDIO else "image",
+                                "filename": local_filename
+                            }]
+                            msg.metadata_ = meta
+                            fixed_count += 1
+                            logger.info("[Media Fix] Downloaded & mapped %s -> %s", msg.id, mapped_url)
+                except Exception as ex:
+                    logger.warning("[Media Fix] Failed to download %s: %s", url, ex)
 
-                elif (
-                    "audio" in att_type
-                    or any(url.endswith(ext) for ext in [".m4a", ".mp4", ".webm", ".ogg", ".opus", ".wav", ".mp3"])
-                    or "voice" in title
-                ):
-                    is_audio = True
-                    att_dict["type"] = "audio"
-                    att_dict["mime_type"] = "audio/m4a"
-
-                new_atts.append(att_dict)
-
-            raw_url = str(media_url).lower()
-            if "image-" in raw_url or "img-" in raw_url:
-                is_image = True
-            elif any(raw_url.endswith(ext) for ext in [".mp4", ".m4a", ".webm", ".ogg", ".wav"]):
-                is_audio = True
-
-            if is_image:
-                msg.message_type = MessageTypeEnum.IMAGE
-                meta["attachments"] = new_atts
-                msg.metadata_ = meta
-                fixed_images += 1
-            elif is_audio:
-                msg.message_type = MessageTypeEnum.AUDIO
-                meta["attachments"] = new_atts
-                msg.metadata_ = meta
-                fixed_audio += 1
+            # Case 2: Local path exists but needs codec verification
+            elif url.startswith("/uploads/"):
+                disk_path = os.path.join(UPLOAD_DIR, os.path.basename(url))
+                if os.path.exists(disk_path) and os.path.getsize(disk_path) > 0:
+                    if msg.message_type in [MessageTypeEnum.AUDIO, MessageTypeEnum.UNKNOWN] or "voice" in url or "audioclip" in url:
+                        if not url.endswith(".m4a"):
+                            target_m4a = os.path.join(UPLOAD_DIR, f"{os.path.splitext(os.path.basename(url))[0]}.m4a")
+                            if transcode_to_m4a(disk_path, target_m4a):
+                                mapped_url = f"/uploads/{os.path.basename(target_m4a)}"
+                                msg.message_type = MessageTypeEnum.AUDIO
+                                meta["media_url"] = mapped_url
+                                meta["media_type"] = "audio"
+                                meta["attachments"] = [{
+                                    "url": mapped_url,
+                                    "type": "audio",
+                                    "filename": os.path.basename(target_m4a)
+                                }]
+                                msg.metadata_ = meta
+                                fixed_count += 1
+                                logger.info("[Media Fix] Transcoded existing audio to M4A: %s", mapped_url)
 
         await session.commit()
-        logger.info(
-            "Repair complete! Updated %d image messages and %d audio messages.",
-            fixed_images,
-            fixed_audio,
-        )
+        logger.info("[Media Fix] Complete! Updated %d media records.", fixed_count)
 
 
 if __name__ == "__main__":

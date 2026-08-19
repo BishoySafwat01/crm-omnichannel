@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
+from app.models.message import Message
 from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum
 
 
@@ -80,9 +81,27 @@ class ConversationService:
         channel: Optional[ChannelEnum] = None,
         status: Optional[ConversationStatusEnum] = None,
         search: Optional[str] = None,
+        brand: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         stmt = select(Conversation).options(selectinload(Conversation.customer))
         count_stmt = select(func.count(Conversation.id))
+
+        if location and location.strip():
+            stmt = stmt.join(Conversation.customer)
+            count_stmt = count_stmt.join(Conversation.customer)
+            if location == "غير ذلك":
+                loc_filter = (Customer.location == "غير ذلك") | (Customer.location == None) | (Customer.location == "")
+                stmt = stmt.where(loc_filter)
+                count_stmt = count_stmt.where(loc_filter)
+            else:
+                clean_search = location.split()[0]
+                stmt = stmt.where(Customer.location.ilike(f"%{clean_search}%"))
+                count_stmt = count_stmt.where(Customer.location.ilike(f"%{clean_search}%"))
+
+        if brand and hasattr(Conversation, "brand") and brand.lower() not in ["all", "الكل", "none", ""]:
+            stmt = stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
+            count_stmt = count_stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
 
         if customer_id:
             stmt = stmt.where(Conversation.customer_id == customer_id)
@@ -124,7 +143,31 @@ class ConversationService:
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
             prio = getattr(conv, 'priority', "normal") or "normal"
-            last_text = getattr(conv, 'last_message_text', "") or ""
+            last_text = getattr(conv, 'last_message_text', None)
+
+            if not last_text:
+                msg_stmt = (
+                    select(Message)
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at.desc(), Message.id.desc())
+                    .limit(1)
+                )
+                latest_msg = (await session.execute(msg_stmt)).scalars().first()
+                if latest_msg:
+                    preview = latest_msg.text
+                    if not preview or preview == "مرفق وسائط":
+                        m_type = str(latest_msg.message_type.value if hasattr(latest_msg.message_type, "value") else latest_msg.message_type).lower()
+                        if m_type in ["audio", "voice"]:
+                            preview = "تسجيل صوتي"
+                        elif m_type == "image":
+                            preview = "صورة مرفقة"
+                        elif m_type == "location" or (preview and "📍" in preview):
+                            preview = "موقع جغرافي"
+                        else:
+                            preview = "مرفق وسائط"
+                    last_text = preview
+                else:
+                    last_text = "محادثة نشطة"
 
             item = {
                 "id": conv.id,
@@ -132,6 +175,7 @@ class ConversationService:
                 "provider": conv.provider,
                 "channel": conv.channel,
                 "subject": conv.subject,
+                "brand": getattr(conv, 'brand', "LAVVA") or "LAVVA",
                 "status": conv.status,
                 "priority": prio,
                 "assigned_agent_id": agent_id,

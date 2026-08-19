@@ -290,3 +290,59 @@ class MetaClient:
             if isinstance(exc, MetaAPIError):
                 raise
             raise MetaAPIError(f"Failed to send binary media attachment to Meta: {str(exc)}", status_code=500)
+
+    async def send_whatsapp_message(
+        self, recipient_phone: str, text: str
+    ) -> dict[str, Any]:
+        phone_number_id = getattr(settings, "META_WHATSAPP_PHONE_ID", None) or self.page_id
+        if not phone_number_id:
+            raise MetaAPIError("META_WHATSAPP_PHONE_ID or META_PAGE_ID is missing.", status_code=400)
+
+        clean_phone = recipient_phone.replace("+", "").replace(" ", "").strip()
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": clean_phone,
+            "type": "text",
+            "text": {"preview_url": False, "body": text}
+        }
+
+        try:
+            return await self._request("POST", f"/{phone_number_id}/messages", json_data=payload)
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to send WhatsApp message: {str(exc)}", status_code=500)
+
+    async def publish_page_post(
+        self,
+        message: str,
+        link: Optional[str] = None,
+        image_url: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Publish a post to the Facebook Page with Click-to-Chat CTA."""
+        page_id = self.page_id
+        if not page_id:
+            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
+
+        payload: dict[str, Any] = {
+            "message": message,
+            "call_to_action": {
+                "type": "MESSAGE_PAGE",
+                "value": {"app_destination": "MESSENGER"}
+            }
+        }
+        if link:
+            payload["link"] = link
+        if image_url:
+            payload["picture"] = image_url
+
+        try:
+            return await self._request("POST", f"/{page_id}/feed", json_data=payload)
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to publish Facebook Page post: {str(exc)}", status_code=500)
+
+

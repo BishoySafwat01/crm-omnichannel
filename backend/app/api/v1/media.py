@@ -1,13 +1,45 @@
+import logging
 import os
 import uuid
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from urllib.parse import urlparse
+import httpx
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 
 router = APIRouter(prefix="/media", tags=["media"])
+logger = logging.getLogger("MediaProxy")
 
 UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Permitted Meta CDN domain suffixes
+ALLOWED_DOMAIN_SUFFIXES = (
+    "fbsbx.com",
+    "fbcdn.net",
+    "cdninstagram.com",
+    "facebook.com",
+    "instagram.com",
+    "whatsapp.net",
+)
+
+
+def is_trusted_meta_url(target_url: str) -> bool:
+    try:
+        parsed = urlparse(target_url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return False
+        return any(
+            hostname == suffix or hostname.endswith("." + suffix)
+            for suffix in ALLOWED_DOMAIN_SUFFIXES
+        )
+    except Exception as e:
+        logger.warning(f"[Security] Failed to parse media URL {target_url}: {e}")
+        return False
 
 
 @router.post("/upload", summary="Upload Media Attachment")
@@ -40,16 +72,65 @@ async def upload_media(file: UploadFile = File(...)):
             media_type = "video"
 
         return {
-          "status": "success",
-          "media_id": str(uuid.uuid4()),
-          "url": media_url,
-          "filename": file.filename,
-          "mime_type": mime_type,
-          "media_type": media_type,
-          "size": len(content),
+            "status": "success",
+            "media_id": str(uuid.uuid4()),
+            "url": media_url,
+            "filename": file.filename,
+            "mime_type": mime_type,
+            "media_type": media_type,
+            "size": len(content),
         }
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Media upload failed: {str(exc)}",
         )
+
+
+@router.get("/proxy", summary="Proxy External Meta CDN Media")
+async def proxy_meta_media(url: str = Query(..., description="External media URL from Meta")):
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="Missing media URL")
+
+    if not is_trusted_meta_url(url):
+        logger.warning("[Security] Blocked unauthorized media proxy request for URL: %s", url)
+        raise HTTPException(status_code=403, detail="Forbidden media source host")
+
+    headers = {}
+    if any(k in url for k in ["facebook.com", "fbcdn.net", "fbsbx.com", "cdninstagram.com"]):
+        headers["Authorization"] = f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"
+
+    client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+
+    try:
+        req = client.build_request("GET", url, headers=headers)
+        resp = await client.send(req, stream=True)
+
+        # Fallback without auth headers if CDN link is public and rejects Bearer token
+        if resp.status_code in (401, 403):
+            await resp.aclose()
+            req = client.build_request("GET", url)
+            resp = await client.send(req, stream=True)
+
+        if resp.is_error:
+            await resp.aclose()
+            await client.aclose()
+            logger.error(f"[Media Proxy] Upstream returned status {resp.status_code} for {url}")
+            raise HTTPException(status_code=resp.status_code, detail="Failed to stream upstream media")
+
+        async def media_stream():
+            try:
+                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
+        content_type = resp.headers.get("content-type", "application/octet-stream")
+        return StreamingResponse(media_stream(), media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as e:
+        await client.aclose()
+        logger.error("[Media Proxy Exception] %s", e)
+        raise HTTPException(status_code=502, detail="Upstream media connection failed")

@@ -33,6 +33,8 @@ async def list_conversations(
         None, alias="status", description="Filter by status"
     ),
     search: Optional[str] = Query(None, description="Search by subject"),
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    location: Optional[str] = Query(None, description="Filter by customer location"),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
@@ -45,6 +47,8 @@ async def list_conversations(
         channel=channel,
         status=status_filter,
         search=search,
+        brand=brand,
+        location=location,
     )
     items = [ConversationResponse.model_validate(c) for c in items_raw]
     return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
@@ -148,6 +152,31 @@ async def send_outbound_reply(
 
 
 @router.patch(
+    "/{conversation_id}",
+    summary="Update Conversation Brand or Metadata",
+)
+async def update_conversation_metadata(
+    conversation_id: uuid.UUID,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update conversation brand/store or status."""
+    conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+    if "brand" in payload:
+        conv.brand = payload["brand"]
+    if "status" in payload:
+        conv.status = payload["status"]
+    await db.commit()
+    await db.refresh(conv)
+    return {"id": str(conv.id), "brand": getattr(conv, "brand", "LAVVA"), "status": conv.status.value if hasattr(conv.status, "value") else str(conv.status)}
+
+
+@router.patch(
     "/{conversation_id}/status",
     summary="Update Conversation Status",
 )
@@ -230,3 +259,11 @@ async def update_conversation_priority(
         "conversation_id": str(conversation_id),
         "priority": priority,
     }
+
+
+@router.post("/sync-now", summary="Trigger Immediate Meta Graph API Sync")
+async def trigger_immediate_sync():
+    """Trigger an immediate, on-demand sync with Meta Graph API."""
+    from app.services.meta_import_service import meta_import_service
+    await meta_import_service.sync_live_conversations()
+    return {"status": "ok", "message": "Synchronized with Meta Graph API"}

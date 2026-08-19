@@ -145,6 +145,35 @@ async def send_meta_direct_message(
     )
 
 
+class PublishPagePostRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=5000, description="Post text content")
+    link: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+@router.post("/posts", summary="Publish Post to Facebook Page Feed with Click-to-Chat CTA")
+async def create_facebook_page_post(payload: PublishPagePostRequest):
+    """Publish a new post to Facebook Page feed with 'Send Message' CTA button."""
+    provider = MetaProvider()
+    try:
+        res = await provider.client.publish_page_post(
+            message=payload.message,
+            link=payload.link,
+            image_url=payload.image_url,
+        )
+        return {"status": "published", "post_id": res.get("id"), "raw_response": res}
+    except MetaAPIError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or status.HTTP_400_BAD_REQUEST,
+            detail=MetaImportService._sanitize_error(exc.message),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=MetaImportService._sanitize_error(f"Failed to publish post: {str(exc)}"),
+        )
+
+
 @router.get("/webhook", summary="Meta Webhook Hub Verification Challenge")
 async def verify_meta_webhook(
     hub_mode: Optional[str] = Query(None, alias="hub.mode"),

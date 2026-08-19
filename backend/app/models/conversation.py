@@ -38,6 +38,7 @@ class Conversation(Base):
     )
     assigned_agent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     priority: Mapped[str] = mapped_column(String(50), nullable=False, default="normal", server_default="normal")
+    brand: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="LAVVA", server_default="LAVVA", index=True)
     subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

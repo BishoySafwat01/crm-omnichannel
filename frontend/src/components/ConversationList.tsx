@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, Tag, User } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, Tag, User, MapPin, Globe } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
@@ -11,12 +11,24 @@ const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
   urgent: { label: 'عاجلة', color: 'bg-rose-50 text-rose-700 border-rose-200 font-bold' },
 };
 
+const LOCATION_FILTERS = [
+  { id: 'ALL', label: 'الكل' },
+  { id: 'مصر', label: 'مصر 🇪🇬' },
+  { id: 'العراق', label: 'العراق 🇮🇶' },
+  { id: 'السعودية', label: 'السعودية 🇸🇦' },
+  { id: 'الإمارات', label: 'الإمارات 🇦🇪' },
+  { id: 'غير ذلك', label: 'غير ذلك' },
+];
+
 export const ConversationList: React.FC = () => {
+  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+
   const {
     conversations,
-    selectedBrandId,
     activeConversationId,
     setActiveConversationId,
+    selectedBrandId,
+    selectedChannel,
     searchQuery,
     setSearchQuery,
     activeFilterTab,
@@ -24,30 +36,68 @@ export const ConversationList: React.FC = () => {
     isLoadingConversations,
   } = useCrmStore();
 
+  const getMessagePreview = (conv: any) => {
+    if (conv.last_message_text && conv.last_message_text.trim()) {
+      return conv.last_message_text;
+    }
+    return 'محادثة نشطة';
+  };
+
+  const getChannelBadge = (channel: string = 'messenger') => {
+    switch (channel?.toLowerCase()) {
+      case 'whatsapp':
+        return <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">واتساب</span>;
+      case 'instagram':
+        return <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200">إنستغرام</span>;
+      default:
+        return <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-blue-50 text-blue-700 border border-blue-200">ماسنجر</span>;
+    }
+  };
+
   const filteredConversations = useMemo(() => {
     if (!conversations || !Array.isArray(conversations)) return [];
 
     return conversations.filter((conv) => {
       // 1. Search Query Filter
       if (searchQuery && searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.toLowerCase().trim();
         const name = (conv.customer_display_name || conv.customer?.display_name || '').toLowerCase();
         const lastMsg = (conv.last_message_text || '').toLowerCase();
         const extId = (conv.external_conversation_id || '').toLowerCase();
         if (!name.includes(q) && !lastMsg.includes(q) && !extId.includes(q)) return false;
       }
 
-      // 2. Status Filter
+      // 2. Channel Filter
+      if (selectedChannel && selectedChannel !== 'all') {
+        const convChan = (conv.channel || 'messenger').toLowerCase();
+        if (convChan !== selectedChannel.toLowerCase()) return false;
+      }
+
+      // 3. Status Filter
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
       if (activeFilterTab === 'completed' && conv.status !== 'closed' && conv.status !== 'completed') return false;
 
-      // 3. Brand Filter (If 'ALL' or 'all' or empty, show all conversations)
-      if (!selectedBrandId || selectedBrandId === 'all' || selectedBrandId === 'ALL' || selectedBrandId === 'الكل') return true;
+      // 4. Location Filter
+      if (selectedLocation && selectedLocation !== 'ALL') {
+        const loc = conv.customer?.location || 'غير ذلك';
+        if (selectedLocation === 'غير ذلك') {
+          if (loc !== 'غير ذلك' && conv.customer?.location) return false;
+        } else {
+          if (!loc.includes(selectedLocation)) return false;
+        }
+      }
 
-      const convBrand = ((conv as any).brand || (conv as any).business_unit || conv.subject || '').toUpperCase();
-      return !convBrand || convBrand.includes(selectedBrandId.toUpperCase());
+      // 5. Brand Filter
+      if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all' || selectedBrandId === 'الكل') {
+        return true;
+      }
+
+      const convBrand = ((conv as any).brand || (conv as any).brand_id || (conv as any).business_unit || '').toLowerCase();
+      const filterBrand = selectedBrandId.toLowerCase();
+      if (!convBrand) return true;
+      return convBrand === filterBrand || convBrand.includes(filterBrand);
     });
-  }, [conversations, searchQuery, activeFilterTab, selectedBrandId]);
+  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedLocation]);
 
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
@@ -65,7 +115,7 @@ export const ConversationList: React.FC = () => {
   return (
     <aside className="w-80 md:w-96 bg-white/80 backdrop-blur-md border-l border-slate-200/80 flex flex-col shrink-0 h-full relative z-10">
       {/* Header Search Bar */}
-      <div className="p-3.5 border-b border-slate-200/80 space-y-3">
+      <div className="p-3.5 border-b border-slate-200/80 space-y-2.5">
         <div className="relative">
           <input
             type="text"
@@ -93,6 +143,28 @@ export const ConversationList: React.FC = () => {
               >
                 {tab.icon}
                 <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Multi-Country Location Filter Toolbar */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+          {LOCATION_FILTERS.map((f) => {
+            const isActive = (selectedLocation === f.id) || (!selectedLocation && f.id === 'ALL');
+            return (
+              <button
+                key={f.id}
+                onClick={() => setSelectedLocation(f.id === 'ALL' ? null : f.id)}
+                className={`flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all ${
+                  isActive
+                    ? 'bg-teal-600 text-white shadow-xs font-bold'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                {f.id === 'ALL' && <Globe className="w-3 h-3" />}
+                {f.id === 'غير ذلك' && <MapPin className="w-3 h-3" />}
+                <span>{f.label}</span>
               </button>
             );
           })}
@@ -147,9 +219,21 @@ export const ConversationList: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-semibold border border-teal-200/60">
-                        {brandLabel}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-semibold border border-teal-200/60">
+                          {brandLabel}
+                        </span>
+                        {getChannelBadge(conv.channel)}
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${
+                            conv.customer?.location && conv.customer.location !== 'غير ذلك'
+                              ? 'bg-teal-50 text-teal-800 border-teal-200/80 font-bold shadow-2xs'
+                              : 'bg-slate-100/80 text-slate-500 border-slate-200/60'
+                          }`}
+                        >
+                          {conv.customer?.location || 'غير ذلك'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -169,7 +253,7 @@ export const ConversationList: React.FC = () => {
 
                 {/* Message Snippet */}
                 <p className="text-xs text-slate-600 line-clamp-1 pr-1 font-normal leading-relaxed">
-                  {conv.last_message_text || 'لا توجد رسائل بعد'}
+                  {getMessagePreview(conv)}
                 </p>
 
                 {/* Unread badge & tags summary */}

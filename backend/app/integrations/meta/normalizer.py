@@ -54,6 +54,8 @@ class NormalizedMetaWebhookEvent:
     message_type: MessageTypeEnum
     text: Optional[str]
     created_at: datetime
+    channel: ChannelEnum = ChannelEnum.MESSENGER
+    sender_name: Optional[str] = None
     attachments: list[dict[str, Any]] = field(default_factory=list)
     metadata_: dict[str, Any] = field(default_factory=dict)
 
@@ -194,14 +196,103 @@ class MetaNormalizer:
 
     @staticmethod
     def normalize_webhook_event(
-        raw_item: dict[str, Any], page_id: str
+        raw_item: dict[str, Any], page_id: str, channel_hint: ChannelEnum = ChannelEnum.MESSENGER
     ) -> NormalizedMetaWebhookEvent:
+        # Check for WhatsApp Cloud API payload format (entry[].changes[0].value)
+        if "value" in raw_item and "messages" in raw_item.get("value", {}):
+            val = raw_item["value"]
+            contacts = val.get("contacts", [{}])
+            contact_info = contacts[0] if contacts else {}
+            wa_id = str(contact_info.get("wa_id") or "")
+            profile_name = contact_info.get("profile", {}).get("name")
+
+            messages = val.get("messages", [{}])
+            msg = messages[0] if messages else {}
+
+            ext_msg_id = str(msg.get("id") or "")
+            sender_psid = str(msg.get("from") or wa_id)
+            recipient_id = str(val.get("metadata", {}).get("display_phone_number") or page_id)
+            ts_val = msg.get("timestamp")
+            created_at = MetaNormalizer.parse_epoch_timestamp(ts_val)
+
+            msg_type_str = str(msg.get("type", "text")).lower()
+            text_content = None
+            normalized_atts = []
+            msg_type = MessageTypeEnum.TEXT
+
+            if msg_type_str == "text":
+                text_content = msg.get("text", {}).get("body")
+            elif msg_type_str in ["image", "audio", "voice", "video", "document"]:
+                media_info = msg.get(msg_type_str, {})
+                media_id = media_info.get("id")
+                mime_type = media_info.get("mime_type")
+                text_content = media_info.get("caption")
+                msg_type = MessageTypeEnum.AUDIO if msg_type_str in ["audio", "voice"] else (MessageTypeEnum.IMAGE if msg_type_str == "image" else MessageTypeEnum.FILE)
+                if media_id:
+                    normalized_atts.append({
+                        "type": msg_type_str,
+                        "media_id": media_id,
+                        "mime_type": mime_type,
+                        "title": media_info.get("filename") or f"{msg_type_str}_{media_id[:8]}"
+                    })
+            elif msg_type_str == "location":
+                loc = msg.get("location", {})
+                lat = loc.get("latitude")
+                lng = loc.get("longitude")
+                loc_name = loc.get("name")
+                loc_addr = loc.get("address")
+                msg_type = MessageTypeEnum.UNKNOWN
+                text_content = f"📍 {loc_name or loc_addr or 'موقع جغرافي'} ({lat}, {lng})"
+                maps_url = f"https://www.google.com/maps?q={lat},{lng}"
+                normalized_atts.append({
+                    "type": "location",
+                    "url": maps_url,
+                    "title": loc_name or "Google Maps Location",
+                    "latitude": lat,
+                    "longitude": lng
+                })
+            elif msg_type_str in ["interactive", "button"]:
+                btn_reply = msg.get("interactive", {}).get("button_reply", {}) or msg.get("button", {})
+                text_content = btn_reply.get("title") or btn_reply.get("text") or "زر التفاعل"
+
+            # Check Referral Attribution
+            referral = raw_item.get("referral") or msg.get("referral")
+            ref_metadata = None
+            if referral:
+                ref_metadata = {
+                    "source_type": referral.get("source"),
+                    "source_id": referral.get("source_id"),
+                    "ref": referral.get("ref"),
+                    "ad_id": referral.get("ad_id")
+                }
+
+            return NormalizedMetaWebhookEvent(
+                page_id=page_id,
+                sender_psid=sender_psid,
+                recipient_id=recipient_id,
+                external_message_id=ext_msg_id,
+                sender_type=SenderTypeEnum.CUSTOMER,
+                message_type=msg_type,
+                text=text_content,
+                created_at=created_at,
+                channel=ChannelEnum.WHATSAPP,
+                sender_name=profile_name,
+                attachments=normalized_atts,
+                metadata_={
+                    "wa_id": wa_id,
+                    "referral": ref_metadata,
+                    "raw": raw_item
+                }
+            )
+
+        # Standard Messenger / Instagram entry[].messaging event
         sender_data = raw_item.get("sender", {})
         recipient_data = raw_item.get("recipient", {})
         sender_psid = str(sender_data.get("id", ""))
         recipient_id = str(recipient_data.get("id", ""))
 
         msg_data = raw_item.get("message", {})
+        postback_data = raw_item.get("postback", {})
         ext_msg_id_val = msg_data.get("mid") or msg_data.get("id")
         ext_msg_id = str(ext_msg_id_val) if ext_msg_id_val else None
 
@@ -217,6 +308,11 @@ class MetaNormalizer:
 
         text_content = msg_data.get("text")
         raw_attachments = msg_data.get("attachments", [])
+
+        if not text_content and postback_data:
+            if not ext_msg_id:
+                ext_msg_id = f"postback_{int(created_at.timestamp())}_{sender_psid}"
+            text_content = postback_data.get("title") or postback_data.get("payload") or "بدء الاستخدام"
 
         normalized_attachments = []
         msg_type = MessageTypeEnum.TEXT
@@ -247,6 +343,21 @@ class MetaNormalizer:
         elif not text_content:
             msg_type = MessageTypeEnum.UNKNOWN
 
+        channel = channel_hint
+        if raw_item.get("object") == "instagram" or channel_hint == ChannelEnum.INSTAGRAM:
+            channel = ChannelEnum.INSTAGRAM
+
+        # Check Referral Attribution
+        referral = raw_item.get("referral") or raw_item.get("messaging_referral") or postback_data.get("referral") or msg_data.get("referral")
+        ref_metadata = None
+        if referral:
+            ref_metadata = {
+                "source_type": referral.get("source") or referral.get("type") or "POST",
+                "source_id": referral.get("source_id"),
+                "ref": referral.get("ref"),
+                "ad_id": referral.get("ad_id")
+            }
+
         return NormalizedMetaWebhookEvent(
             page_id=page_id,
             sender_psid=sender_psid,
@@ -256,6 +367,8 @@ class MetaNormalizer:
             message_type=msg_type,
             text=text_content,
             created_at=created_at,
+            channel=channel,
             attachments=normalized_attachments,
-            metadata_={"raw": raw_item},
+            metadata_={"referral": ref_metadata, "raw": raw_item},
         )
+

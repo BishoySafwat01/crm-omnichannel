@@ -47,3 +47,6 @@ frontend/build
 *.swp
 *.swo
 .DS_Store
+
+# Uploads
+backend/uploads/

@@ -1,10 +1,83 @@
 import { create } from 'zustand';
-import { Conversation, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
-import { apiService } from '../services/api';
+import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
+import { apiService, getConversationsDirect, getMessagesDirect } from '../services/api';
 import { realtimeService } from '../services/websocket';
+
+export type ChannelFilterType = 'all' | 'messenger' | 'instagram' | 'whatsapp';
+
+export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Message[]): Message[] => {
+  const byPermanentId = new Map<string, Message>();
+  const byExternalId = new Map<string, Message>();
+  const tempToPermMap = new Map<string, string>();
+
+  // Process incoming messages first to establish permanent truth
+  incoming.forEach((msg) => {
+    if (msg.id) byPermanentId.set(msg.id, msg);
+    if (msg.external_message_id) byExternalId.set(msg.external_message_id, msg);
+    if ((msg as any).temp_id && msg.id) {
+      tempToPermMap.set((msg as any).temp_id, msg.id);
+    }
+  });
+
+  // Merge with existing items, discarding replaced temp placeholders
+  existing.forEach((msg) => {
+    const isReplacedTemp = (msg as any).temp_id && tempToPermMap.has((msg as any).temp_id);
+    const isKnownExternal = msg.external_message_id && byExternalId.has(msg.external_message_id);
+
+    if (!isReplacedTemp && !isKnownExternal && !byPermanentId.has(msg.id)) {
+      byPermanentId.set(msg.id, msg);
+      if (msg.external_message_id) byExternalId.set(msg.external_message_id, msg);
+    }
+  });
+
+  return Array.from(byPermanentId.values()).sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+};
+
+const areConversationsEqual = (a: Conversation[], b: Conversation[]): boolean => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].id !== b[i].id ||
+      a[i].brand !== b[i].brand ||
+      a[i].status !== b[i].status ||
+      a[i].priority !== b[i].priority ||
+      a[i].assigned_agent_id !== b[i].assigned_agent_id ||
+      a[i].unread_count !== b[i].unread_count ||
+      a[i].last_message_text !== b[i].last_message_text ||
+      a[i].last_message_at !== b[i].last_message_at ||
+      a[i].customer_display_name !== b[i].customer_display_name ||
+      a[i].customer?.location !== b[i].customer?.location ||
+      a[i].customer?.tier !== b[i].customer?.tier ||
+      a[i].customer?.skin_type !== b[i].customer?.skin_type ||
+      a[i].customer?.stage !== b[i].customer?.stage
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const areMessagesEqual = (a: Message[] | undefined, b: Message[]): boolean => {
+  if (!a) return b.length === 0;
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  const firstA = a[0];
+  const firstB = b[0];
+  const lastA = a[a.length - 1];
+  const lastB = b[b.length - 1];
+  return (
+    firstA.id === firstB.id &&
+    lastA.id === lastB.id &&
+    lastA.text === lastB.text &&
+    (lastA as any).delivery_status === (lastB as any).delivery_status
+  );
+};
 
 interface CrmState {
   selectedBrandId: string;
+  selectedChannel: ChannelFilterType;
   searchQuery: string;
   activeFilterTab: FilterTab;
   conversations: Conversation[];
@@ -20,6 +93,7 @@ interface CrmState {
 
   // Actions
   setSelectedBrandId: (brandId: string) => void;
+  setSelectedChannel: (channel: ChannelFilterType) => void;
   setSearchQuery: (query: string) => void;
   setActiveFilterTab: (tab: FilterTab) => void;
   setActiveConversationId: (id: string) => void;
@@ -36,11 +110,14 @@ interface CrmState {
   setConversationStatus: (conversationId: string, status: string) => Promise<void>;
   assignAgentToConversation: (conversationId: string, agentId: string | null) => Promise<void>;
   setConversationPriority: (conversationId: string, priority: 'low' | 'normal' | 'high' | 'urgent') => Promise<void>;
+  updateConversationBrand: (conversationId: string, brand: string) => Promise<void>;
+  updateCustomerProfile: (customerId: string, payload: Partial<Customer>) => Promise<void>;
   handleRealtimeEvent: (event: WebSocketEvent) => void;
 }
 
 export const useCrmStore = create<CrmState>((set, get) => ({
   selectedBrandId: 'all',
+  selectedChannel: 'all',
   searchQuery: '',
   activeFilterTab: 'all',
   conversations: [],
@@ -57,6 +134,10 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   setSelectedBrandId: (brandId) => {
     set({ selectedBrandId: brandId });
     get().fetchConversations();
+  },
+
+  setSelectedChannel: (channel) => {
+    set({ selectedChannel: channel });
   },
 
   setSearchQuery: (query) => {
@@ -78,6 +159,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   setActiveConversationId: (id) => {
+    if (!id) return;
     set((state) => {
       const updatedConvs = state.conversations.map((c) =>
         c.id === id ? { ...c, unread_count: 0 } : c
@@ -88,53 +170,94 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   fetchConversations: async () => {
-    set({ isLoadingConversations: true, error: null });
-
     try {
-      const res = await apiService.getConversations();
+      const selectedBrand = get().selectedBrandId;
+      const raw = await getConversationsDirect(selectedBrand);
 
       let items: Conversation[] = [];
-      if (Array.isArray(res)) {
-        items = res;
-      } else if (res && Array.isArray((res as any).items)) {
-        items = (res as any).items;
-      } else if (res && Array.isArray((res as any).data)) {
-        items = (res as any).data;
-      } else if (res && Array.isArray((res as any).conversations)) {
-        items = (res as any).conversations;
+      if (Array.isArray(raw)) {
+        items = raw;
+      } else if (raw && Array.isArray((raw as any).items)) {
+        items = (raw as any).items;
+      } else if (raw && Array.isArray((raw as any).data)) {
+        items = (raw as any).data;
+      } else if (raw && Array.isArray((raw as any).conversations)) {
+        items = (raw as any).conversations;
       }
 
-      console.log('[Store] Fetched conversations raw response:', res);
-      console.log('[Store] Parsed conversations count:', items.length);
+      if (items.length > 0) {
+        const currentActive = get().activeConversationId;
+        const validActive = items.find((c) => c.id === currentActive) ? currentActive : items[0].id;
+        const currentConvs = get().conversations;
 
-      const activeId = get().activeConversationId || (items.length > 0 ? items[0].id : null);
+        const mergedItems = items.map((c) => {
+          const existing = currentConvs.find((ex) => ex.id === c.id);
+          if (existing && existing.customer) {
+            return {
+              ...c,
+              customer: {
+                ...c.customer,
+                ...existing.customer,
+                tier: existing.customer.tier || c.customer?.tier,
+                skin_type: existing.customer.skin_type || c.customer?.skin_type,
+                stage: existing.customer.stage || c.customer?.stage,
+                location: existing.customer.location || c.customer?.location,
+                phone: existing.customer.phone || c.customer?.phone,
+                email: existing.customer.email || c.customer?.email,
+              },
+            };
+          }
+          return c;
+        });
 
-      set({
-        conversations: items,
-        isLoadingConversations: false,
-        activeConversationId: activeId,
-        error: null,
-      });
+        if (!areConversationsEqual(currentConvs, mergedItems) || get().activeConversationId !== validActive) {
+          set({
+            conversations: mergedItems,
+            isLoadingConversations: false,
+            activeConversationId: validActive,
+            error: null,
+          });
+        } else if (get().isLoadingConversations) {
+          set({ isLoadingConversations: false });
+        }
 
-      if (activeId) {
-        get().fetchMessages(activeId);
+        if (validActive) {
+          get().fetchMessages(validActive);
+        }
       }
     } catch (err: any) {
-      console.error('[Store] fetchConversations error:', err);
-      set({
-        isLoadingConversations: false,
-        error: err?.response?.data?.detail || err?.message || 'Failed to load conversations',
-      });
+      console.warn('[Store] Live fetch error, keeping existing state:', err);
     }
   },
 
-  fetchMessages: async (conversationId) => {
-    set({ isLoadingMessages: true });
-    const res = await apiService.getMessages(conversationId, undefined, 200);
-    set((state) => ({
-      messages: { ...state.messages, [conversationId]: res.items },
-      isLoadingMessages: false,
-    }));
+  fetchMessages: async (conversationId: string) => {
+    try {
+      const raw = await getMessagesDirect(conversationId);
+      let messagesList: Message[] = [];
+      if (Array.isArray(raw)) {
+        messagesList = raw;
+      } else if (raw && Array.isArray((raw as any).items)) {
+        messagesList = (raw as any).items;
+      } else if (raw && Array.isArray((raw as any).messages)) {
+        messagesList = (raw as any).messages;
+      } else if (raw && Array.isArray((raw as any).data)) {
+        messagesList = (raw as any).data;
+      }
+
+      const currentMsgs = get().messages[conversationId];
+      if (!areMessagesEqual(currentMsgs, messagesList)) {
+        const merged = mergeAndDeduplicateMessages(currentMsgs || [], messagesList);
+        set((state) => ({
+          messages: { ...state.messages, [conversationId]: merged },
+          isLoadingMessages: false,
+        }));
+      } else if (get().isLoadingMessages) {
+        set({ isLoadingMessages: false });
+      }
+    } catch (err) {
+      console.error('[Store] fetchMessages error:', err);
+      set({ isLoadingMessages: false });
+    }
   },
 
   loadMoreMessages: async () => {
@@ -220,15 +343,42 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         isExpired ? selectedMetaTag : undefined
       );
 
-      // Transition to 'sent' / 'delivered'
+      // Transition to 'sent' / 'delivered' & Update customer location reactively with deduplication
+      const newLoc = (persistedMsg as any)?.updated_customer_location;
       set((state) => {
         const list = state.messages[activeConversationId] || [];
-        const replaced = list.map((m) =>
+        let replaced = list.map((m) =>
           m.id === tempId
             ? { ...persistedMsg, delivery_status: 'sent' as const }
             : m
         );
-        return { messages: { ...state.messages, [activeConversationId]: replaced } };
+
+        // Strict deduplication by ID
+        const seenIds = new Set<string>();
+        replaced = replaced.filter((m) => {
+          if (!m.id) return true;
+          if (seenIds.has(m.id)) return false;
+          seenIds.add(m.id);
+          return true;
+        });
+
+        const updatedConvs = newLoc
+          ? state.conversations.map((c) =>
+              c.id === activeConversationId
+                ? {
+                    ...c,
+                    customer: c.customer
+                      ? { ...c.customer, location: newLoc }
+                      : ({ id: c.customer_id || '', display_name: c.customer_display_name || '', location: newLoc, created_at: '', updated_at: '' } as any),
+                  }
+                : c
+            )
+          : state.conversations;
+
+        return {
+          messages: { ...state.messages, [activeConversationId]: replaced },
+          conversations: updatedConvs,
+        };
       });
     } catch (err: any) {
       console.warn('Outbound API send failed. Transitioning bubble to failed:', err);
@@ -402,6 +552,34 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       ),
     }));
     await apiService.updatePriority(conversationId, priority);
+  },
+
+  updateConversationBrand: async (conversationId: string, brand: string) => {
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.id === conversationId ? { ...c, brand } : c
+      ),
+    }));
+    await apiService.updateBrand(conversationId, brand);
+  },
+
+  updateCustomerProfile: async (customerId: string, payload: Partial<Customer>) => {
+    set((state) => {
+      const updatedConvs = state.conversations.map((c) => {
+        if (c.customer_id === customerId || c.customer?.id === customerId) {
+          const updatedCustomer = { ...(c.customer || {}), ...payload } as Customer;
+          return {
+            ...c,
+            customer: updatedCustomer,
+            customer_display_name: payload.display_name || c.customer_display_name,
+          };
+        }
+        return c;
+      });
+      return { conversations: updatedConvs };
+    });
+
+    await apiService.updateCustomerProfile(customerId, payload);
   },
 
   handleRealtimeEvent: (event) => {

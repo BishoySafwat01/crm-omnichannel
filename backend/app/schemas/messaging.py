@@ -43,6 +43,7 @@ class MessageResponse(MessageBase):
     attachments: Optional[list[dict[str, Any]]] = Field(default_factory=list)
     media_url: Optional[str] = None
     media_type: Optional[str] = None
+    updated_customer_location: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -53,12 +54,14 @@ class MessageResponse(MessageBase):
             url = data.get("media_url") or metadata.get("media_url")
             m_type = data.get("media_type") or metadata.get("media_type")
             text_val = (data.get("text") or "").strip()
+            loc = data.get("updated_customer_location")
         else:
             metadata = getattr(data, "metadata_", {}) or {}
             atts = metadata.get("attachments") or []
             url = metadata.get("media_url")
             m_type = metadata.get("media_type")
             text_val = (getattr(data, "text", "") or "").strip()
+            loc = getattr(data, "updated_customer_location", None)
 
         if not atts:
             if text_val.startswith("image-") or text_val.startswith("/uploads/") or any(text_val.endswith(ext) for ext in [".ogg", ".mp4", ".m4a", ".webm", ".jpg", ".png", ".jpeg", ".webp"]):
@@ -79,6 +82,7 @@ class MessageResponse(MessageBase):
             data["attachments"] = atts
             data["media_url"] = url
             data["media_type"] = m_type
+            data["updated_customer_location"] = loc
             return data
         else:
             return {
@@ -94,4 +98,5 @@ class MessageResponse(MessageBase):
                 "attachments": atts,
                 "media_url": url,
                 "media_type": m_type,
+                "updated_customer_location": loc,
             }

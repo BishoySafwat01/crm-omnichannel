@@ -2,15 +2,21 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
 from app.core.config import settings
+from app.core.country_detector import CountryDetector
 from app.integrations.meta import MetaProvider
 from app.integrations.respond_io import RespondIoProvider
 from app.models.conversation import Conversation
-from app.models.customer import CustomerIdentity
+from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
+
+logger = logging.getLogger("MessageService")
 
 
 class MessageService:
@@ -105,8 +111,12 @@ class MessageService:
         if len(clean_text) > 2000:
             raise ValueError("Message text exceeds maximum length of 2000 characters.")
 
-        # Load Conversation
-        stmt = select(Conversation).where(Conversation.id == conversation_id)
+        # Load Conversation with eager-loaded customer
+        stmt = (
+            select(Conversation)
+            .options(selectinload(Conversation.customer))
+            .where(Conversation.id == conversation_id)
+        )
         res = await session.execute(stmt)
         conv = res.scalar_one_or_none()
 
@@ -115,7 +125,8 @@ class MessageService:
 
         # Validate provider & channel and resolve adapter
         if conv.provider == ProviderEnum.META:
-            if conv.channel != ChannelEnum.MESSENGER:
+            valid_channels = [ChannelEnum.MESSENGER, ChannelEnum.INSTAGRAM, ChannelEnum.WHATSAPP]
+            if conv.channel not in valid_channels:
                 raise ValueError(
                     f"Outbound messaging not supported for provider '{conv.provider.value}' and channel '{conv.channel.value}'."
                 )
@@ -143,6 +154,32 @@ class MessageService:
                 f"Customer recipient identity not found for conversation {conversation_id}."
             )
 
+        clean_recipient = identity.external_user_id.strip()
+        if clean_recipient.startswith("t_"):
+            clean_recipient = clean_recipient[2:]
+
+        # Idempotency Check BEFORE external API dispatch
+        if clean_text:
+            recent_agent_stmt = (
+                select(Message)
+                .where(
+                    Message.conversation_id == conv.id,
+                    Message.sender_type == SenderTypeEnum.AGENT,
+                    Message.text == clean_text,
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            recent_agent_msg = (await session.execute(recent_agent_stmt)).scalar_one_or_none()
+            if recent_agent_msg and recent_agent_msg.created_at:
+                msg_time = recent_agent_msg.created_at
+                if msg_time.tzinfo is None:
+                    msg_time = msg_time.replace(tzinfo=timezone.utc)
+                diff_sec = (datetime.now(timezone.utc) - msg_time).total_seconds()
+                if diff_sec < 2.0:
+                    logger.warning("[Idempotency] Duplicate outbound message detected within 2s for conversation %s. Skipping duplicate dispatch.", conv.id)
+                    return recent_agent_msg
+
         # Send message through adapter (Check binary file attachment upload for Meta)
         has_media = attachments and len(attachments) > 0
         if has_media and hasattr(adapter, "send_outbound_attachment"):
@@ -164,9 +201,12 @@ class MessageService:
             if not os.path.exists(file_path):
                 file_path = os.path.join(os.getcwd(), "uploads", filename)
 
-            if att_type == "audio" and os.path.exists(file_path):
-                from app.services.media_service import convert_audio_to_m4a
-                transcoded_path = convert_audio_to_m4a(file_path)
+            if att_type == "audio" and ext_lower.endswith(".webm"):
+                transcoded_path = os.path.join(settings.UPLOAD_DIR, f"{os.path.splitext(filename)[0]}.m4a")
+                if not os.path.exists(transcoded_path):
+                    from scripts.fix_media_attachments import transcode_to_m4a
+                    import asyncio
+                    await asyncio.to_thread(transcode_to_m4a, file_path, transcoded_path)
                 if os.path.exists(transcoded_path):
                     file_path = transcoded_path
                     m4a_filename = os.path.basename(transcoded_path)
@@ -176,27 +216,40 @@ class MessageService:
                         attachments[0]["url"] = m4a_url
 
             outbound_res = await adapter.send_outbound_attachment(
-                recipient_external_id=identity.external_user_id,
+                recipient_external_id=clean_recipient,
                 file_path=file_path if os.path.exists(file_path) else att_url,
                 attachment_type=att_type,
                 tag=tag,
+            )
+        elif conv.channel == ChannelEnum.INSTAGRAM:
+            from app.services.meta_instagram_service import MetaInstagramService
+            outbound_res = await MetaInstagramService.send_text_message(
+                recipient_id=clean_recipient,
+                text=clean_text,
+            )
+        elif conv.channel == ChannelEnum.WHATSAPP:
+            from app.services.meta_whatsapp_outbound_service import MetaWhatsAppOutboundService
+            recipient_phone = (conv.customer.phone if conv.customer else None) or clean_recipient
+            outbound_res = await MetaWhatsAppOutboundService.send_text_message(
+                recipient_phone=recipient_phone,
+                text=clean_text,
             )
         else:
             if tag:
                 try:
                     outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=identity.external_user_id,
+                        recipient_external_id=clean_recipient,
                         text=clean_text,
                         tag=tag,
                     )
                 except TypeError:
                     outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=identity.external_user_id,
+                        recipient_external_id=clean_recipient,
                         text=clean_text,
                     )
             else:
                 outbound_res = await adapter.send_outbound_message(
-                    recipient_external_id=identity.external_user_id,
+                    recipient_external_id=clean_recipient,
                     text=clean_text,
                 )
 
@@ -251,5 +304,25 @@ class MessageService:
         session.add(new_message)
         conv.last_message_at = now_utc
 
+        # Agent Dynamic Location Override Hook
+        updated_loc = None
+        if conv.customer_id and clean_text:
+            try:
+                detected_country = CountryDetector.extract_country(clean_text)
+                if detected_country:
+                    cust = await session.get(Customer, conv.customer_id)
+                    if cust:
+                        cust.location = detected_country
+                        session.add(cust)
+                        await session.flush()
+                        updated_loc = detected_country
+            except Exception as e:
+                logger.error(f"[Location Override Error] Failed to update customer location: {e}")
+
         await session.commit()
+        if updated_loc:
+            setattr(new_message, "updated_customer_location", updated_loc)
+        elif conv.customer and getattr(conv.customer, "location", None):
+            setattr(new_message, "updated_customer_location", conv.customer.location)
+
         return new_message

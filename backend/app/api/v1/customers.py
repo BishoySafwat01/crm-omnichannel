@@ -8,6 +8,7 @@ from app.schemas.customer import (
     CustomerDetailResponse,
     CustomerIdentityResponse,
     CustomerResponse,
+    CustomerUpdate,
 )
 from app.schemas.pagination import PaginatedResponse
 from app.services.customer_service import CustomerService
@@ -99,3 +100,31 @@ async def update_customer_tags(
     await db.commit()
     await db.refresh(customer)
     return {"status": "success", "customer_id": str(customer_id), "tags": customer.tags}
+
+
+@router.patch(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+    summary="Update Customer Information & Attributes",
+)
+async def update_customer(
+    customer_id: uuid.UUID,
+    payload: CustomerUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update customer profile information (name, email, phone, location, tier, skin_type, stage)."""
+    customer = await CustomerService.get_customer_by_id(session=db, customer_id=customer_id)
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer {customer_id} not found.",
+        )
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, val in update_data.items():
+        if val is not None:
+            setattr(customer, field, val)
+
+    await db.commit()
+    await db.refresh(customer)
+    return CustomerResponse.model_validate(customer)
