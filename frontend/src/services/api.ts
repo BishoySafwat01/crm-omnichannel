@@ -564,5 +564,211 @@ export const adminCustomerApi = {
   },
 };
 
+export interface CustomerNote {
+  id: string;
+  customer_id: string;
+  author_user_id?: string;
+  author_name?: string;
+  text: string;
+  created_at: string;
+}
+
+export interface CustomerTimelineEvent {
+  id: string;
+  customer_id: string;
+  event_type: string;
+  channel: string;
+  summary: string;
+  details?: Record<string, any>;
+  created_at: string;
+}
+
+export const customerApi = {
+  async getTimeline(customerId: string, page: number = 1): Promise<{ items: any[]; total: number }> {
+    const res = await safeFetch(`/customers/${customerId}/timeline?page=${page}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { items: [], total: 0 };
+  },
+
+  async getNotes(customerId: string): Promise<CustomerNote[]> {
+    const res = await safeFetch(`/customers/${customerId}/notes`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return [];
+  },
+
+  async addNote(customerId: string, text: string): Promise<any> {
+    const res = await safeFetch(`/customers/${customerId}/notes`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to add note');
+  },
+
+  async deleteNote(customerId: string, noteId: string): Promise<boolean> {
+    const res = await safeFetch(`/customers/${customerId}/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return res !== null && res.ok;
+  },
+};
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  full_name: string;
+  role: 'admin' | 'supervisor' | 'agent' | string;
+  brand_access: string[];
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+  last_active_at?: string | null;
+  active_conversations_count: number;
+}
+
+export interface AuditLog {
+  id: string;
+  user_id?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  payload?: any;
+  ip_address?: string | null;
+  created_at: string;
+  user_name?: string | null;
+  user_email?: string | null;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLog[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export const teamApi = {
+  async listMembers(): Promise<TeamMember[]> {
+    const res = await safeFetch('/admin/team/members', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return [];
+  },
+
+  async createMember(payload: {
+    email: string;
+    password?: string;
+    full_name: string;
+    role: string;
+    brand_access: string[];
+    is_active?: boolean;
+  }): Promise<TeamMember> {
+    const res = await safeFetch('/admin/team/members', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إضافة العضو' }));
+      throw new Error(err?.detail || 'فشل إضافة العضو');
+    }
+    return await res.json();
+  },
+
+  async updateMember(
+    id: string,
+    payload: {
+      full_name?: string;
+      role?: string;
+      brand_access?: string[];
+      is_active?: boolean;
+      password?: string;
+    }
+  ): Promise<TeamMember> {
+    const res = await safeFetch(`/admin/team/members/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تحديث بيانات العضو' }));
+      throw new Error(err?.detail || 'فشل تحديث بيانات العضو');
+    }
+    return await res.json();
+  },
+
+  async deleteMember(id: string): Promise<boolean> {
+    const res = await safeFetch(`/admin/team/members/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return res ? res.ok : false;
+  },
+
+  async listAuditLogs(filters?: {
+    action?: string;
+    user_id?: string;
+    resource_type?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<AuditLogListResponse> {
+    const params = new URLSearchParams();
+    if (filters?.action && filters.action !== 'all') params.append('action', filters.action);
+    if (filters?.user_id) params.append('user_id', filters.user_id);
+    if (filters?.resource_type) params.append('resource_type', filters.resource_type);
+    if (filters?.page) params.append('page', filters.page.toString());
+    if (filters?.page_size) params.append('page_size', filters.page_size.toString());
+
+    const res = await safeFetch(`/admin/team/audit-logs?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { items: [], total: 0, page: 1, page_size: 50, total_pages: 1 };
+  },
+};
+
+export interface AIAnalysisResult {
+  conversation_id: string;
+  ai_summary?: string;
+  detected_intent?: string;
+  detected_sentiment?: string;
+  ai_suggested_replies: string[];
+  updated_priority?: string;
+}
+
+export const aiApi = {
+  async analyzeConversation(conversationId: string): Promise<AIAnalysisResult> {
+    const res = await safeFetch(`/conversations/${conversationId}/ai-analyze`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to analyze conversation');
+  },
+
+  async getInsights(conversationId: string): Promise<AIAnalysisResult> {
+    const res = await safeFetch(`/conversations/${conversationId}/ai-insights`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      conversation_id: conversationId,
+      ai_suggested_replies: [],
+    };
+  },
+};
+
 
 

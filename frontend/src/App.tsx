@@ -7,6 +7,7 @@ import { LoginModal } from './components/LoginModal';
 import { AutomationsManager } from './components/Admin/AutomationsManager';
 import { ExecutiveDashboard } from './components/Admin/ExecutiveDashboard';
 import { CustomerDataHub } from './components/Admin/CustomerDataHub';
+import { TeamGovernance } from './components/Admin/TeamGovernance';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
@@ -14,7 +15,7 @@ import { realtimeService } from './services/websocket';
 export const App: React.FC = () => {
   const { fetchConversations, fetchUnreadSummary, handleRealtimeEvent } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
-  const [activeMainView, setActiveMainView] = useState<'chat' | 'automations' | 'dashboard' | 'database'>('chat');
+  const [activeMainView, setActiveMainView] = useState<'chat' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
 
   useEffect(() => {
     fetchMe();
@@ -64,6 +65,8 @@ export const App: React.FC = () => {
         <ExecutiveDashboard />
       ) : isUserAdmin && activeMainView === 'database' ? (
         <CustomerDataHub />
+      ) : isUserAdmin && activeMainView === 'team' ? (
+        <TeamGovernance />
       ) : (
         /* Main Multi-Pane Chat Workspace */
         <div className="flex-1 flex min-h-0 w-full overflow-hidden relative">

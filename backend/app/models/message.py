@@ -30,6 +30,12 @@ class Message(Base):
     sender_external_id: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True
     )
+    sender_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     message_type: Mapped[MessageTypeEnum] = mapped_column(
         SAEnum(MessageTypeEnum, native_enum=False),
         nullable=False,
@@ -46,6 +52,9 @@ class Message(Base):
 
     conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="messages"
+    )
+    sender_user: Mapped[Optional["User"]] = relationship(
+        "User", viewonly=True
     )
 
     @property

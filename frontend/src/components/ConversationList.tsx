@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, Tag, User, MapPin, Globe } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, Tag, User, MapPin, Globe, AlertTriangle } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
@@ -8,7 +8,7 @@ const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
   low: { label: 'منخفضة', color: 'bg-slate-100 text-slate-600 border-slate-200' },
   normal: { label: 'عادية', color: 'bg-slate-100 text-slate-600 border-slate-200' },
   high: { label: 'عالية', color: 'bg-amber-50 text-amber-700 border-amber-200 font-semibold' },
-  urgent: { label: 'عاجلة', color: 'bg-rose-50 text-rose-700 border-rose-200 font-bold' },
+  urgent: { label: 'عاجلة', color: 'bg-rose-50 text-rose-700 border-rose-200 font-bold animate-pulse' },
 };
 
 const LOCATION_FILTERS = [
@@ -41,6 +41,52 @@ export const ConversationList: React.FC = () => {
       return conv.last_message_text;
     }
     return 'محادثة نشطة';
+  };
+
+  const renderSlaBadge = (conv: any) => {
+    if (!conv.sla_status || conv.sla_status === 'none') return null;
+
+    if (conv.sla_status === 'met') {
+      return (
+        <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+          <CheckCheck className="w-2.5 h-2.5 text-emerald-600" />
+          <span>SLA محقق</span>
+        </span>
+      );
+    }
+
+    if (conv.sla_status === 'breached') {
+      return (
+        <span className="text-[9px] bg-rose-500 text-white border border-rose-600 px-1.5 py-0.5 rounded-full font-bold animate-pulse flex items-center gap-1 shadow-xs">
+          <AlertTriangle className="w-2.5 h-2.5" />
+          <span>تجاوز الـ SLA</span>
+        </span>
+      );
+    }
+
+    if (conv.sla_status === 'pending' && conv.sla_due_at) {
+      const now = new Date().getTime();
+      const due = new Date(conv.sla_due_at).getTime();
+      const diffMins = Math.max(0, Math.ceil((due - now) / 60000));
+
+      if (diffMins <= 0) {
+        return (
+          <span className="text-[9px] bg-rose-500 text-white border border-rose-600 px-1.5 py-0.5 rounded-full font-bold animate-pulse flex items-center gap-1 shadow-xs">
+            <AlertTriangle className="w-2.5 h-2.5" />
+            <span>تجاوز الـ SLA</span>
+          </span>
+        );
+      }
+
+      return (
+        <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+          <Clock className="w-2.5 h-2.5 text-amber-600" />
+          <span>متبقي {diffMins} دقيقة</span>
+        </span>
+      );
+    }
+
+    return null;
   };
 
   const getChannelBadge = (channel: string = 'messenger') => {
@@ -76,6 +122,7 @@ export const ConversationList: React.FC = () => {
       // 3. Status Filter
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
       if (activeFilterTab === 'completed' && conv.status !== 'closed' && conv.status !== 'completed') return false;
+      if (activeFilterTab === 'sla_breached' && conv.sla_status !== 'breached') return false;
 
       // 4. Location Filter
       if (selectedLocation && selectedLocation !== 'ALL') {
@@ -103,6 +150,7 @@ export const ConversationList: React.FC = () => {
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     { id: 'unread', label: 'غير مقروءة', icon: <Clock className="w-3.5 h-3.5" /> },
     { id: 'completed', label: 'مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
+    { id: 'sla_breached', label: 'متأخرة SLA', icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> },
     { id: 'tagged', label: 'التصنيفات', icon: <Tag className="w-3.5 h-3.5" /> },
   ];
 
@@ -258,7 +306,8 @@ export const ConversationList: React.FC = () => {
 
                 {/* Unread badge & tags summary */}
                 <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-200/60">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {renderSlaBadge(conv)}
                     {conv.customer?.tags?.slice(0, 2).map((t) => (
                       <span
                         key={t}

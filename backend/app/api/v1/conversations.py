@@ -5,16 +5,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user, get_optional_current_user
 from app.core.database import get_db
 from app.integrations.meta import MetaAPIError
 from app.models.conversation import Conversation
 from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum, UserRole
+from app.models.user import User
 from app.schemas.conversation import (
     ConversationDetailResponse,
     ConversationResponse,
 )
 from app.schemas.messaging import MessageResponse, SendMessageRequest
 from app.schemas.pagination import PaginatedResponse
+from app.services.audit_service import AuditService
 from app.services.conversation_service import ConversationService
 from app.services.message_service import MessageService
 
@@ -131,6 +134,7 @@ async def list_conversations(
     search: Optional[str] = Query(None, description="Search by subject"),
     brand: Optional[str] = Query(None, description="Filter by brand"),
     location: Optional[str] = Query(None, description="Filter by customer location"),
+    sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
@@ -145,9 +149,49 @@ async def list_conversations(
         search=search,
         brand=brand,
         location=location,
+        sla_status=sla_status,
     )
     items = [ConversationResponse.model_validate(c) for c in items_raw]
     return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.post(
+    "/{conversation_id}/auto-assign",
+    summary="Trigger Smart Auto-Assignment for Conversation",
+)
+async def auto_assign_conversation(
+    conversation_id: uuid.UUID,
+    strategy: str = Query("least_loaded", description="Routing strategy: least_loaded or round_robin"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Trigger smart auto-assignment to route conversation to eligible brand agent."""
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found."
+        )
+
+    from app.services.routing_service import RoutingService
+    assigned_agent = await RoutingService.assign_conversation_smart(db, conv, strategy=strategy)
+    await db.commit()
+
+    if not assigned_agent:
+        return {
+            "status": "unassigned",
+            "message": "No active eligible agents found for brand.",
+            "conversation_id": str(conversation_id),
+            "assigned_agent": None,
+        }
+
+    return {
+        "status": "assigned",
+        "conversation_id": str(conversation_id),
+        "assigned_agent_id": str(assigned_agent.id),
+        "assigned_agent_name": assigned_agent.full_name,
+        "strategy": strategy,
+    }
 
 
 @router.get(
@@ -212,6 +256,7 @@ async def send_outbound_reply(
     conversation_id: uuid.UUID,
     payload: SendMessageRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Send an outbound agent reply message to a conversation.
     Determines provider automatically from conversation metadata."""
@@ -222,6 +267,7 @@ async def send_outbound_reply(
             text=payload.text,
             attachments=payload.attachments,
             tag=payload.meta_tag,
+            sender_user_id=current_user.id if current_user else None,
         )
         return MessageResponse.model_validate(msg)
     except ValueError as exc:
@@ -306,6 +352,7 @@ async def assign_conversation_agent(
     conversation_id: uuid.UUID,
     payload: dict,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Assign or unassign an agent to a conversation."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -314,10 +361,49 @@ async def assign_conversation_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    agent_id = payload.get("agent_id")
+    previous_agent_id = conv.assigned_agent_id
+    raw_agent_id = payload.get("assigned_agent_id") if "assigned_agent_id" in payload else payload.get("agent_id")
+    agent_id = str(raw_agent_id) if raw_agent_id is not None else None
+    reason = payload.get("reason")
+
     conv.assigned_agent_id = agent_id
     await db.commit()
     await db.refresh(conv)
+
+    assigned_to_uuid = None
+    if agent_id:
+        try:
+            assigned_to_uuid = uuid.UUID(agent_id)
+        except ValueError:
+            assigned_to_uuid = None
+
+    assigned_by_uuid = current_user.id if current_user else None
+
+    # Log assignment via AuditService
+    await AuditService.log_assignment(
+        session=db,
+        conversation_id=conversation_id,
+        assigned_by_user_id=assigned_by_uuid,
+        assigned_to_user_id=assigned_to_uuid,
+        previous_agent_id=previous_agent_id,
+        reason=reason,
+    )
+
+    # Broadcast WebSocket event
+    try:
+        from app.api.v1.websockets import ws_manager
+        await ws_manager.broadcast({
+            "type": "CONVERSATION_ASSIGNED",
+            "data": {
+                "conversation_id": str(conversation_id),
+                "assigned_agent_id": agent_id,
+                "assigned_by_user_id": str(assigned_by_uuid) if assigned_by_uuid else None,
+                "reason": reason,
+            }
+        })
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "conversation_id": str(conversation_id),
@@ -363,3 +449,48 @@ async def trigger_immediate_sync():
     from app.services.meta_import_service import meta_import_service
     await meta_import_service.sync_live_conversations()
     return {"status": "ok", "message": "Synchronized with Meta Graph API"}
+
+
+@router.post(
+    "/{conversation_id}/ai-analyze",
+    summary="Trigger AI Conversation Analysis & Insights",
+)
+async def analyze_conversation_ai(
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger AI analysis on a conversation to detect intent, sentiment, summary, and smart replies."""
+    conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+    from app.services.ai_service import AIService
+    result = await AIService.analyze_conversation(session=db, conversation=conv)
+    return result
+
+
+@router.get(
+    "/{conversation_id}/ai-insights",
+    summary="Get AI Insights for Conversation",
+)
+async def get_conversation_ai_insights(
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve existing AI insights (summary, intent, sentiment, smart replies) for a conversation."""
+    conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+    return {
+        "conversation_id": str(conv.id),
+        "ai_summary": conv.ai_summary,
+        "detected_intent": conv.detected_intent,
+        "detected_sentiment": conv.detected_sentiment,
+        "ai_suggested_replies": conv.ai_suggested_replies or [],
+        "priority": conv.priority,
+    }

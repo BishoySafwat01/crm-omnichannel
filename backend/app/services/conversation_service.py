@@ -83,6 +83,7 @@ class ConversationService:
         search: Optional[str] = None,
         brand: Optional[str] = None,
         location: Optional[str] = None,
+        sla_status: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         stmt = select(Conversation).options(selectinload(Conversation.customer))
         count_stmt = select(func.count(Conversation.id))
@@ -102,6 +103,10 @@ class ConversationService:
         if brand and hasattr(Conversation, "brand") and brand.lower() not in ["all", "الكل", "none", ""]:
             stmt = stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
             count_stmt = count_stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
+
+        if sla_status and sla_status.strip():
+            stmt = stmt.where(Conversation.sla_status == sla_status.strip())
+            count_stmt = count_stmt.where(Conversation.sla_status == sla_status.strip())
 
         if customer_id:
             stmt = stmt.where(Conversation.customer_id == customer_id)
@@ -187,6 +192,9 @@ class ConversationService:
                 "last_message_at": conv.last_message_at,
                 "created_at": conv.created_at,
                 "updated_at": conv.updated_at,
+                "sla_due_at": getattr(conv, "sla_due_at", None),
+                "sla_status": getattr(conv, "sla_status", "none") or "none",
+                "first_response_time_seconds": getattr(conv, "first_response_time_seconds", None),
             }
             items.append(item)
 

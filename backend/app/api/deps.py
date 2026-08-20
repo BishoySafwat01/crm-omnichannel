@@ -70,6 +70,17 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(reusable_oauth2),
+) -> Optional[User]:
+    try:
+        return await get_current_user(request=request, db=db, token=token)
+    except HTTPException:
+        return None
+
+
 async def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:

@@ -85,6 +85,13 @@ export interface Conversation {
   last_message_at: string;
   last_customer_message_at?: string;
   created_at: string;
+  sla_due_at?: string;
+  sla_status?: 'none' | 'pending' | 'met' | 'breached';
+  first_response_time_seconds?: number;
+  ai_summary?: string;
+  detected_intent?: string;
+  detected_sentiment?: string;
+  ai_suggested_replies?: string[];
   customer?: Customer;
   metadata_?: Record<string, any>;
   metadata?: Record<string, any>;
@@ -99,7 +106,7 @@ export interface PaginatedResponse<T> {
   next_cursor?: string;
 }
 
-export type FilterTab = 'all' | 'unread' | 'completed' | 'tagged';
+export type FilterTab = 'all' | 'unread' | 'completed' | 'tagged' | 'sla_breached';
 
 export interface TagGroup {
   id: string;

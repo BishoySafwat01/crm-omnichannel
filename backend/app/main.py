@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1.admin.analytics import router as admin_analytics_router
 from app.api.v1.admin.automations import router as admin_automations_router
 from app.api.v1.admin.customers import router as admin_customers_router
+from app.api.v1.admin.team import router as admin_team_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.customers import router as customers_router
@@ -21,7 +22,8 @@ from app.api.v1.respond_io import router as respond_io_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
-from app.core.redis import close_redis_client
+from app.core.database import AsyncSessionLocal
+from app.core.redis import close_redis_client, get_redis_client
 import asyncio
 from app.services.meta_import_service import meta_import_service
 
@@ -36,6 +38,14 @@ async def lifespan(app: FastAPI):
                 await meta_import_service.sync_live_conversations()
             except Exception:
                 pass
+
+            try:
+                from app.services.sla_service import SlaService
+                async with AsyncSessionLocal() as session:
+                    await SlaService.evaluate_overdue_conversations(session)
+            except Exception:
+                pass
+
             await asyncio.sleep(5)
 
     poller_task = asyncio.create_task(poller_loop())
@@ -73,6 +83,7 @@ app.include_router(customers_router, prefix="/api/v1")
 app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
 app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
 app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
+app.include_router(admin_team_router)
 
 
 
@@ -81,7 +92,6 @@ app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(respond_io_router, prefix="/api/v1")
-app.include_router(ws_router)
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(webhooks_router)
 

@@ -144,6 +144,7 @@ class MetaImportService:
             )
             return job
 
+        job_id = job.id
         # 4. Import each conversation and its messages
         for norm_conv in norm_conversations:
             try:
@@ -238,16 +239,19 @@ class MetaImportService:
 
             except Exception as exc:
                 has_errors = True
-                job.failed_items += 1
-                current_logs = list(job.error_log or [])
-                current_logs.append(
-                    {
-                        "conversation_id": norm_conv.external_conversation_id,
-                        "error": MetaImportService._sanitize_error(str(exc)),
-                    }
-                )
-                job.error_log = current_logs
-                await session.commit()
+                await session.rollback()
+                job = await session.get(MigrationJob, job_id)
+                if job:
+                    job.failed_items += 1
+                    current_logs = list(job.error_log or [])
+                    current_logs.append(
+                        {
+                            "conversation_id": norm_conv.external_conversation_id,
+                            "error": MetaImportService._sanitize_error(str(exc)),
+                        }
+                    )
+                    job.error_log = current_logs
+                    await session.commit()
 
         # 5. Finalize MigrationJob Status
         if not has_errors:
@@ -415,12 +419,16 @@ class MetaImportService:
 
         for entry in entries:
             entry_page_id = str(entry.get("id", ""))
+            if expected_page_id and expected_page_id.strip() and entry_page_id and entry_page_id.strip() != expected_page_id.strip():
+                logger.warning("Meta webhook: ignoring entry for page_id '%s' (expected '%s')", entry_page_id, expected_page_id)
+                continue
 
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
             items = []
             channel_hint = ChannelEnum.MESSENGER
             if obj_type == "instagram" or "instagram" in str(entry):
                 channel_hint = ChannelEnum.INSTAGRAM
+
 
             if "messaging" in entry and isinstance(entry["messaging"], list):
                 items.extend(entry["messaging"])
@@ -671,8 +679,34 @@ class MetaImportService:
 
                 await session.commit()
 
-                # Trigger Custom Automation Engine safely for inbound customer messages
+                # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for inbound customer messages
                 if not is_echo and sender_type_str == "customer":
+                    try:
+                        from app.services.customer_timeline_service import CustomerTimelineService
+                        chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+                        await CustomerTimelineService.record_event(
+                            session=session,
+                            customer_id=customer.id,
+                            event_type="message.inbound",
+                            channel=chan_str,
+                            summary=f"رسالة واردة عبر {chan_str}",
+                            details={
+                                "text": norm_event.text[:150] if norm_event.text else "مرفق وسائط",
+                                "message_id": str(msg.id),
+                            },
+                        )
+                    except Exception as tl_err:
+                        logger.error("[Customer 360 Timeline] Error logging inbound message: %s", tl_err)
+
+                    try:
+                        from app.services.sla_service import SlaService
+                        from app.services.routing_service import RoutingService
+
+                        SlaService.start_or_update_sla(conv, norm_event.created_at or datetime.now(timezone.utc))
+                        await RoutingService.assign_conversation_smart(session, conv)
+                    except Exception as sla_route_err:
+                        logger.error(f"[SLA & Routing] Error processing inbound customer message: {sla_route_err}", exc_info=True)
+
                     try:
                         from app.services.automation_service import AutomationService
                         await AutomationService.evaluate_inbound_message(
@@ -849,6 +883,29 @@ class MetaImportService:
                                 )
                                 session.add(new_msg)
                                 await session.flush()
+
+                                # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for newly polled customer messages
+                                if new_msg.sender_type == SenderTypeEnum.CUSTOMER:
+                                    try:
+                                        from app.services.sla_service import SlaService
+                                        from app.services.routing_service import RoutingService
+
+                                        SlaService.start_or_update_sla(conversation, created_dt or datetime.now(timezone.utc))
+                                        await RoutingService.assign_conversation_smart(session, conversation)
+                                    except Exception as sla_route_err:
+                                        logger.error("[SLA & Routing] Poller message processing error: %s", sla_route_err, exc_info=True)
+
+                                if new_msg.sender_type == SenderTypeEnum.CUSTOMER and new_msg.text:
+                                    try:
+                                        from app.services.automation_service import AutomationService
+                                        await AutomationService.evaluate_inbound_message(
+                                            session=session,
+                                            conversation=conversation,
+                                            customer=customer,
+                                            text=new_msg.text,
+                                        )
+                                    except Exception as auto_err:
+                                        logger.error("[Automation Engine] Poller message evaluation error: %s", auto_err, exc_info=True)
 
                                 # Update Preview text
                                 preview = msg_text

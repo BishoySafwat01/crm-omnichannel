@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../store/useCrmStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
-  Sparkles, Copy, Send
+  Sparkles, Copy, Send, History, FileText, Trash2, Clock, MessageSquare, Tag, AlertTriangle
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
+import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
 
 export const CustomerProfileSidebar: React.FC = () => {
   const { conversations, activeConversationId, updateCustomerProfile, setDraftText } = useCrmStore();
@@ -24,7 +25,8 @@ export const CustomerProfileSidebar: React.FC = () => {
     updated_at: '',
   } : null);
 
-  // Inline edit state
+  // Tab & Edit States
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'profile' | 'timeline' | 'notes'>('profile');
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     display_name: '',
@@ -33,6 +35,13 @@ export const CustomerProfileSidebar: React.FC = () => {
     location: '',
   });
   const [copiedScriptId, setCopiedScriptId] = useState<string | null>(null);
+
+  // Customer 360 Notes & Timeline State
+  const [notes, setNotes] = useState<CustomerNote[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [timelineEvents, setTimelineEvents] = useState<CustomerTimelineEvent[]>([]);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
 
   useEffect(() => {
     if (customer) {
@@ -43,8 +52,62 @@ export const CustomerProfileSidebar: React.FC = () => {
         location: customer.location || '',
       });
       setIsEditing(false);
+
+      if (customer.id) {
+        loadNotes(customer.id);
+        loadTimeline(customer.id);
+      }
     }
   }, [customer?.id, customer?.display_name, customer?.phone, customer?.email, customer?.location]);
+
+  const loadNotes = async (custId: string) => {
+    try {
+      const data = await customerApi.getNotes(custId);
+      setNotes(data || []);
+    } catch (e) {
+      console.error('Failed to load customer notes:', e);
+    }
+  };
+
+  const loadTimeline = async (custId: string) => {
+    setIsLoadingTimeline(true);
+    try {
+      const data = await customerApi.getTimeline(custId);
+      setTimelineEvents(data?.items || []);
+    } catch (e) {
+      console.error('Failed to load customer timeline:', e);
+    } finally {
+      setIsLoadingTimeline(false);
+    }
+  };
+
+  const handleAddNoteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNoteText.trim() || !customer?.id || isSubmittingNote) return;
+
+    setIsSubmittingNote(true);
+    try {
+      await customerApi.addNote(customer.id, newNoteText.trim());
+      setNewNoteText('');
+      await loadNotes(customer.id);
+      await loadTimeline(customer.id);
+    } catch (e) {
+      alert('تعذر إضافة الملاحظة');
+    } finally {
+      setIsSubmittingNote(false);
+    }
+  };
+
+  const handleDeleteNoteClick = async (noteId: string) => {
+    if (!customer?.id || !confirm('هل أنت تأكد من حذف هذه الملاحظة؟')) return;
+    try {
+      await customerApi.deleteNote(customer.id, noteId);
+      await loadNotes(customer.id);
+      await loadTimeline(customer.id);
+    } catch (e) {
+      alert('تعذر حذف الملاحظة');
+    }
+  };
 
   if (!customer || !activeConversation) {
     return (
@@ -77,7 +140,6 @@ export const CustomerProfileSidebar: React.FC = () => {
   const currentTier = customer.tier || 'درجة أولى';
   const currentStage = customer.stage || 'جديد';
 
-  // Dynamic scripts filtered by current selection
   const relevantScripts = SALES_SCRIPTS.filter(
     (s) => s.filterKey === currentSkin || s.filterKey === currentStage || s.filterKey === currentTier
   );
@@ -90,6 +152,12 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   const handleInjectScript = (script: SalesScript) => {
     setDraftText(script.text);
+  };
+
+  const formatEventTime = (isoStr: string) => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    return `${d.toLocaleDateString('ar-EG')} ${d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   return (
@@ -129,8 +197,148 @@ export const CustomerProfileSidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. SCROLLABLE BODY: Contact Details, Classifications & Dynamic Scripts */}
+      {/* Tab Selector Bar */}
+      <div className="flex items-center justify-around bg-slate-100/90 border-b border-slate-200/80 p-1 text-[11px] font-bold">
+        <button
+          onClick={() => setActiveSidebarTab('profile')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
+            activeSidebarTab === 'profile'
+              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <User className="w-3 h-3 text-teal-600" />
+          <span>الملف</span>
+        </button>
+        <button
+          onClick={() => setActiveSidebarTab('timeline')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
+            activeSidebarTab === 'timeline'
+              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <History className="w-3 h-3 text-teal-600" />
+          <span>التايم لاين</span>
+        </button>
+        <button
+          onClick={() => setActiveSidebarTab('notes')}
+          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
+            activeSidebarTab === 'notes'
+              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <FileText className="w-3 h-3 text-teal-600" />
+          <span>الملاحظات ({notes.length})</span>
+        </button>
+      </div>
+
+      {/* 2. SCROLLABLE BODY */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+        {activeSidebarTab === 'timeline' ? (
+          /* Customer 360 Timeline Feed */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <History className="w-4 h-4 text-teal-600" /> سجّل التفاعلات (360 Timeline)
+              </span>
+              <button
+                onClick={() => customer.id && loadTimeline(customer.id)}
+                className="text-[10px] text-teal-700 font-bold hover:underline"
+              >
+                تحديث
+              </button>
+            </div>
+
+            {isLoadingTimeline ? (
+              <div className="p-6 text-center text-xs text-slate-400">جاري تحميل التايم لاين...</div>
+            ) : timelineEvents.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400">لا توجد أحداث سابقة في التايم لاين</div>
+            ) : (
+              <div className="relative border-r-2 border-slate-200 pr-3 space-y-3 my-2">
+                {timelineEvents.map((evt) => (
+                  <div key={evt.id} className="relative group">
+                    <span className="absolute -right-4.5 top-1 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-white" />
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/60">
+                          {evt.channel}
+                        </span>
+                        <span className="text-slate-400">{formatEventTime(evt.created_at)}</span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-900">{evt.summary}</p>
+                      {evt.details?.text && (
+                        <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100">
+                          "{evt.details.text}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : activeSidebarTab === 'notes' ? (
+          /* Internal Agent Notes Tab */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-teal-600" /> الملاحظات الداخلية للفريق
+              </span>
+            </div>
+
+            {/* Add Note Form */}
+            <form onSubmit={handleAddNoteSubmit} className="space-y-2">
+              <textarea
+                value={newNoteText}
+                onChange={(e) => setNewNoteText(e.target.value)}
+                placeholder="أضف ملاحظة خاصة لموظفي الدعم..."
+                rows={2}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!newNoteText.trim() || isSubmittingNote}
+                className="w-full bg-teal-600 text-white text-xs font-bold py-1.5 px-3 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition shadow-xs flex items-center justify-center gap-1"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>إضافة ملاحظة</span>
+              </button>
+            </form>
+
+            {/* Notes List */}
+            <div className="space-y-2 pt-2">
+              {notes.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">لا توجد ملاحظات داخلية مضافة بعد</div>
+              ) : (
+                notes.map((n) => (
+                  <div key={n.id} className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {n.author_name || 'موظف الدعم'}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">{formatEventTime(n.created_at)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteNoteClick(n.id)}
+                          className="text-rose-500 hover:text-rose-700 transition"
+                          title="حذف الملاحظة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-800 leading-relaxed font-medium">{n.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Profile Details Tab */
+          <>
         {/* Contact Details with Click-to-Edit */}
         <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 space-y-2.5 shadow-xs">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -331,6 +539,8 @@ export const CustomerProfileSidebar: React.FC = () => {
             ))}
           </div>
         </div>
+        </>
+        )}
       </div>
     </aside>
   );

@@ -96,3 +96,37 @@ class CustomerStatsResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class CustomerNoteCreate(BaseModel):
+    text: str
+
+
+class CustomerNoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    author_user_id: Optional[uuid.UUID] = None
+    author_name: Optional[str] = "موظف الدعم"
+    text: str
+    created_at: datetime
+
+
+class CustomerTimelineEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    event_type: str
+    channel: str = "system"
+    summary: str
+    details: Optional[dict[str, Any]] = None
+    created_at: datetime
+
+
+class CustomerTimelineListResponse(BaseModel):
+    items: list[CustomerTimelineEventResponse] = []
+    total: int = 0
+    page: int = 1
+    page_size: int = 30
+

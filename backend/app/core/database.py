@@ -9,11 +9,18 @@ class Base(DeclarativeBase):
     pass
 
 
+import os
+from sqlalchemy.pool import NullPool
+
+pool_kwargs = {"pool_pre_ping": True}
+if os.environ.get("PYTEST_CURRENT_TEST") or settings.ENVIRONMENT == "testing":
+    pool_kwargs["poolclass"] = NullPool
+
 engine = create_async_engine(
     settings.async_database_url,
     echo=False,
     future=True,
-    pool_pre_ping=True,
+    **pool_kwargs
 )
 
 AsyncSessionLocal = async_sessionmaker(

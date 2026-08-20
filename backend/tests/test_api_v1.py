@@ -302,10 +302,17 @@ async def test_outbound_provider_rejection_and_failed_send_no_db_record():
         session.add(cust)
         await session.commit()
 
-        # Unsupported channel conversation (Meta + Instagram)
+        # Unsupported channel conversation (Respond.io + Instagram)
+        ident_un = CustomerIdentity(
+            customer_id=cust.id,
+            provider=ProviderEnum.RESPOND_IO,
+            channel=ChannelEnum.INSTAGRAM,
+            external_user_id="user_unsupported",
+        )
+        session.add(ident_un)
         conv_unsupported = Conversation(
             customer_id=cust.id,
-            provider=ProviderEnum.META,
+            provider=ProviderEnum.RESPOND_IO,
             channel=ChannelEnum.INSTAGRAM,
             external_conversation_id="conv_unsupported_insta",
         )

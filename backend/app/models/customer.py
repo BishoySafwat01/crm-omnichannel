@@ -42,6 +42,12 @@ class Customer(Base):
     conversations: Mapped[List["Conversation"]] = relationship(
         "Conversation", back_populates="customer", cascade="all, delete-orphan"
     )
+    notes: Mapped[List["CustomerNote"]] = relationship(
+        "CustomerNote", back_populates="customer", cascade="all, delete-orphan"
+    )
+    timeline_events: Mapped[List["CustomerTimelineEvent"]] = relationship(
+        "CustomerTimelineEvent", back_populates="customer", cascade="all, delete-orphan"
+    )
 
 
 class CustomerIdentity(Base):

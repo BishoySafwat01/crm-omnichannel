@@ -49,10 +49,18 @@ async def test_outbound_unsupported_provider_and_channel_rejected():
         session.add(cust)
         await session.commit()
 
-        # Test unsupported channel (e.g. META + INSTAGRAM)
+        ident = CustomerIdentity(
+            customer_id=cust.id,
+            provider=ProviderEnum.RESPOND_IO,
+            channel=ChannelEnum.INSTAGRAM,
+            external_user_id="ig_123",
+        )
+        session.add(ident)
+
+        # Test unsupported channel (e.g. RESPOND_IO + INSTAGRAM)
         conv_insta = Conversation(
             customer_id=cust.id,
-            provider=ProviderEnum.META,
+            provider=ProviderEnum.RESPOND_IO,
             channel=ChannelEnum.INSTAGRAM,
             external_conversation_id="conv_insta_123",
         )

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, CheckCircle, Settings, Layers, Wifi, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database } from 'lucide-react';
+import { MessageSquare, CheckCircle, Settings, Layers, Wifi, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users } from 'lucide-react';
 import { MOCK_BRANDS } from '../services/api';
 import { useCrmStore, ChannelFilterType } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'automations' | 'dashboard' | 'database';
-  setActiveMainView?: (view: 'chat' | 'automations' | 'dashboard' | 'database') => void;
+  activeMainView?: 'chat' | 'automations' | 'dashboard' | 'database' | 'team';
+  setActiveMainView?: (view: 'chat' | 'automations' | 'dashboard' | 'database' | 'team') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
@@ -136,6 +136,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               >
                 <Database className="w-3.5 h-3.5" />
                 <span>قاعدة البيانات</span>
+              </button>
+              <button
+                onClick={() => setActiveMainView('team')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  activeMainView === 'team'
+                    ? 'bg-gradient-to-r from-teal-600 to-teal-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>إدارة الفريق</span>
               </button>
             </div>
           )}

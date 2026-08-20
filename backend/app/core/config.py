@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Respond.io Integration Settings
     RESPOND_IO_API_TOKEN: str | None = None
     RESPOND_IO_API_BASE_URL: str = "https://api.respond.io/v2"
-    RESPOND_IO_WEBHOOK_SECRET: str | None = None
+    RESPOND_IO_WEBHOOK_SECRET: str | None = ""
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

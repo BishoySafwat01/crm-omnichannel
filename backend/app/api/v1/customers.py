@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -120,6 +120,7 @@ async def update_customer(
             detail=f"Customer {customer_id} not found.",
         )
 
+    old_stage = customer.stage
     update_data = payload.model_dump(exclude_unset=True)
     for field, val in update_data.items():
         if val is not None:
@@ -127,4 +128,132 @@ async def update_customer(
 
     await db.commit()
     await db.refresh(customer)
+
+    # Log stage change to timeline if stage updated
+    if payload.stage and payload.stage != old_stage:
+        try:
+            from app.services.customer_timeline_service import CustomerTimelineService
+            await CustomerTimelineService.record_event(
+                session=db,
+                customer_id=customer_id,
+                event_type="stage.changed",
+                channel="system",
+                summary=f"تغيير حالة العميل إلى {payload.stage}",
+                details={"old_stage": old_stage, "new_stage": payload.stage},
+            )
+            await db.commit()
+        except Exception:
+            pass
+
     return CustomerResponse.model_validate(customer)
+
+
+@router.get(
+    "/{customer_id}/timeline",
+    summary="Get Customer 360 Timeline Feed",
+)
+async def get_customer_timeline(
+    customer_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve paginated Customer 360 timeline events ordered by created_at DESC."""
+    from app.services.customer_timeline_service import CustomerTimelineService
+    return await CustomerTimelineService.get_customer_timeline(
+        session=db, customer_id=customer_id, page=page, page_size=page_size
+    )
+
+
+@router.get(
+    "/{customer_id}/notes",
+    summary="Get Customer Internal Notes",
+)
+async def get_customer_notes(
+    customer_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve all internal notes for a customer."""
+    from app.services.customer_timeline_service import CustomerTimelineService
+    return await CustomerTimelineService.get_customer_notes(session=db, customer_id=customer_id)
+
+
+@router.post(
+    "/{customer_id}/notes",
+    summary="Add Customer Internal Note",
+)
+async def add_customer_note(
+    customer_id: uuid.UUID,
+    payload: dict,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Add an internal agent note for a customer."""
+    text = payload.get("text", "")
+    if not text or not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Note text is required."
+        )
+
+    user_id = None
+    if request:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            try:
+                from app.api.deps import get_current_user
+                user = await get_current_user(request=request, db=db)
+                user_id = user.id
+            except Exception:
+                pass
+
+    from app.services.customer_timeline_service import CustomerTimelineService
+    note = await CustomerTimelineService.add_note(
+        session=db, customer_id=customer_id, author_user_id=user_id, text=text
+    )
+    return {
+        "status": "success",
+        "id": str(note.id),
+        "customer_id": str(customer_id),
+        "text": note.text,
+        "created_at": note.created_at.isoformat() if note.created_at else None,
+    }
+
+
+@router.delete(
+    "/{customer_id}/notes/{note_id}",
+    summary="Delete Customer Internal Note",
+)
+async def delete_customer_note(
+    customer_id: uuid.UUID,
+    note_id: uuid.UUID,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an internal note."""
+    user = None
+    if request:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            try:
+                from app.api.deps import get_current_user
+                user = await get_current_user(request=request, db=db)
+            except Exception:
+                pass
+
+    from app.services.customer_timeline_service import CustomerTimelineService
+    try:
+        deleted = await CustomerTimelineService.delete_note(
+            session=db, customer_id=customer_id, note_id=note_id, requesting_user=user
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Note not found."
+            )
+        return {"status": "success", "deleted_note_id": str(note_id)}
+    except PermissionError as pe:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(pe)
+        )

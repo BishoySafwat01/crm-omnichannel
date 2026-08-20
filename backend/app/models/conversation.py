@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -42,6 +42,15 @@ class Conversation(Base):
     subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     unread_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     last_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    sla_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    sla_status: Mapped[str] = mapped_column(String(50), default="none", server_default="none", nullable=False, index=True)
+    first_response_time_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    detected_intent: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    detected_sentiment: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    ai_suggested_replies: Mapped[List[str]] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
 
 
     created_at: Mapped[datetime] = mapped_column(

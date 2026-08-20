@@ -104,6 +104,7 @@ class MessageService:
         tag: Optional[str] = None,
         sender_external_id: Optional[str] = None,
         provider_adapter: Optional[Any] = None,
+        sender_user_id: Optional[uuid.UUID] = None,
     ) -> Message:
         clean_text = (text or "").strip()
         if not clean_text and not attachments:
@@ -133,6 +134,11 @@ class MessageService:
             adapter = provider_adapter or MetaProvider()
             default_sender = settings.META_PAGE_ID
         elif conv.provider == ProviderEnum.RESPOND_IO:
+            valid_channels = [ChannelEnum.WHATSAPP, ChannelEnum.MESSENGER]
+            if conv.channel not in valid_channels:
+                raise ValueError(
+                    f"Outbound messaging not supported for provider '{conv.provider.value}' and channel '{conv.channel.value}'."
+                )
             adapter = provider_adapter or RespondIoProvider()
             default_sender = "respond_io_agent"
         else:
@@ -221,6 +227,24 @@ class MessageService:
                 attachment_type=att_type,
                 tag=tag,
             )
+        elif provider_adapter is not None:
+            if tag:
+                try:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                        tag=tag,
+                    )
+                except TypeError:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                    )
+            else:
+                outbound_res = await adapter.send_outbound_message(
+                    recipient_external_id=clean_recipient,
+                    text=clean_text,
+                )
         elif conv.channel == ChannelEnum.INSTAGRAM:
             from app.services.meta_instagram_service import MetaInstagramService
             outbound_res = await MetaInstagramService.send_text_message(
@@ -228,12 +252,20 @@ class MessageService:
                 text=clean_text,
             )
         elif conv.channel == ChannelEnum.WHATSAPP:
-            from app.services.meta_whatsapp_outbound_service import MetaWhatsAppOutboundService
             recipient_phone = (conv.customer.phone if conv.customer else None) or clean_recipient
-            outbound_res = await MetaWhatsAppOutboundService.send_text_message(
-                recipient_phone=recipient_phone,
-                text=clean_text,
-            )
+            try:
+                from app.integrations.whatsapp_cloud_adapter import whatsapp_cloud_adapter
+                outbound_res = await whatsapp_cloud_adapter.send_text_message(
+                    recipient_phone=recipient_phone,
+                    text=clean_text,
+                )
+            except Exception as wa_err:
+                logger.warning("[WhatsApp Dispatch] Falling back to MetaWhatsAppOutboundService: %s", wa_err)
+                from app.services.meta_whatsapp_outbound_service import MetaWhatsAppOutboundService
+                outbound_res = await MetaWhatsAppOutboundService.send_text_message(
+                    recipient_phone=recipient_phone,
+                    text=clean_text,
+                )
         else:
             if tag:
                 try:
@@ -296,6 +328,7 @@ class MessageService:
             external_message_id=ext_msg_id,
             sender_type=SenderTypeEnum.AGENT,
             sender_external_id=agent_id,
+            sender_user_id=sender_user_id,
             message_type=msg_type,
             text=db_text,
             metadata_=metadata_dict,
@@ -303,6 +336,32 @@ class MessageService:
         )
         session.add(new_message)
         conv.last_message_at = now_utc
+
+        # Record agent response for SLA tracking
+        try:
+            from app.services.sla_service import SlaService
+            SlaService.record_first_response(conv, now_utc)
+        except Exception as sla_err:
+            logger.error("[SLA Engine] Error recording first response: %s", sla_err)
+
+        # Record Customer 360 Timeline event
+        if conv.customer_id:
+            try:
+                from app.services.customer_timeline_service import CustomerTimelineService
+                chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+                await CustomerTimelineService.record_event(
+                    session=session,
+                    customer_id=conv.customer_id,
+                    event_type="message.outbound",
+                    channel=chan_str,
+                    summary=f"رد موظف عبر {chan_str}",
+                    details={
+                        "text": db_text[:150] if db_text else "مرفق وسائط",
+                        "sender_user_id": str(sender_user_id) if sender_user_id else None,
+                    },
+                )
+            except Exception as tl_err:
+                logger.error("[Customer 360 Timeline] Error logging outbound message: %s", tl_err)
 
         # Agent Dynamic Location Override Hook
         updated_loc = None

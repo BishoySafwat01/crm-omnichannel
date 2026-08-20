@@ -106,16 +106,19 @@ class RespondIoImportService:
                 await session.commit()
             except Exception as exc:
                 has_errors = True
-                job.failed_items += 1
-                current_logs = list(job.error_log or [])
-                current_logs.append(
-                    {
-                        "contact_id": norm_c.external_user_id,
-                        "error": RespondIoImportService._sanitize_error(str(exc)),
-                    }
-                )
-                job.error_log = current_logs
-                await session.commit()
+                await session.rollback()
+                job = await session.get(MigrationJob, job.id)
+                if job:
+                    job.failed_items += 1
+                    current_logs = list(job.error_log or [])
+                    current_logs.append(
+                        {
+                            "contact_id": norm_c.external_user_id,
+                            "error": RespondIoImportService._sanitize_error(str(exc)),
+                        }
+                    )
+                    job.error_log = current_logs
+                    await session.commit()
 
         # 5. Finalize MigrationJob Status
         if not has_errors:

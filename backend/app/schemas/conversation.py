@@ -49,6 +49,13 @@ class ConversationResponse(BaseModel):
     last_message_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    sla_due_at: Optional[datetime] = None
+    sla_status: str = "none"
+    first_response_time_seconds: Optional[int] = None
+    ai_summary: Optional[str] = None
+    detected_intent: Optional[str] = None
+    detected_sentiment: Optional[str] = None
+    ai_suggested_replies: list[str] = []
 
 
 class ConversationDetailResponse(ConversationResponse):
