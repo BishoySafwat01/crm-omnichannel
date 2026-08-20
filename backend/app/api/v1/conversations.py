@@ -1,11 +1,14 @@
+from datetime import datetime, timezone
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.integrations.meta import MetaAPIError
-from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum
+from app.models.conversation import Conversation
+from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum, UserRole
 from app.schemas.conversation import (
     ConversationDetailResponse,
     ConversationResponse,
@@ -19,10 +22,103 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 @router.get(
+    "/unread-summary",
+    summary="Get Aggregated Unread Counts Grouped by Channels and Brands",
+)
+async def get_unread_summary(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return total, per-channel, and per-brand unread message counts, scoped to caller's authorized brands."""
+    user = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        try:
+            from app.api.deps import get_current_user
+            user = await get_current_user(request=request, db=db)
+        except Exception:
+            pass
+
+    stmt = select(Conversation)
+    res = await db.execute(stmt)
+    all_convs = res.scalars().all()
+
+    total_unread = 0
+    channels_map = {"all": 0, "messenger": 0, "instagram": 0, "whatsapp": 0}
+    brands_map = {}
+
+    for conv in all_convs:
+        conv_brand = getattr(conv, "brand", "LAVVA") or "LAVVA"
+        if user:
+            role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+            if role_val != UserRole.ADMIN.value:
+                user_brands = user.brand_access or []
+                if "ALL" not in user_brands and "الكل" not in user_brands and conv_brand not in user_brands:
+                    continue
+
+        cnt = getattr(conv, "unread_count", 0) or 0
+        total_unread += cnt
+
+        ch = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)).lower()
+        if ch in channels_map:
+            channels_map[ch] += cnt
+
+        brands_map[conv_brand] = brands_map.get(conv_brand, 0) + cnt
+
+    channels_map["all"] = total_unread
+
+    return {
+        "total_unread": total_unread,
+        "channels": channels_map,
+        "brands": brands_map,
+    }
+
+
+@router.post(
+    "/{conversation_id}/read",
+    summary="Mark Conversation as Read",
+)
+async def mark_conversation_read(
+    conversation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset unread count to 0 and set last_read_at timestamp to now."""
+    conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    conv.unread_count = 0
+    conv.last_read_at = now_utc
+
+    await db.commit()
+
+    try:
+        from app.api.v1.ws import manager
+        await manager.broadcast({
+            "type": "CONVERSATION_READ",
+            "conversation_id": str(conversation_id),
+            "unread_count": 0,
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "conversation_id": str(conversation_id),
+        "unread_count": 0,
+    }
+
+
+@router.get(
     "",
     response_model=PaginatedResponse[ConversationResponse],
     summary="List Normalized Conversations",
 )
+
 async def list_conversations(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),

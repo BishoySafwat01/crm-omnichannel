@@ -3,6 +3,15 @@ import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm
 const API_BASE = '/api/v1';
 const FALLBACK_API_BASE = 'http://localhost:8000/api/v1';
 
+export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const headers: Record<string, string> = { ...customHeaders };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 export const getConversationsDirect = async (brand_id?: string): Promise<any> => {
   const query = (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل')
     ? `?brand=${encodeURIComponent(brand_id)}`
@@ -14,11 +23,13 @@ export const getConversationsDirect = async (brand_id?: string): Promise<any> =>
     `http://127.0.0.1:8000/api/v1/conversations${query}`
   ];
 
+  const headers = getAuthHeaders({ 'Accept': 'application/json' });
+
   for (const url of urls) {
     try {
       const res = await fetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' }
+        headers,
       });
       if (res.ok) {
         const data = await res.json();
@@ -39,11 +50,13 @@ export const getMessagesDirect = async (conversationId: string): Promise<any> =>
     `http://127.0.0.1:8000/api/v1/conversations/${conversationId}/messages?page_size=200&order=asc`
   ];
 
+  const headers = getAuthHeaders({ 'Accept': 'application/json' });
+
   for (const url of urls) {
     try {
       const res = await fetch(url, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' }
+        headers,
       });
       if (res.ok) {
         return await res.json();
@@ -56,15 +69,45 @@ export const getMessagesDirect = async (conversationId: string): Promise<any> =>
 };
 
 async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = getAuthHeaders((init?.headers as Record<string, string>) || {});
+  const reqInit = { ...init, headers };
+
   try {
-    const res = await fetch(`${API_BASE}${path}`, init);
+    const res = await fetch(`${API_BASE}${path}`, reqInit);
     if (res.ok) return res;
     console.warn(`Primary fetch ${API_BASE}${path} returned HTTP ${res.status}, trying fallback...`);
   } catch (err) {
     console.warn(`Primary fetch ${API_BASE}${path} failed, trying fallback:`, err);
   }
-  return await fetch(`${FALLBACK_API_BASE}${path}`, init);
+  return await fetch(`${FALLBACK_API_BASE}${path}`, reqInit);
 }
+
+export const getUnreadSummaryDirect = async (): Promise<any> => {
+  try {
+    const res = await safeFetch('/conversations/unread-summary', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' })
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn('[API] getUnreadSummaryDirect error:', e);
+  }
+  return { total_unread: 0, channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 }, brands: {} };
+};
+
+export const markConversationReadDirect = async (conversationId: string): Promise<boolean> => {
+  try {
+    const res = await safeFetch(`/conversations/${conversationId}/read`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+    });
+    return res ? res.ok : false;
+  } catch (e) {
+    return false;
+  }
+};
 
 export const MOCK_BRANDS = [
   { id: 'all', name: 'الكل', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
@@ -243,3 +286,283 @@ export const apiService = {
     return null;
   },
 };
+
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  brand_id?: string | null;
+  channels: string[];
+  trigger_type: string;
+  match_type: string;
+  keywords: string[];
+  response_text: string;
+  response_media_url?: string | null;
+  cooldown_minutes: number;
+  is_active: boolean;
+  created_by?: string | null;
+  created_at: string;
+}
+
+export interface AutomationExecutionLog {
+  id: string;
+  rule_id: string;
+  conversation_id: string;
+  customer_id: string;
+  executed_at: string;
+  rule_name?: string | null;
+}
+
+export const automationApi = {
+  async listRules(): Promise<AutomationRule[]> {
+    const res = await safeFetch('/admin/automations', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return [];
+  },
+
+  async createRule(payload: Partial<AutomationRule>): Promise<AutomationRule> {
+    const res = await safeFetch('/admin/automations', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في إنشاء قاعدة الأتمتة' }));
+      throw new Error(err?.detail || 'فشل في إنشاء قاعدة الأتمتة');
+    }
+    return await res.json();
+  },
+
+  async updateRule(id: string, payload: Partial<AutomationRule>): Promise<AutomationRule> {
+    const res = await safeFetch(`/admin/automations/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث قاعدة الأتمتة' }));
+      throw new Error(err?.detail || 'فشل في تحديث قاعدة الأتمتة');
+    }
+    return await res.json();
+  },
+
+  async deleteRule(id: string): Promise<boolean> {
+    const res = await safeFetch(`/admin/automations/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return res ? res.ok : false;
+  },
+
+  async listLogs(): Promise<AutomationExecutionLog[]> {
+    const res = await safeFetch('/admin/automations/logs', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return [];
+  },
+};
+
+export interface AnalyticsOverview {
+  total_conversations: number;
+  unresolved_conversations: number;
+  total_inbound_messages: number;
+  total_outbound_messages: number;
+  automation_resolutions: number;
+  automation_resolution_rate: number;
+}
+
+export interface ChannelItem {
+  channel: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ChannelDistribution {
+  total: number;
+  channels: ChannelItem[];
+}
+
+export interface BrandItem {
+  brand: string;
+  total_conversations: number;
+  active_unread: number;
+  total_messages: number;
+}
+
+export interface BrandVolume {
+  brands: BrandItem[];
+}
+
+export interface HourItem {
+  hour: number;
+  message_count: number;
+}
+
+export interface PeakHours {
+  hours: HourItem[];
+  peak_hour: number;
+  peak_count: number;
+}
+
+export interface SlaMetrics {
+  avg_first_response_minutes: number;
+  within_sla_count: number;
+  total_evaluated: number;
+  sla_compliance_rate: number;
+}
+
+export const analyticsApi = {
+  async getOverview(brand?: string, days: number = 30): Promise<AnalyticsOverview> {
+    const params = new URLSearchParams({ days: days.toString() });
+    if (brand && brand !== 'all') params.append('brand', brand);
+    const res = await safeFetch(`/admin/analytics/overview?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      total_conversations: 0,
+      unresolved_conversations: 0,
+      total_inbound_messages: 0,
+      total_outbound_messages: 0,
+      automation_resolutions: 0,
+      automation_resolution_rate: 0,
+    };
+  },
+
+  async getChannels(brand?: string): Promise<ChannelDistribution> {
+    const params = new URLSearchParams();
+    if (brand && brand !== 'all') params.append('brand', brand);
+    const res = await safeFetch(`/admin/analytics/channels?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { total: 0, channels: [] };
+  },
+
+  async getBrands(): Promise<BrandVolume> {
+    const res = await safeFetch('/admin/analytics/brands', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { brands: [] };
+  },
+
+  async getPeakHours(brand?: string, days: number = 30): Promise<PeakHours> {
+    const params = new URLSearchParams({ days: days.toString() });
+    if (brand && brand !== 'all') params.append('brand', brand);
+    const res = await safeFetch(`/admin/analytics/peak-hours?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { hours: [], peak_hour: 0, peak_count: 0 };
+  },
+
+  async getSla(brand?: string): Promise<SlaMetrics> {
+    const params = new URLSearchParams();
+    if (brand && brand !== 'all') params.append('brand', brand);
+    const res = await safeFetch(`/admin/analytics/sla?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      avg_first_response_minutes: 0,
+      within_sla_count: 0,
+      total_evaluated: 0,
+      sla_compliance_rate: 0,
+    };
+  },
+};
+
+export interface AdminCustomerList {
+  items: Customer[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface CustomerStats {
+  total_customers: number;
+  stages: { stage: string; count: number }[];
+  tiers: { tier: string; count: number }[];
+}
+
+export const adminCustomerApi = {
+  async listCustomers(filters: {
+    query?: string;
+    brand?: string;
+    tier?: string;
+    skin_type?: string;
+    stage?: string;
+    country?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<AdminCustomerList> {
+    const params = new URLSearchParams();
+    if (filters.query) params.append('query', filters.query);
+    if (filters.brand && filters.brand !== 'all') params.append('brand', filters.brand);
+    if (filters.tier && filters.tier !== 'all') params.append('tier', filters.tier);
+    if (filters.skin_type && filters.skin_type !== 'all') params.append('skin_type', filters.skin_type);
+    if (filters.stage && filters.stage !== 'all') params.append('stage', filters.stage);
+    if (filters.country && filters.country !== 'all') params.append('country', filters.country);
+    if (filters.page) params.append('page', filters.page.toString());
+    if (filters.page_size) params.append('page_size', filters.page_size.toString());
+
+    const res = await safeFetch(`/admin/customers?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { items: [], total: 0, page: 1, page_size: 50, total_pages: 1 };
+  },
+
+  async downloadExportCsv(filters: { brand?: string; stage?: string; tier?: string }): Promise<void> {
+    const params = new URLSearchParams();
+    if (filters.brand && filters.brand !== 'all') params.append('brand', filters.brand);
+    if (filters.stage && filters.stage !== 'all') params.append('stage', filters.stage);
+    if (filters.tier && filters.tier !== 'all') params.append('tier', filters.tier);
+
+    const res = await safeFetch(`/admin/customers/export?${params.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+
+    if (res && res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'luxira_customers_export.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  },
+
+  async getStats(): Promise<CustomerStats> {
+    const res = await safeFetch('/admin/customers/stats', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { total_customers: 0, stages: [], tiers: [] };
+  },
+};
+
+
+

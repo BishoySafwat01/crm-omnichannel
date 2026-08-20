@@ -49,3 +49,10 @@ class RawEventStatusEnum(str, enum.Enum):
     RECEIVED = "received"
     PROCESSED = "processed"
     FAILED = "failed"
+
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    AGENT = "agent"
+    SUPERVISOR = "supervisor"
+

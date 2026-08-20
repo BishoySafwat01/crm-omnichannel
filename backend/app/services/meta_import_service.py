@@ -1,9 +1,12 @@
+import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
 from typing import Any, Optional
 import httpx
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -533,7 +536,8 @@ class MetaImportService:
                     continue
 
                 # 4. Insert Message
-                attachments_list = cached_attachments if cached_attachments else norm_event.attachments
+                attachments_list = norm_event.attachments
+
 
                 if attachments_list and len(attachments_list) > 1:
                     for idx, att in enumerate(attachments_list):
@@ -659,7 +663,28 @@ class MetaImportService:
 
                 if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
                     conv.last_message_at = norm_event.created_at
-                    await session.commit()
+
+                sender_type_str = norm_event.sender_type.value if hasattr(norm_event.sender_type, "value") else str(norm_event.sender_type)
+                if not is_echo and sender_type_str == "customer":
+                    conv.unread_count = (getattr(conv, "unread_count", 0) or 0) + 1
+                    conv.updated_at = datetime.now(timezone.utc)
+
+                await session.commit()
+
+                # Trigger Custom Automation Engine safely for inbound customer messages
+                if not is_echo and sender_type_str == "customer":
+                    try:
+                        from app.services.automation_service import AutomationService
+                        await AutomationService.evaluate_inbound_message(
+                            session=session,
+                            conversation=conv,
+                            customer=customer,
+                            text=norm_event.text,
+                        )
+                    except Exception as auto_err:
+                        logger.error(f"[Automation Engine] Error evaluating inbound message: {auto_err}", exc_info=True)
+
+
 
         return {
             "status": last_result_status,

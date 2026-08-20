@@ -9,6 +9,10 @@ from sqlalchemy import text
 import os
 from fastapi.staticfiles import StaticFiles
 
+from app.api.v1.admin.analytics import router as admin_analytics_router
+from app.api.v1.admin.automations import router as admin_automations_router
+from app.api.v1.admin.customers import router as admin_customers_router
+from app.api.v1.auth import router as auth_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.media import router as media_router
@@ -64,7 +68,15 @@ os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir, html=False), name="uploads")
 
 # Routers
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(customers_router, prefix="/api/v1")
+app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
+app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
+app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
+
+
+
+
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")

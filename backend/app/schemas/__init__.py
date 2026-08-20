@@ -16,6 +16,7 @@ from app.schemas.messaging import MessageCreate, MessageResponse, SendMessageReq
 from app.schemas.migration import MigrationJobResponse
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.raw_event import RawEventCreate, RawEventResponse
+from app.schemas.user import LoginRequest, TokenResponse, UserResponse
 
 __all__ = [
     "CustomerCreate",
@@ -35,4 +36,8 @@ __all__ = [
     "RawEventCreate",
     "RawEventResponse",
     "PaginatedResponse",
+    "UserResponse",
+    "LoginRequest",
+    "TokenResponse",
 ]
+

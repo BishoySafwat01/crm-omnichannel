@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,9 @@ class Conversation(Base):
     priority: Mapped[str] = mapped_column(String(50), nullable=False, default="normal", server_default="normal")
     brand: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="LAVVA", server_default="LAVVA", index=True)
     subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    unread_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    last_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True

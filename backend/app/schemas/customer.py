@@ -63,3 +63,36 @@ class CustomerResponse(CustomerBase):
 
 class CustomerDetailResponse(CustomerResponse):
     identities: list[CustomerIdentityResponse] = []
+
+
+class AdminCustomerItem(CustomerResponse):
+    pass
+
+
+class AdminCustomerListResponse(BaseModel):
+    items: list[AdminCustomerItem] = []
+    total: int = 0
+    page: int = 1
+    page_size: int = 50
+    total_pages: int = 1
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerStageStat(BaseModel):
+    stage: str
+    count: int = 0
+
+
+class CustomerTierStat(BaseModel):
+    tier: str
+    count: int = 0
+
+
+class CustomerStatsResponse(BaseModel):
+    total_customers: int = 0
+    stages: list[CustomerStageStat] = []
+    tiers: list[CustomerTierStat] = []
+
+    model_config = ConfigDict(from_attributes=True)
+

@@ -1,9 +1,21 @@
 import { create } from 'zustand';
 import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
-import { apiService, getConversationsDirect, getMessagesDirect } from '../services/api';
+import { apiService, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect } from '../services/api';
 import { realtimeService } from '../services/websocket';
 
 export type ChannelFilterType = 'all' | 'messenger' | 'instagram' | 'whatsapp';
+
+export interface UnreadSummary {
+  total_unread: number;
+  channels: {
+    all: number;
+    messenger: number;
+    instagram: number;
+    whatsapp: number;
+  };
+  brands: Record<string, number>;
+}
+
 
 export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Message[]): Message[] => {
   const byPermanentId = new Map<string, Message>();
@@ -90,6 +102,7 @@ interface CrmState {
   isFetchingMore: boolean;
   draftText: string;
   error: string | null;
+  unreadSummary: UnreadSummary;
 
   // Actions
   setSelectedBrandId: (brandId: string) => void;
@@ -100,6 +113,8 @@ interface CrmState {
   setSelectedMetaTag: (tag: MetaMessageTag) => void;
   setDraftText: (text: string) => void;
   fetchConversations: () => Promise<void>;
+  fetchUnreadSummary: () => Promise<void>;
+  markConversationAsRead: (conversationId: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   loadMoreMessages: () => Promise<void>;
   sendMessage: (text: string, attachments?: any[]) => Promise<void>;
@@ -130,6 +145,12 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   isFetchingMore: false,
   draftText: '',
   error: null,
+  unreadSummary: {
+    total_unread: 0,
+    channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 },
+    brands: {},
+  },
+
 
   setSelectedBrandId: (brandId) => {
     set({ selectedBrandId: brandId });
@@ -167,7 +188,31 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       return { activeConversationId: id, conversations: updatedConvs };
     });
     get().fetchMessages(id);
+    get().markConversationAsRead(id);
   },
+
+  fetchUnreadSummary: async () => {
+    try {
+      const summary = await getUnreadSummaryDirect();
+      if (summary) {
+        set({ unreadSummary: summary });
+      }
+    } catch (err) {
+      console.warn('[Store] fetchUnreadSummary error:', err);
+    }
+  },
+
+  markConversationAsRead: async (id) => {
+    if (!id) return;
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.id === id ? { ...c, unread_count: 0 } : c
+      ),
+    }));
+    await markConversationReadDirect(id);
+    get().fetchUnreadSummary();
+  },
+
 
   fetchConversations: async () => {
     try {
@@ -583,9 +628,16 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   handleRealtimeEvent: (event) => {
+    if ((event as any).type === 'CONVERSATION_READ') {
+      get().fetchUnreadSummary();
+      return;
+    }
+
     if (event.type === 'NEW_MESSAGE' && event.conversation_id && event.message) {
       const convId = event.conversation_id;
       const msg = event.message;
+
+      get().fetchUnreadSummary();
 
       set((state) => {
         const convMsgs = state.messages[convId] || [];
@@ -618,4 +670,5 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       });
     }
   },
+
 }));
