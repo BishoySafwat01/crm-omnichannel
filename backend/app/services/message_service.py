@@ -67,6 +67,27 @@ class MessageService:
                             cust.location = detected_loc
                     session.add(cust)
 
+                if sender_type == SenderTypeEnum.CUSTOMER:
+                    try:
+                        from app.services.customer_timeline_service import CustomerTimelineService
+                        chan_str = conversation.channel.value if hasattr(conversation.channel, "value") else str(conversation.channel)
+                        cust_name = (cust.display_name if cust else None) or "العميل"
+                        await CustomerTimelineService.record_event(
+                            session=session,
+                            customer_id=conversation.customer_id,
+                            event_type="message.inbound",
+                            channel=chan_str,
+                            summary=f"أرسل {cust_name} رسالة جديدة عبر {chan_str}",
+                            details={
+                                "text": text[:150] if text else "رسالة جديدة",
+                                "conversation_id": str(conversation.id),
+                                "brand": getattr(conversation, "brand", "LAVVA"),
+                                "channel": chan_str,
+                            },
+                        )
+                    except Exception as tl_in_err:
+                        logger.error("[Customer 360 Timeline] Error logging inbound message: %s", tl_in_err)
+
         await session.commit()
         await session.refresh(message)
         return message
@@ -77,6 +98,7 @@ class MessageService:
     ) -> list[Message]:
         stmt = (
             select(Message)
+            .options(selectinload(Message.sender_user))
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at.asc())
         )
@@ -102,7 +124,11 @@ class MessageService:
         total_res = await session.execute(count_stmt)
         total = total_res.scalar() or 0
 
-        stmt = select(Message).where(Message.conversation_id == conversation_id)
+        stmt = (
+            select(Message)
+            .options(selectinload(Message.sender_user))
+            .where(Message.conversation_id == conversation_id)
+        )
         if order.lower() == "desc":
             stmt = stmt.order_by(Message.created_at.desc(), Message.id.desc())
         else:
@@ -123,6 +149,8 @@ class MessageService:
         sender_external_id: Optional[str] = None,
         provider_adapter: Optional[Any] = None,
         sender_user_id: Optional[uuid.UUID] = None,
+        reply_to: Optional[dict[str, Any]] = None,
+        forwarded_from: Optional[dict[str, Any]] = None,
     ) -> Message:
         clean_text = (text or "").strip()
         if not clean_text and not attachments:
@@ -176,12 +204,15 @@ class MessageService:
         identity_res = await session.execute(identity_stmt)
         identity = identity_res.scalar_one_or_none()
 
-        if not identity or not identity.external_user_id:
+        if identity and identity.external_user_id:
+            clean_recipient = identity.external_user_id.strip()
+        elif conv.external_conversation_id:
+            clean_recipient = conv.external_conversation_id.strip()
+        else:
             raise ValueError(
                 f"Customer recipient identity not found for conversation {conversation_id}."
             )
 
-        clean_recipient = identity.external_user_id.strip()
         if clean_recipient.startswith("t_"):
             clean_recipient = clean_recipient[2:]
 
@@ -212,14 +243,21 @@ class MessageService:
         if has_media and hasattr(adapter, "send_outbound_attachment"):
             first_att = attachments[0]
             att_url = first_att.get("url", "")
-            att_type = first_att.get("type", "file")
+            att_type = first_att.get("type", "file") or "file"
             import os
             filename = os.path.basename(att_url)
             ext_lower = filename.lower()
-            if ext_lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+            if ext_lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg")):
                 att_type = "image"
-            elif ext_lower.endswith((".webm", ".ogg", ".opus", ".mp3", ".m4a", ".mp4", ".wav")):
+            elif ext_lower.endswith((".mp4", ".mov", ".avi", ".mkv", ".ogv")):
+                att_type = "video"
+            elif ext_lower.endswith((".ogg", ".opus", ".mp3", ".m4a", ".wav", ".aac")):
                 att_type = "audio"
+            elif ext_lower.endswith(".webm"):
+                if "voice_" in ext_lower or first_att.get("type") == "audio" or "audio" in first_att.get("mime_type", ""):
+                    att_type = "audio"
+                else:
+                    att_type = "video" if first_att.get("type") == "video" else "audio"
 
             file_path = os.path.join(settings.UPLOAD_DIR, filename)
 
@@ -327,6 +365,8 @@ class MessageService:
                 msg_type = MessageTypeEnum.AUDIO
             elif a_type == "image":
                 msg_type = MessageTypeEnum.IMAGE
+            elif a_type == "video":
+                msg_type = MessageTypeEnum.VIDEO
             else:
                 msg_type = MessageTypeEnum.FILE
 
@@ -334,11 +374,16 @@ class MessageService:
         now_utc = datetime.now(timezone.utc)
 
         metadata_dict = {
-            "recipient_id": identity.external_user_id,
+            "recipient_id": identity.external_user_id if identity else clean_recipient,
             "provider_response": outbound_res.get("raw", {}) if isinstance(outbound_res, dict) else {},
         }
         if attachments:
             metadata_dict["attachments"] = attachments
+        if reply_to:
+            metadata_dict["reply_to"] = reply_to
+        if forwarded_from:
+            metadata_dict["forwarded"] = True
+            metadata_dict["forwarded_from"] = forwarded_from
 
         db_text = clean_text if clean_text != "مرفق وسائط" else ""
         if has_media and (not clean_text or clean_text == "مرفق وسائط"):
@@ -383,19 +428,70 @@ class MessageService:
             try:
                 from app.services.customer_timeline_service import CustomerTimelineService
                 chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+                sender_name = "موظف الدعم"
+                if sender_user_id:
+                    from app.models.user import User
+                    user_obj = await session.get(User, sender_user_id)
+                    if user_obj and user_obj.full_name:
+                        sender_name = user_obj.full_name
+
                 await CustomerTimelineService.record_event(
                     session=session,
                     customer_id=conv.customer_id,
                     event_type="message.outbound",
                     channel=chan_str,
-                    summary=f"رد موظف عبر {chan_str}",
+                    summary=f"{sender_name} رد على العميل عبر {chan_str}",
                     details={
                         "text": db_text[:150] if db_text else "مرفق وسائط",
                         "sender_user_id": str(sender_user_id) if sender_user_id else None,
+                        "sender_name": sender_name,
+                        "brand": getattr(conv, "brand", "LAVVA"),
+                        "conversation_id": str(conv.id),
+                        "channel": chan_str,
                     },
                 )
+                # Update customer's last_activity_at
+                cust_for_act = await session.get(Customer, conv.customer_id)
+                if cust_for_act:
+                    cust_for_act.last_activity_at = now_utc
+                    session.add(cust_for_act)
             except Exception as tl_err:
                 logger.error("[Customer 360 Timeline] Error logging outbound message: %s", tl_err)
+
+        # Record Centralized UserAuditLog entry for agent message
+        try:
+            from app.services.audit_service import AuditService
+            chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+            is_media = msg_type != MessageTypeEnum.TEXT
+            action_name = "message.media_sent" if is_media else "message.sent"
+            
+            audit_pl = {
+                "conversation_id": str(conv.id),
+                "customer_id": str(conv.customer_id) if conv.customer_id else None,
+                "message_id": str(new_message.id),
+                "message_type": msg_type.value if hasattr(msg_type, "value") else str(msg_type),
+                "channel": chan_str,
+                "brand": getattr(conv, "brand", "LAVVA"),
+            }
+            if is_media and attachments:
+                att = attachments[0]
+                if att.get("title") or att.get("filename"):
+                    audit_pl["filename"] = att.get("title") or att.get("filename")
+                if att.get("mime_type"):
+                    audit_pl["mime_type"] = att.get("mime_type")
+                if att.get("file_size"):
+                    audit_pl["size"] = att.get("file_size")
+
+            await AuditService.log_action(
+                session=session,
+                user_id=sender_user_id,
+                action=action_name,
+                resource_type="conversation",
+                resource_id=str(conv.id),
+                payload=audit_pl,
+            )
+        except Exception as audit_msg_err:
+            logger.error("[AuditService] Error recording outbound message audit: %s", audit_msg_err)
 
         # Agent Dynamic Location Override Hook
         updated_loc = None
@@ -413,6 +509,13 @@ class MessageService:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
         await session.commit()
+        if sender_user_id:
+            from app.models.user import User
+            user_obj = await session.get(User, sender_user_id)
+            if user_obj:
+                setattr(new_message, "sender_user", user_obj)
+                setattr(new_message, "sender_name", user_obj.full_name)
+
         if updated_loc:
             setattr(new_message, "updated_customer_location", updated_loc)
         elif conv.customer and getattr(conv.customer, "location", None):

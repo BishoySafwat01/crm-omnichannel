@@ -8,6 +8,7 @@ export interface User {
   full_name: string;
   role: UserRole;
   brand_access: string[];
+  channel_access?: string[];
   is_active: boolean;
   created_at: string;
 }

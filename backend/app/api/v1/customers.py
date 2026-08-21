@@ -1,10 +1,11 @@
+import logging
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin
+from app.api.deps import get_optional_current_user
 from app.core.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
@@ -17,6 +18,8 @@ from app.schemas.customer import (
 )
 from app.schemas.pagination import PaginatedResponse
 from app.services.customer_service import CustomerService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -77,14 +80,14 @@ async def get_customer(
     customer_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve detailed information for a specific customer, including linked identities."""
-    customer = await CustomerService.get_customer_by_id(session=db, customer_id=customer_id)
-    if not customer:
+    """Retrieve detailed information for a specific customer, including linked identities and CRM activity."""
+    customer_data = await CustomerService.get_customer_detail_by_id(session=db, customer_id=customer_id)
+    if not customer_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Customer {customer_id} not found.",
         )
-    return CustomerDetailResponse.model_validate(customer)
+    return CustomerDetailResponse(**customer_data)
 
 
 @router.get(
@@ -140,6 +143,11 @@ async def update_customer_tags(
     response_model=CustomerResponse,
     summary="Update Customer Information & Attributes",
 )
+@router.put(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+    summary="Update Customer Information & Attributes",
+)
 @router.patch(
     "/{customer_id}",
     response_model=CustomerResponse,
@@ -148,7 +156,9 @@ async def update_customer_tags(
 async def update_customer(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Update customer profile information (name, email, phone, location, tier, skin_type, stage)."""
     customer = await CustomerService.get_customer_by_id(session=db, customer_id=customer_id)
@@ -158,11 +168,14 @@ async def update_customer(
             detail=f"Customer {customer_id} not found.",
         )
 
-    old_stage = customer.stage
     update_data = payload.model_dump(exclude_unset=True)
+    changes = {}
     for field, val in update_data.items():
         if val is not None:
-            setattr(customer, field, val)
+            old_val = getattr(customer, field, None)
+            if old_val != val:
+                changes[field] = {"old": old_val, "new": val}
+                setattr(customer, field, val)
 
     # Harmonize location and country auto-mapping
     if payload.country is not None:
@@ -175,17 +188,62 @@ async def update_customer(
     await db.commit()
     await db.refresh(customer)
 
-    # Log stage change to timeline if stage updated
-    if payload.stage and payload.stage != old_stage:
+    # If changes occurred, log audit & timeline
+    if changes:
+        user_id = current_user.id if current_user else None
+        user_name = current_user.full_name if current_user else "النظام"
+        client_ip = request.client.host if request and request.client else None
+
+        # 1. Immutable UserAuditLog
+        try:
+            from app.services.audit_service import AuditService
+            action_name = "customer.updated"
+            if len(changes) == 1:
+                if "stage" in changes:
+                    action_name = "customer.stage_changed"
+                elif "tier" in changes:
+                    action_name = "customer.tier_changed"
+
+            await AuditService.log_action(
+                session=db,
+                user_id=user_id,
+                action=action_name,
+                resource_type="customer",
+                resource_id=str(customer_id),
+                payload={
+                    "changes": changes,
+                    "user_name": user_name,
+                    "customer_name": customer.display_name,
+                },
+                ip_address=client_ip,
+            )
+        except Exception as audit_err:
+            logger.warning("[Customer Update Audit Log Error] %s", audit_err)
+
+        # 2. Customer 360 Timeline event
         try:
             from app.services.customer_timeline_service import CustomerTimelineService
+            summary_parts = []
+            if "stage" in changes:
+                summary_parts.append(f"تغيير الحالة إلى '{changes['stage']['new']}'")
+            if "tier" in changes:
+                summary_parts.append(f"تغيير الدرجة إلى '{changes['tier']['new']}'")
+            if "location" in changes or "country" in changes:
+                new_loc = changes.get("location", {}).get("new") or changes.get("country", {}).get("new")
+                summary_parts.append(f"تغيير الموقع إلى '{new_loc}'")
+            if "skin_type" in changes:
+                summary_parts.append(f"تغيير نوع البشرة إلى '{changes['skin_type']['new']}'")
+            if not summary_parts:
+                summary_parts.append("تحديث بيانات العميل")
+
+            summary_str = f"قام {user_name} بـ " + " و ".join(summary_parts)
             await CustomerTimelineService.record_event(
                 session=db,
                 customer_id=customer_id,
-                event_type="stage.changed",
+                event_type="customer.updated",
                 channel="system",
-                summary=f"تغيير حالة العميل إلى {payload.stage}",
-                details={"old_stage": old_stage, "new_stage": payload.stage},
+                summary=summary_str,
+                details={"modified_by": user_name, "changes": changes},
             )
             await db.commit()
         except Exception:
@@ -257,6 +315,23 @@ async def add_customer_note(
     note = await CustomerTimelineService.add_note(
         session=db, customer_id=customer_id, author_user_id=user_id, text=text
     )
+
+    # Record UserAuditLog
+    try:
+        from app.services.audit_service import AuditService
+        client_ip = request.client.host if request and request.client else None
+        await AuditService.log_action(
+            session=db,
+            user_id=user_id,
+            action="customer.note_created",
+            resource_type="customer",
+            resource_id=str(customer_id),
+            payload={"note_id": str(note.id), "customer_id": str(customer_id)},
+            ip_address=client_ip,
+        )
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "id": str(note.id),
@@ -297,6 +372,23 @@ async def delete_customer_note(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Note not found."
             )
+
+        # Record UserAuditLog
+        try:
+            from app.services.audit_service import AuditService
+            client_ip = request.client.host if request and request.client else None
+            await AuditService.log_action(
+                session=db,
+                user_id=user.id if user else None,
+                action="customer.note_deleted",
+                resource_type="customer",
+                resource_id=str(customer_id),
+                payload={"note_id": str(note_id), "customer_id": str(customer_id)},
+                ip_address=client_ip,
+            )
+        except Exception:
+            pass
+
         return {"status": "success", "deleted_note_id": str(note_id)}
     except PermissionError as pe:
         raise HTTPException(

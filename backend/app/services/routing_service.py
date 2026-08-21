@@ -44,21 +44,19 @@ class RoutingService:
             logger.warning("[RoutingService] No active staff accounts available for routing.")
             return None
 
-        # 3. Filter agents eligible for conversation's brand
-        conv_brand = conversation.brand or "LAVVA"
-        eligible_agents = []
-        for agent in active_agents:
-            access_list = agent.brand_access or []
-            role_val = agent.role.value if hasattr(agent.role, "value") else str(agent.role)
-
-            if role_val == UserRole.ADMIN.value:
-                eligible_agents.append(agent)
-            elif "ALL" in access_list or "الكل" in access_list or conv_brand in access_list:
-                eligible_agents.append(agent)
+        # 3. Filter agents eligible for conversation's brand AND channel
+        from app.api.deps import user_has_conversation_access
+        eligible_agents = [
+            agent for agent in active_agents if user_has_conversation_access(agent, conversation)
+        ]
 
         if not eligible_agents:
+            conv_brand = getattr(conversation, "brand", "LAVVA") or "LAVVA"
+            conv_chan = getattr(conversation, "channel", "messenger")
             logger.warning(
-                "[RoutingService] No eligible agents with brand access to '%s'.", conv_brand
+                "[RoutingService] No eligible agents with access to brand '%s' and channel '%s'.",
+                conv_brand,
+                conv_chan,
             )
             return None
 

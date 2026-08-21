@@ -35,7 +35,7 @@ def transcode_to_m4a(input_path: str, output_path: str) -> bool:
     try:
         cmd = [
             "ffmpeg", "-y", "-i", input_path,
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+            "-vn", "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
             output_path
         ]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)

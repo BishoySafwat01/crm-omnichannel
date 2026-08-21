@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Optional, Union, Any
 import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
-from app.models.enums import UserRole
+from app.models.enums import UserRole, ChannelEnum
 from app.models.user import User
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -114,3 +114,41 @@ def require_brand_access(brand: str):
             )
         return current_user
     return dependency
+
+
+def user_has_channel_access(user: User, channel: Union[str, ChannelEnum]) -> bool:
+    """Check if user has permission to access a channel (e.g. messenger, instagram, whatsapp)."""
+    if not user or not user.is_active:
+        return False
+    role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if role_val == UserRole.ADMIN.value:
+        return True
+    access_list = getattr(user, "channel_access", None)
+    if access_list is None:
+        return True
+    norm_list = [str(x).strip().lower() for x in access_list]
+    if "all" in norm_list or "الكل" in norm_list:
+        return True
+    ch_str = (channel.value if hasattr(channel, "value") else str(channel)).strip().lower()
+    return ch_str in norm_list
+
+
+def user_has_conversation_access(user: User, conversation: Any) -> bool:
+    """Check if user has permission to access a conversation (BOTH brand AND channel allowed)."""
+    if not user or not user.is_active:
+        return False
+    role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+    if role_val == UserRole.ADMIN.value:
+        return True
+    conv_brand = getattr(conversation, "brand", "LAVVA") or "LAVVA"
+    conv_channel = getattr(conversation, "channel", "messenger")
+    return user_has_brand_access(user, conv_brand) and user_has_channel_access(user, conv_channel)
+
+
+def require_conversation_access(conversation: Any, user: User) -> None:
+    """Raise HTTP 403 if user lacks access to the conversation's brand or channel."""
+    if not user_has_conversation_access(user, conversation):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied for this conversation's brand or channel.",
+        )
