@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
-import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect } from '../services/api';
+import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect, messageActionsApi } from '../services/api';
 import { realtimeService } from '../services/websocket';
+import { useAuthStore } from './useAuthStore';
 
 export type ChannelFilterType = 'all' | 'messenger' | 'instagram' | 'whatsapp';
 
@@ -47,6 +48,14 @@ export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Messa
   );
 };
 
+export const sortConversationsByLatest = (convs: Conversation[]): Conversation[] => {
+  return [...convs].sort((a, b) => {
+    const timeA = new Date(a.last_message_at || a.last_activity_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.last_message_at || b.last_activity_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+};
+
 const areConversationsEqual = (a: Conversation[], b: Conversation[]): boolean => {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -84,7 +93,11 @@ const areMessagesEqual = (a: Message[] | undefined, b: Message[]): boolean => {
     firstA.id === firstB.id &&
     lastA.id === lastB.id &&
     lastA.text === lastB.text &&
-    (lastA as any).delivery_status === (lastB as any).delivery_status
+    (lastA as any).delivery_status === (lastB as any).delivery_status &&
+    (lastA as any).is_edited === (lastB as any).is_edited &&
+    (lastA as any).is_deleted === (lastB as any).is_deleted &&
+    (lastA as any).is_pinned === (lastB as any).is_pinned &&
+    ((lastA.reactions?.length || 0) === (lastB.reactions?.length || 0))
   );
 };
 
@@ -108,6 +121,12 @@ interface CrmState {
   error: string | null;
   unreadSummary: UnreadSummary;
 
+  // Message Actions State
+  replyingToMessage: Message | null;
+  editingMessage: Message | null;
+  isForwardModalOpen: boolean;
+  forwardingMessage: Message | null;
+
   // Actions
   setSelectedBrandId: (brandId: string) => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
@@ -126,8 +145,7 @@ interface CrmState {
   loadMoreMessages: () => Promise<void>;
   sendMessage: (text: string, attachments?: any[]) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
-  deleteMessage: (messageId: string) => void;
-  uploadAndSendMedia: (file: File) => Promise<void>;
+  uploadAndSendMedia: (file: File, caption?: string) => Promise<void>;
   toggleCustomerTag: (tagLabel: string, templateText?: string) => Promise<void>;
   setConversationStatus: (conversationId: string, status: string) => Promise<void>;
   assignAgentToConversation: (conversationId: string, agentId: string | null) => Promise<void>;
@@ -135,6 +153,16 @@ interface CrmState {
   updateConversationBrand: (conversationId: string, brand: string) => Promise<void>;
   updateCustomerProfile: (customerId: string, payload: Partial<Customer>) => Promise<void>;
   handleRealtimeEvent: (event: WebSocketEvent) => void;
+
+  // Message Actions Handlers
+  setReplyingToMessage: (msg: Message | null) => void;
+  setEditingMessage: (msg: Message | null) => void;
+  setIsForwardModalOpen: (open: boolean, msg?: Message | null) => void;
+  editMessage: (messageId: string, text: string) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
+  toggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  togglePin: (messageId: string) => Promise<void>;
+  forwardMessage: (targetConversationId: string) => Promise<void>;
 }
 
 export const useCrmStore = create<CrmState>((set, get) => ({
@@ -160,6 +188,16 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 },
     brands: {},
   },
+
+  // Message Actions State Defaults
+  replyingToMessage: null,
+  editingMessage: null,
+  isForwardModalOpen: false,
+  forwardingMessage: null,
+
+  setReplyingToMessage: (msg) => set({ replyingToMessage: msg }),
+  setEditingMessage: (msg) => set({ editingMessage: msg }),
+  setIsForwardModalOpen: (open, msg) => set({ isForwardModalOpen: open, forwardingMessage: msg || null }),
 
   setSelectedBrandId: (brandId) => {
     set({ selectedBrandId: brandId });
@@ -265,25 +303,27 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         const validActive = items.find((c) => c.id === currentActive) ? currentActive : items[0].id;
         const currentConvs = get().conversations;
 
-        const mergedItems = items.map((c) => {
-          const existing = currentConvs.find((ex) => ex.id === c.id);
-          if (existing && existing.customer) {
-            return {
-              ...c,
-              customer: {
-                ...c.customer,
-                ...existing.customer,
-                tier: existing.customer.tier || c.customer?.tier,
-                skin_type: existing.customer.skin_type || c.customer?.skin_type,
-                stage: existing.customer.stage || c.customer?.stage,
-                location: existing.customer.location || c.customer?.location,
-                phone: existing.customer.phone || c.customer?.phone,
-                email: existing.customer.email || c.customer?.email,
-              },
-            };
-          }
-          return c;
-        });
+        const mergedItems = sortConversationsByLatest(
+          items.map((c) => {
+            const existing = currentConvs.find((ex) => ex.id === c.id);
+            if (existing && existing.customer) {
+              return {
+                ...c,
+                customer: {
+                  ...c.customer,
+                  ...existing.customer,
+                  tier: existing.customer.tier || c.customer?.tier,
+                  skin_type: existing.customer.skin_type || c.customer?.skin_type,
+                  stage: existing.customer.stage || c.customer?.stage,
+                  location: existing.customer.location || c.customer?.location,
+                  phone: existing.customer.phone || c.customer?.phone,
+                  email: existing.customer.email || c.customer?.email,
+                },
+              };
+            }
+            return c;
+          })
+        );
 
         if (!areConversationsEqual(currentConvs, mergedItems) || get().activeConversationId !== validActive) {
           set({
@@ -374,7 +414,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   sendMessage: async (text, attachments = []) => {
-    const { activeConversationId, conversations, messages, selectedMetaTag } = get();
+    const { activeConversationId, conversations, messages, selectedMetaTag, replyingToMessage } = get();
     if (!activeConversationId || (!text.trim() && attachments.length === 0)) return;
 
     const activeConv = conversations.find((c) => c.id === activeConversationId);
@@ -385,35 +425,56 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
     const currentMsgs = messages[activeConversationId] || [];
     const tempId = `temp-${Date.now()}`;
+    const authUser = useAuthStore.getState().user;
+    const replyRef = replyingToMessage
+      ? {
+          message_id: replyingToMessage.id,
+          text: replyingToMessage.text || replyingToMessage.attachments?.[0]?.title || 'مرفق وسائط',
+          sender_name:
+            replyingToMessage.sender_name ||
+            (replyingToMessage.sender_type === 'customer'
+              ? activeConv?.customer_display_name || 'العميل'
+              : 'موظف الدعم'),
+          sender_type: replyingToMessage.sender_type,
+          message_type: replyingToMessage.message_type,
+        }
+      : undefined;
 
     // 1. Optimistic append with status = 'pending'
     const optimisticMessage: Message = {
       id: tempId,
       conversation_id: activeConversationId,
       sender_type: 'agent',
+      sender_user_id: authUser?.id,
+      sender_name: authUser?.full_name || 'موظف الدعم',
       message_type: attachments.length > 0 ? attachments[0].type : 'text',
       text: text.trim(),
       attachments,
+      reply_to: replyRef,
       created_at: new Date().toISOString(),
       delivery_status: 'pending',
       meta_tag: isExpired ? selectedMetaTag : undefined,
     };
 
     const updatedMsgs = [...currentMsgs, optimisticMessage];
-    const updatedConvs = conversations.map((c) =>
-      c.id === activeConversationId
-        ? {
-            ...c,
-            last_message_text: text.trim() || 'مرفق وسائط',
-            last_message_at: optimisticMessage.created_at,
-          }
-        : c
+    const updatedConvs = sortConversationsByLatest(
+      conversations.map((c) =>
+        c.id === activeConversationId
+          ? {
+              ...c,
+              last_message_text: text.trim() || 'مرفق وسائط',
+              last_message_at: optimisticMessage.created_at,
+              last_activity_at: optimisticMessage.created_at,
+            }
+          : c
+      )
     );
 
     set({
       messages: { ...get().messages, [activeConversationId]: updatedMsgs },
       conversations: updatedConvs,
       draftText: '',
+      replyingToMessage: null,
     });
 
     // 2. Dispatch via API
@@ -422,7 +483,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         activeConversationId,
         text.trim(),
         attachments,
-        isExpired ? selectedMetaTag : undefined
+        isExpired ? selectedMetaTag : undefined,
+        replyingToMessage?.id
       );
 
       // Transition to 'sent' / 'delivered' & Update customer location reactively with deduplication
@@ -444,18 +506,23 @@ export const useCrmStore = create<CrmState>((set, get) => ({
           return true;
         });
 
-        const updatedConvs = newLoc
-          ? state.conversations.map((c) =>
-              c.id === activeConversationId
-                ? {
-                    ...c,
-                    customer: c.customer
+        const updatedConvs = sortConversationsByLatest(
+          state.conversations.map((c) =>
+            c.id === activeConversationId
+              ? {
+                  ...c,
+                  last_message_text: persistedMsg.text || c.last_message_text,
+                  last_message_at: persistedMsg.created_at || c.last_message_at,
+                  last_activity_at: persistedMsg.created_at || c.last_activity_at,
+                  customer: newLoc
+                    ? c.customer
                       ? { ...c.customer, location: newLoc }
-                      : ({ id: c.customer_id || '', display_name: c.customer_display_name || '', location: newLoc, created_at: '', updated_at: '' } as any),
-                  }
-                : c
-            )
-          : state.conversations;
+                      : ({ id: c.customer_id || '', display_name: c.customer_display_name || '', location: newLoc, created_at: '', updated_at: '' } as any)
+                    : c.customer,
+                }
+              : c
+          )
+        );
 
         return {
           messages: { ...state.messages, [activeConversationId]: replaced },
@@ -541,33 +608,297 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     }
   },
 
-  deleteMessage: (messageId) => {
+  editMessage: async (messageId: string, text: string) => {
     const { activeConversationId } = get();
-    if (!activeConversationId) return;
+    if (!activeConversationId || !text.trim()) return;
 
+    // Optimistic update
     set((state) => {
       const list = state.messages[activeConversationId] || [];
       return {
         messages: {
           ...state.messages,
-          [activeConversationId]: list.filter((m) => m.id !== messageId),
+          [activeConversationId]: list.map((m) =>
+            m.id === messageId
+              ? { ...m, text: text.trim(), is_edited: true, edited_at: new Date().toISOString() }
+              : m
+          ),
+        },
+        editingMessage: null,
+      };
+    });
+
+    try {
+      const updated = await messageActionsApi.editMessage(activeConversationId, messageId, text.trim());
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        return {
+          messages: {
+            ...state.messages,
+            [activeConversationId]: list.map((m) => (m.id === messageId ? { ...m, ...updated } : m)),
+          },
+        };
+      });
+    } catch (err: any) {
+      console.error('[Store] editMessage failed:', err);
+      get().fetchMessages(activeConversationId);
+      throw err;
+    }
+  },
+
+  deleteMessage: async (messageId: string) => {
+    const { activeConversationId } = get();
+    if (!activeConversationId) return;
+
+    // Optimistic soft-delete
+    set((state) => {
+      const list = state.messages[activeConversationId] || [];
+      return {
+        messages: {
+          ...state.messages,
+          [activeConversationId]: list.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  is_deleted: true,
+                  text: undefined,
+                  attachments: [],
+                  deleted_at: new Date().toISOString(),
+                }
+              : m
+          ),
         },
       };
     });
-  },
-
-  uploadAndSendMedia: async (file) => {
-    const { activeConversationId, sendMessage, draftText } = get();
-    if (!activeConversationId) return;
 
     try {
-      const uploaded = await apiService.uploadMedia(file);
-      const fileNameLower = (file.name || uploaded.filename || '').toLowerCase();
-      const isImage = file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'gif'].some((ext) => fileNameLower.endsWith(ext));
-      const isAudio = file.type.startsWith('audio/') || ['webm', 'ogg', 'opus', 'mp3', 'm4a', 'mp4', 'wav'].some((ext) => fileNameLower.endsWith(ext));
-      const mediaType = isImage ? 'image' : (isAudio ? 'audio' : (uploaded.media_type || 'file'));
+      const updated = await messageActionsApi.deleteMessage(activeConversationId, messageId);
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        return {
+          messages: {
+            ...state.messages,
+            [activeConversationId]: list.map((m) => (m.id === messageId ? { ...m, ...updated } : m)),
+          },
+        };
+      });
+    } catch (err: any) {
+      console.error('[Store] deleteMessage failed:', err);
+      get().fetchMessages(activeConversationId);
+      throw err;
+    }
+  },
 
-      const attachment = {
+  toggleReaction: async (messageId: string, emoji: string) => {
+    const { activeConversationId } = get();
+    if (!activeConversationId) return;
+    const authUser = useAuthStore.getState().user;
+
+    // Optimistic reaction toggle
+    set((state) => {
+      const list = state.messages[activeConversationId] || [];
+      return {
+        messages: {
+          ...state.messages,
+          [activeConversationId]: list.map((m) => {
+            if (m.id !== messageId) return m;
+            const curReactions = [...(m.reactions || [])];
+            const uId = authUser?.id || 'current';
+            const existIdx = curReactions.findIndex((r) => r.user_id === uId && r.emoji === emoji);
+            if (existIdx >= 0) {
+              curReactions.splice(existIdx, 1);
+            } else {
+              curReactions.push({
+                emoji,
+                user_id: uId,
+                user_name: authUser?.full_name || 'موظف',
+                created_at: new Date().toISOString(),
+              });
+            }
+            return { ...m, reactions: curReactions };
+          }),
+        },
+      };
+    });
+
+    try {
+      const updated = await messageActionsApi.toggleReaction(activeConversationId, messageId, emoji);
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        return {
+          messages: {
+            ...state.messages,
+            [activeConversationId]: list.map((m) => (m.id === messageId ? { ...m, ...updated } : m)),
+          },
+        };
+      });
+    } catch (err) {
+      console.error('[Store] toggleReaction failed:', err);
+      get().fetchMessages(activeConversationId);
+    }
+  },
+
+  togglePin: async (messageId: string) => {
+    const { activeConversationId } = get();
+    if (!activeConversationId) return;
+
+    // Optimistic pin toggle
+    set((state) => {
+      const list = state.messages[activeConversationId] || [];
+      return {
+        messages: {
+          ...state.messages,
+          [activeConversationId]: list.map((m) =>
+            m.id === messageId ? { ...m, is_pinned: !m.is_pinned } : m
+          ),
+        },
+      };
+    });
+
+    try {
+      const updated = await messageActionsApi.togglePin(activeConversationId, messageId);
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        return {
+          messages: {
+            ...state.messages,
+            [activeConversationId]: list.map((m) => (m.id === messageId ? { ...m, ...updated } : m)),
+          },
+        };
+      });
+    } catch (err) {
+      console.error('[Store] togglePin failed:', err);
+      get().fetchMessages(activeConversationId);
+    }
+  },
+
+  forwardMessage: async (targetConversationId: string) => {
+    const { activeConversationId, forwardingMessage } = get();
+    if (!activeConversationId || !forwardingMessage) return;
+
+    try {
+      await messageActionsApi.forwardMessage(
+        activeConversationId,
+        forwardingMessage.id,
+        targetConversationId
+      );
+      const targetMsgText =
+        forwardingMessage.text ||
+        forwardingMessage.attachments?.[0]?.title ||
+        'رسالة معاد توجيهها';
+      const nowIso = new Date().toISOString();
+      const updatedConvs = sortConversationsByLatest(
+        get().conversations.map((c) =>
+          c.id === targetConversationId
+            ? {
+                ...c,
+                last_message_text: targetMsgText,
+                last_message_at: nowIso,
+                last_activity_at: nowIso,
+              }
+            : c
+        )
+      );
+      set({
+        conversations: updatedConvs,
+        isForwardModalOpen: false,
+        forwardingMessage: null,
+      });
+      if (targetConversationId === activeConversationId) {
+        get().fetchMessages(activeConversationId);
+      }
+    } catch (err) {
+      console.error('[Store] forwardMessage failed:', err);
+      throw err;
+    }
+  },
+
+  uploadAndSendMedia: async (file, caption) => {
+    const { activeConversationId, conversations, selectedMetaTag, draftText, replyingToMessage } = get();
+    if (!activeConversationId) return;
+
+    const messageText = (caption !== undefined ? caption : draftText).trim();
+    const tempId = `temp-${Date.now()}`;
+    const localUrl = URL.createObjectURL(file);
+
+    const fileNameLower = file.name.toLowerCase();
+    const isVoice = fileNameLower.startsWith('voice_') || file.type.startsWith('audio/') || ['ogg', 'opus', 'mp3', 'm4a', 'wav', 'aac'].some((ext) => fileNameLower.endsWith(ext));
+    const isVideo = !isVoice && (file.type.startsWith('video/') || ['mp4', 'mov', 'avi', 'mkv', 'ogv'].some((ext) => fileNameLower.endsWith(ext)) || (fileNameLower.endsWith('.webm') && !fileNameLower.includes('voice')));
+    const isImage = !isVoice && !isVideo && (file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].some((ext) => fileNameLower.endsWith(ext)));
+    const isAudio = isVoice || (!isVideo && !isImage && file.type.startsWith('audio/'));
+    const mediaType = isAudio ? 'audio' : (isVideo ? 'video' : (isImage ? 'image' : 'file'));
+
+    const localAttachment = {
+      id: `att-${Date.now()}`,
+      type: mediaType as any,
+      url: localUrl,
+      title: file.name,
+      file_size: file.size,
+    };
+
+    const activeConv = conversations.find((c) => c.id === activeConversationId);
+    const lastCustomerMsgAt = activeConv?.last_customer_message_at
+      ? new Date(activeConv.last_customer_message_at).getTime()
+      : Date.now();
+    const isExpired = Date.now() - lastCustomerMsgAt > 24 * 3600 * 1000;
+    const authUser = useAuthStore.getState().user;
+    const replyRef = replyingToMessage
+      ? {
+          message_id: replyingToMessage.id,
+          text: replyingToMessage.text || replyingToMessage.attachments?.[0]?.title || 'مرفق وسائط',
+          sender_name:
+            replyingToMessage.sender_name ||
+            (replyingToMessage.sender_type === 'customer'
+              ? activeConv?.customer_display_name || 'العميل'
+              : 'موظف الدعم'),
+          sender_type: replyingToMessage.sender_type,
+          message_type: replyingToMessage.message_type,
+        }
+      : undefined;
+
+    const optimisticMessage: Message = {
+      id: tempId,
+      conversation_id: activeConversationId,
+      sender_type: 'agent',
+      sender_user_id: authUser?.id,
+      sender_name: authUser?.full_name || 'موظف الدعم',
+      message_type: mediaType as any,
+      text: messageText,
+      attachments: [localAttachment],
+      reply_to: replyRef,
+      created_at: new Date().toISOString(),
+      delivery_status: 'pending',
+      meta_tag: isExpired ? selectedMetaTag : undefined,
+    };
+
+    // 1. Instantly append optimistic message to the chat list and clear draftText
+    const currentMsgs = get().messages[activeConversationId] || [];
+    const updatedMsgs = [...currentMsgs, optimisticMessage];
+    const updatedConvs = sortConversationsByLatest(
+      conversations.map((c) =>
+        c.id === activeConversationId
+          ? {
+              ...c,
+              last_message_text: messageText || (isAudio ? 'رسالة صوتية' : isVideo ? 'فيديو' : isImage ? 'صورة' : 'ملف'),
+              last_message_at: optimisticMessage.created_at,
+              last_activity_at: optimisticMessage.created_at,
+            }
+          : c
+      )
+    );
+
+    set({
+      messages: { ...get().messages, [activeConversationId]: updatedMsgs },
+      conversations: updatedConvs,
+      draftText: '',
+      replyingToMessage: null,
+    });
+
+    // 2. Perform upload and dispatch in background
+    try {
+      const uploaded = await apiService.uploadMedia(file);
+
+      const serverAttachment = {
         id: `att-${Date.now()}`,
         type: mediaType as any,
         url: uploaded.url,
@@ -575,9 +906,63 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         file_size: uploaded.size,
       };
 
-      await sendMessage(draftText.trim(), [attachment]);
-    } catch (e) {
+      const persistedMsg = await apiService.sendMessage(
+        activeConversationId,
+        messageText,
+        [serverAttachment],
+        isExpired ? selectedMetaTag : undefined,
+        replyingToMessage?.id
+      );
+
+      // Transition to 'sent'
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        let replaced = list.map((m) =>
+          m.id === tempId ? { ...persistedMsg, delivery_status: 'sent' as const } : m
+        );
+
+        const seenIds = new Set<string>();
+        replaced = replaced.filter((m) => {
+          if (!m.id) return true;
+          if (seenIds.has(m.id)) return false;
+          seenIds.add(m.id);
+          return true;
+        });
+
+        const sortedConvs = sortConversationsByLatest(
+          state.conversations.map((c) =>
+            c.id === activeConversationId
+              ? {
+                  ...c,
+                  last_message_text: persistedMsg.text || c.last_message_text,
+                  last_message_at: persistedMsg.created_at || c.last_message_at,
+                  last_activity_at: persistedMsg.created_at || c.last_activity_at,
+                }
+              : c
+          )
+        );
+
+        return {
+          messages: { ...state.messages, [activeConversationId]: replaced },
+          conversations: sortedConvs,
+        };
+      });
+    } catch (e: any) {
       console.error('Failed to upload and send media:', e);
+      // Transition optimistic message to failed
+      set((state) => {
+        const list = state.messages[activeConversationId] || [];
+        const failedList = list.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                delivery_status: 'failed' as const,
+                error_message: e.message || 'فشل رفع أو تسليم المرفق',
+              }
+            : m
+        );
+        return { messages: { ...state.messages, [activeConversationId]: failedList } };
+      });
     }
   },
 
@@ -691,6 +1076,34 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       return;
     }
 
+    if (
+      (event.type === 'MESSAGE_UPDATED' ||
+        event.type === 'MESSAGE_DELETED' ||
+        event.type === 'MESSAGE_REACTION_UPDATED' ||
+        event.type === 'MESSAGE_PIN_UPDATED' ||
+        (event as any).type === 'message_updated' ||
+        (event as any).type === 'message_deleted' ||
+        (event as any).type === 'message_reaction_updated' ||
+        (event as any).type === 'message_pin_updated') &&
+      event.conversation_id &&
+      event.message
+    ) {
+      const convId = event.conversation_id;
+      const updatedMsg = event.message;
+      set((state) => {
+        const convMsgs = state.messages[convId] || [];
+        const newMsgs = convMsgs.map((m) =>
+          m.id === updatedMsg.id || (m.external_message_id && m.external_message_id === updatedMsg.external_message_id)
+            ? { ...m, ...updatedMsg }
+            : m
+        );
+        return {
+          messages: { ...state.messages, [convId]: newMsgs },
+        };
+      });
+      return;
+    }
+
     if ((event.type === 'NEW_MESSAGE' || (event as any).type === 'new_message') && event.conversation_id && event.message) {
       const convId = event.conversation_id;
       const msg = event.message;
@@ -704,22 +1117,24 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         }
 
         const updatedMsgs = [...convMsgs, msg];
-        const updatedConvs = state.conversations.map((c) =>
-          c.id === convId
-            ? {
-                ...c,
-                last_message_text: msg.text || 'مرفق جديد',
-                last_message_at: msg.created_at,
-                last_activity_at: msg.created_at,
-                last_customer_message_at:
-                  msg.sender_type === 'customer' ? msg.created_at : c.last_customer_message_at,
-                customer: c.customer ? { ...c.customer, last_activity_at: msg.created_at } : c.customer,
-                unread_count:
-                  c.id === state.activeConversationId
-                    ? 0
-                    : (c.unread_count || 0) + (msg.sender_type === 'customer' ? 1 : 0),
-              }
-            : c
+        const updatedConvs = sortConversationsByLatest(
+          state.conversations.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  last_message_text: msg.text || 'مرفق جديد',
+                  last_message_at: msg.created_at,
+                  last_activity_at: msg.created_at,
+                  last_customer_message_at:
+                    msg.sender_type === 'customer' ? msg.created_at : c.last_customer_message_at,
+                  customer: c.customer ? { ...c.customer, last_activity_at: msg.created_at } : c.customer,
+                  unread_count:
+                    c.id === state.activeConversationId
+                      ? 0
+                      : (c.unread_count || 0) + (msg.sender_type === 'customer' ? 1 : 0),
+                }
+              : c
+          )
         );
 
         return {

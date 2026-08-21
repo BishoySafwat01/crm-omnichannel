@@ -7,7 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
-from app.models.enums import ChannelEnum, ProviderEnum
+from app.models.enums import ChannelEnum, ProviderEnum, SenderTypeEnum
+from app.models.message import Message
+from app.models.user import User
 
 
 class CustomerService:
@@ -52,7 +54,7 @@ class CustomerService:
         total = total_res.scalar() or 0
 
         stmt = (
-            stmt.order_by(Customer.created_at.desc(), Customer.id.desc())
+            stmt.order_by(Customer.last_activity_at.desc(), Customer.created_at.desc(), Customer.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -71,7 +73,7 @@ class CustomerService:
         country: Optional[str] = None,
         page: int = 1,
         page_size: int = 50,
-    ) -> tuple[list[Customer], int, int]:
+    ) -> tuple[list[dict[str, Any]], int, int]:
         stmt = select(Customer)
         count_stmt = select(func.count(Customer.id))
         conditions = []
@@ -111,13 +113,117 @@ class CustomerService:
         total_pages = math.ceil(total / max(page_size, 1)) if total > 0 else 1
 
         stmt = (
-            stmt.order_by(Customer.created_at.desc(), Customer.id.desc())
+            stmt.order_by(Customer.last_activity_at.desc(), Customer.created_at.desc(), Customer.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
         res = await session.execute(stmt)
         customers = list(res.scalars().all())
-        return customers, total, total_pages
+
+        if not customers:
+            return [], total, total_pages
+
+        cust_ids = [c.id for c in customers]
+
+        # 1. Fetch conversations for these customers ordered by last_activity_at desc
+        conv_stmt = (
+            select(Conversation)
+            .where(Conversation.customer_id.in_(cust_ids))
+            .order_by(Conversation.last_activity_at.desc(), Conversation.created_at.desc())
+        )
+        conv_res = await session.execute(conv_stmt)
+        convs = list(conv_res.scalars().all())
+
+        customer_latest_conv = {}
+        all_agent_ids = set()
+        conv_ids = []
+        for conv in convs:
+            if conv.customer_id not in customer_latest_conv:
+                customer_latest_conv[conv.customer_id] = conv
+                conv_ids.append(conv.id)
+            if conv.assigned_agent_id:
+                try:
+                    all_agent_ids.add(uuid.UUID(conv.assigned_agent_id))
+                except ValueError:
+                    pass
+
+        # 2. Fetch latest outgoing agent messages for these conversations
+        latest_agent_messages = {}
+        if conv_ids:
+            msg_stmt = (
+                select(Message)
+                .options(selectinload(Message.sender_user))
+                .where(
+                    Message.conversation_id.in_(conv_ids),
+                    Message.sender_type == SenderTypeEnum.AGENT,
+                )
+                .order_by(Message.created_at.desc())
+            )
+            msg_res = await session.execute(msg_stmt)
+            for msg in msg_res.scalars().all():
+                if msg.conversation_id not in latest_agent_messages:
+                    latest_agent_messages[msg.conversation_id] = msg
+                if msg.sender_user_id:
+                    all_agent_ids.add(msg.sender_user_id)
+
+        # 3. Load Agent User details
+        users_map = {}
+        if all_agent_ids:
+            user_stmt = select(User).where(User.id.in_(all_agent_ids))
+            user_res = await session.execute(user_stmt)
+            for u in user_res.scalars().all():
+                users_map[str(u.id)] = u.full_name
+
+        # 4. Construct enriched customer records
+        enriched_items = []
+        for c in customers:
+            conv = customer_latest_conv.get(c.id)
+            brand_val = getattr(conv, "brand", "LAVVA") if conv else "LAVVA"
+            chan_val = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)) if conv else None
+            conv_id = conv.id if conv else None
+            conv_status = (conv.status.value if hasattr(conv.status, "value") else str(conv.status)) if conv else None
+            assigned_id = conv.assigned_agent_id if conv else None
+            assigned_name = users_map.get(str(conv.assigned_agent_id)) if conv and conv.assigned_agent_id else None
+
+            latest_msg = latest_agent_messages.get(conv.id) if conv else None
+            last_agent_name = None
+            if latest_msg:
+                if latest_msg.sender_user and latest_msg.sender_user.full_name:
+                    last_agent_name = latest_msg.sender_user.full_name
+                elif latest_msg.sender_user_id:
+                    last_agent_name = users_map.get(str(latest_msg.sender_user_id))
+
+            last_act = (conv.last_activity_at or conv.last_message_at or c.last_activity_at or c.created_at) if conv else (c.last_activity_at or c.created_at)
+
+            item_dict = {
+                "id": c.id,
+                "display_name": c.display_name,
+                "email": c.email,
+                "phone": c.phone,
+                "avatar_url": c.avatar_url,
+                "location": c.location,
+                "country": c.country,
+                "city": c.city,
+                "tier": c.tier,
+                "skin_type": c.skin_type,
+                "stage": c.stage,
+                "locale": c.locale,
+                "tags": c.tags or [],
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
+                "last_activity_at": last_act,
+                "brand": brand_val,
+                "channel": chan_val,
+                "conversation_id": conv_id,
+                "conversation_status": conv_status,
+                "assigned_agent_id": assigned_id,
+                "assigned_agent_name": assigned_name,
+                "last_agent_name": last_agent_name,
+                "last_interaction": latest_msg.text if latest_msg else None,
+            }
+            enriched_items.append(item_dict)
+
+        return enriched_items, total, total_pages
 
     @staticmethod
     async def stream_customers_csv(
@@ -210,6 +316,88 @@ class CustomerService:
         )
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_customer_detail_by_id(
+        session: AsyncSession, customer_id: uuid.UUID
+    ) -> Optional[dict[str, Any]]:
+        customer = await CustomerService.get_customer_by_id(session=session, customer_id=customer_id)
+        if not customer:
+            return None
+
+        # Fetch latest active conversation
+        conv_stmt = (
+            select(Conversation)
+            .where(Conversation.customer_id == customer_id)
+            .order_by(Conversation.last_activity_at.desc(), Conversation.created_at.desc())
+            .limit(1)
+        )
+        conv_res = await session.execute(conv_stmt)
+        conv = conv_res.scalar_one_or_none()
+
+        brand_val = getattr(conv, "brand", "LAVVA") if conv else "LAVVA"
+        chan_val = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)) if conv else None
+        conv_id = conv.id if conv else None
+        conv_status = (conv.status.value if hasattr(conv.status, "value") else str(conv.status)) if conv else None
+        assigned_id = conv.assigned_agent_id if conv else None
+        assigned_name = None
+        if assigned_id:
+            try:
+                agent_u = await session.get(User, uuid.UUID(assigned_id))
+                if agent_u:
+                    assigned_name = agent_u.full_name
+            except ValueError:
+                pass
+
+        last_agent_name = None
+        last_interaction = None
+        if conv:
+            msg_stmt = (
+                select(Message)
+                .options(selectinload(Message.sender_user))
+                .where(
+                    Message.conversation_id == conv.id,
+                    Message.sender_type == SenderTypeEnum.AGENT,
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+            msg_res = await session.execute(msg_stmt)
+            latest_msg = msg_res.scalar_one_or_none()
+            if latest_msg:
+                last_interaction = latest_msg.text
+                if latest_msg.sender_user:
+                    last_agent_name = latest_msg.sender_user.full_name
+
+        last_act = (conv.last_activity_at or conv.last_message_at or customer.last_activity_at or customer.created_at) if conv else (customer.last_activity_at or customer.created_at)
+
+        return {
+            "id": customer.id,
+            "display_name": customer.display_name,
+            "email": customer.email,
+            "phone": customer.phone,
+            "avatar_url": customer.avatar_url,
+            "location": customer.location,
+            "country": customer.country,
+            "city": customer.city,
+            "tier": customer.tier,
+            "skin_type": customer.skin_type,
+            "stage": customer.stage,
+            "locale": customer.locale,
+            "tags": customer.tags or [],
+            "identities": customer.identities or [],
+            "created_at": customer.created_at,
+            "updated_at": customer.updated_at,
+            "last_activity_at": last_act,
+            "brand": brand_val,
+            "channel": chan_val,
+            "conversation_id": conv_id,
+            "conversation_status": conv_status,
+            "assigned_agent_id": assigned_id,
+            "assigned_agent_name": assigned_name,
+            "last_agent_name": last_agent_name,
+            "last_interaction": last_interaction,
+        }
 
     @staticmethod
     async def get_customer_identities(
