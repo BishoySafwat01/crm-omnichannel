@@ -22,8 +22,11 @@ import {
   MapPin,
   ExternalLink,
   ChevronDown,
+  Ban,
+  ShieldCheck,
 } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
+import { useAuthStore } from '../store/useAuthStore';
 import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
@@ -251,7 +254,11 @@ export const ChatCanvas: React.FC = () => {
     setSelectedMetaTag,
     draftText,
     setDraftText,
+    unblockCustomer,
   } = useCrmStore();
+
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -828,60 +835,93 @@ export const ChatCanvas: React.FC = () => {
 
       {/* Floating Dock Message Composer */}
       <footer className="px-6 mb-4 mt-1 bg-transparent relative z-20">
-        {/* Rounded All-in-One Floating Dock Composer Box */}
-        <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5">
-          <textarea
-            value={draftText}
-            onChange={(e) => setDraftText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="اكتب رسالتك هنا... (Enter للإرسال)"
-            rows={2}
-            className="w-full bg-transparent text-slate-900 text-xs focus:outline-none resize-none font-medium placeholder-slate-400 px-1"
-          />
-
-          {/* Controls Bar */}
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-                title="إرفاق ملف"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={startRecording}
-                className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
-                title="تسجيل صوتي"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCannedPicker(!showCannedPicker)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-[#1A73E8] hover:bg-blue-50 transition"
-                title="ردود جاهزة"
-              >
-                <Zap className="w-4 h-4" />
-              </button>
+        {activeConv?.customer?.is_blocked ? (
+          <div className="border border-rose-200 bg-rose-50/95 backdrop-blur-md rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3 text-right">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                <Ban className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h4 className="text-xs font-extrabold text-rose-900">هذا العميل محظور حالياً من قِبل الإدارة</h4>
+                <p className="text-[11px] text-rose-700 font-medium mt-0.5">
+                  {activeConv.customer.blocked_reason
+                    ? `سبب الحظر: ${activeConv.customer.blocked_reason}`
+                    : 'تم إيقاف المراسلة لهذا العميل. لن يتم إرسال أي رسائل حتى يتم إلغاء الحظر.'}
+                </p>
+              </div>
             </div>
 
-            <button
-              onClick={handleSend}
-              disabled={!draftText.trim()}
-              className={`p-2.5 rounded-full font-bold transition flex items-center justify-center ${
-                draftText.trim()
-                  ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-sm active:scale-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              }`}
-              title="إرسال"
-            >
-              <Send className="w-4 h-4 rotate-180" />
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (activeConv.customer?.id && window.confirm('هل ترغب في إلغاء حظر العميل وتمكين إرسال الرسائل مجدداً؟')) {
+                    await unblockCustomer(activeConv.customer.id);
+                  }
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0 flex items-center gap-1.5 active:scale-95"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>إلغاء الحظر والتمكين من المراسلة</span>
+              </button>
+            )}
           </div>
-        </div>
+        ) : (
+          /* Rounded All-in-One Floating Dock Composer Box */
+          <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5">
+            <textarea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="اكتب رسالتك هنا... (Enter للإرسال)"
+              rows={2}
+              className="w-full bg-transparent text-slate-900 text-xs focus:outline-none resize-none font-medium placeholder-slate-400 px-1"
+            />
+
+            {/* Controls Bar */}
+            <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                  title="إرفاق ملف"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                  title="تسجيل صوتي"
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCannedPicker(!showCannedPicker)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-[#1A73E8] hover:bg-blue-50 transition"
+                  title="ردود جاهزة"
+                >
+                  <Zap className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                onClick={handleSend}
+                disabled={!draftText.trim()}
+                className={`p-2.5 rounded-full font-bold transition flex items-center justify-center ${
+                  draftText.trim()
+                    ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-sm active:scale-95'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+                title="إرسال"
+              >
+                <Send className="w-4 h-4 rotate-180" />
+              </button>
+            </div>
+          </div>
+        )}
       </footer>
     </main>
   );
