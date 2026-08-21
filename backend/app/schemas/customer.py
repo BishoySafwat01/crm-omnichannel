@@ -63,6 +63,7 @@ class CustomerResponse(CustomerBase):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    last_activity_at: Optional[datetime] = None
 
 
 class CustomerDetailResponse(CustomerResponse):

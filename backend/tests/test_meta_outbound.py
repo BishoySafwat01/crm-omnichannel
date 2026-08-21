@@ -164,7 +164,7 @@ async def test_successful_outbound_message_persisted_and_last_message_at_updated
             customer_id=cust.id,
             provider=ProviderEnum.META,
             channel=ChannelEnum.MESSENGER,
-            external_conversation_id="t_1368342205478597",
+            external_conversation_id=f"t_outbound_{uuid.uuid4().hex[:8]}",
         )
         session.add(conv)
         await session.commit()

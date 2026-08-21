@@ -7,9 +7,10 @@ import {
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
 import { UserAvatar } from './UserAvatar';
+import { useCustomerPresence } from '../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, setDraftText } = useCrmStore();
+  const { conversations, activeConversationId, updateCustomerProfile, setDraftText, isTyping } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -25,6 +26,12 @@ export const CustomerProfileSidebar: React.FC = () => {
     created_at: '',
     updated_at: '',
   } : null);
+
+  const isCustomerTyping = Boolean(activeConversation ? isTyping[activeConversation.id] : false);
+  const presence = useCustomerPresence(
+    customer?.last_activity_at || activeConversation?.last_activity_at || activeConversation?.last_customer_message_at || activeConversation?.last_message_at,
+    isCustomerTyping
+  );
 
   // Tab & Edit States
   const [activeSidebarTab, setActiveSidebarTab] = useState<'profile' | 'timeline' | 'notes'>('profile');
@@ -112,15 +119,16 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   if (!customer || !activeConversation) {
     return (
-      <aside className="w-72 md:w-80 bg-white border-r border-slate-200/80 p-6 shrink-0 h-full hidden lg:flex flex-col justify-center items-center text-slate-400 text-xs">
-        <User className="w-8 h-8 text-slate-300 mb-2" />
-        <span>اختر محادثة لعرض ملف العميل</span>
+      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
+        <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+        <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
+        <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
       </aside>
     );
   }
 
   const handleSaveContact = async () => {
-    if (customer.id) {
+    if (customer?.id) {
       const locVal = formData.location.trim() || undefined;
       await updateCustomerProfile(customer.id, {
         display_name: formData.display_name.trim() || customer.display_name,
@@ -134,14 +142,14 @@ export const CustomerProfileSidebar: React.FC = () => {
   };
 
   const handleSelectAttribute = (key: 'skin_type' | 'tier' | 'stage', value: string) => {
-    if (customer.id) {
+    if (customer?.id) {
       updateCustomerProfile(customer.id, { [key]: value });
     }
   };
 
-  const currentSkin = customer.skin_type || 'عادية';
-  const currentTier = customer.tier || 'درجة أولى';
-  const currentStage = customer.stage || 'جديد';
+  const currentSkin = customer?.skin_type || 'عادية';
+  const currentTier = customer?.tier || 'درجة أولى';
+  const currentStage = customer?.stage || 'جديد';
 
   const relevantScripts = SALES_SCRIPTS.filter(
     (s) => s.filterKey === currentSkin || s.filterKey === currentStage || s.filterKey === currentTier
@@ -173,9 +181,9 @@ export const CustomerProfileSidebar: React.FC = () => {
     }
   };
 
-  const formattedLocation = customer.country
-    ? (customer.city ? `${customer.city} - ${customer.country}` : customer.country)
-    : (customer.location || 'غير محدد');
+  const formattedLocation = customer?.country
+    ? (customer?.city ? `${customer.city} - ${customer.country}` : customer.country)
+    : (customer?.location || 'غير محدد');
 
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
@@ -221,7 +229,7 @@ export const CustomerProfileSidebar: React.FC = () => {
           <div className="flex flex-col items-center text-center py-1">
             <div className="relative mb-2">
               <UserAvatar name={customer.display_name || 'عميل'} avatarUrl={customer.avatar_url} size="lg" />
-              <span className="w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full absolute bottom-0 right-0" />
+              <span className={`w-3.5 h-3.5 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
             </div>
 
             {isEditing ? (
@@ -236,7 +244,7 @@ export const CustomerProfileSidebar: React.FC = () => {
               <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || 'عميل غير مسمى'}</h3>
             )}
 
-            <span className="text-xs text-emerald-600 font-bold mt-0.5">متصل الآن 🟢</span>
+            <span className={`text-xs font-bold mt-0.5 ${presence.colorClass}`}>{presence.statusText}</span>
           </div>
 
           {/* Contact Information Fields */}

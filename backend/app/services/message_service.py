@@ -47,18 +47,25 @@ class MessageService:
         result = await session.execute(stmt)
         conversation = result.scalar_one_or_none()
         if conversation:
-            conversation.last_message_at = datetime.now(timezone.utc)
-            if text:
-                from app.services.location_extractor import extract_location_from_text
-                detected_loc = extract_location_from_text(text)
-                if detected_loc and conversation.customer_id:
-                    cust_stmt = select(Customer).where(Customer.id == conversation.customer_id)
-                    cust_res = await session.execute(cust_stmt)
-                    cust = cust_res.scalar_one_or_none()
-                    if cust:
-                        cust.country = detected_loc
-                        cust.location = detected_loc
-                        session.add(cust)
+            now = datetime.now(timezone.utc)
+            conversation.last_message_at = now
+            conversation.last_activity_at = now
+            if sender_type == SenderTypeEnum.CUSTOMER:
+                conversation.last_customer_message_at = now
+
+            if conversation.customer_id:
+                cust_stmt = select(Customer).where(Customer.id == conversation.customer_id)
+                cust_res = await session.execute(cust_stmt)
+                cust = cust_res.scalar_one_or_none()
+                if cust:
+                    cust.last_activity_at = now
+                    if text:
+                        from app.services.location_extractor import extract_location_from_text
+                        detected_loc = extract_location_from_text(text)
+                        if detected_loc:
+                            cust.country = detected_loc
+                            cust.location = detected_loc
+                    session.add(cust)
 
         await session.commit()
         await session.refresh(message)

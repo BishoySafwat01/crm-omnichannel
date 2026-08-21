@@ -225,7 +225,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
           >
             <option value="all">🌍 كل المواقع</option>
-            {availableCountries.map((c) => (
+            {(availableCountries || []).map((c) => (
               <option key={c} value={c}>
                 📍 {c}
               </option>

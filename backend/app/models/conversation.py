@@ -72,6 +72,9 @@ class Conversation(Base):
     last_customer_message_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
 
     customer: Mapped["Customer"] = relationship("Customer", back_populates="conversations")
     messages: Mapped[List["Message"]] = relationship(

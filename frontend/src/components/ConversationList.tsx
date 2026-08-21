@@ -3,6 +3,7 @@ import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertT
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
+import { formatCustomerPresence } from '../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
   low: { label: 'منخفضة', color: 'bg-slate-100 text-slate-600' },
@@ -62,6 +63,7 @@ export const ConversationList: React.FC = () => {
     setSearchQuery,
     activeFilterTab,
     setActiveFilterTab,
+    isTyping,
     isLoadingConversations,
   } = useCrmStore();
 
@@ -226,6 +228,11 @@ export const ConversationList: React.FC = () => {
             const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
             const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
             const unreadCount = conv.unread_count || 0;
+            const isCustomerTyping = Boolean(isTyping[conv.id]);
+            const presence = formatCustomerPresence(
+              conv.last_activity_at || conv.customer?.last_activity_at || conv.last_customer_message_at || conv.last_message_at,
+              isCustomerTyping
+            );
 
             return (
               <div
@@ -243,6 +250,7 @@ export const ConversationList: React.FC = () => {
                     <div className="relative shrink-0">
                       <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
                       {getChannelBadgeDot(conv.channel)}
+                      <span className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
                     </div>
                     <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-extrabold text-slate-900' : 'font-bold text-slate-800'}`}>
                       {customerName}

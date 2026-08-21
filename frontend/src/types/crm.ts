@@ -49,6 +49,7 @@ export interface Customer {
   attributes?: Record<string, string>;
   created_at: string;
   updated_at: string;
+  last_activity_at?: string;
   identities?: CustomerIdentity[];
 }
 
@@ -86,6 +87,7 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at: string;
   last_customer_message_at?: string;
+  last_activity_at?: string;
   created_at: string;
   sla_due_at?: string;
   sla_status?: 'none' | 'pending' | 'met' | 'breached';
@@ -122,8 +124,9 @@ export interface TagGroup {
 }
 
 export interface WebSocketEvent {
-  type: 'NEW_MESSAGE' | 'MESSAGE_STATUS' | 'TYPING_INDICATOR' | 'PONG';
+  type: 'NEW_MESSAGE' | 'MESSAGE_STATUS' | 'TYPING_INDICATOR' | 'PONG' | 'customer_typing' | 'new_message';
   conversation_id?: string;
+  customer_id?: string;
   message?: Message;
   status?: MessageDeliveryStatus;
   is_typing?: boolean;

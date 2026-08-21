@@ -28,6 +28,7 @@ import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 import { aiApi } from '../services/api';
+import { useCustomerPresence } from '../hooks/useCustomerPresence';
 
 // Custom Inline Audio Player Component
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
@@ -91,7 +92,7 @@ interface ResolvedMedia {
   fileName: string;
 }
 
-export const getProxiedMediaUrl = (url: string | null | undefined): string => {
+const getProxiedMediaUrl = (url: string | null | undefined): string => {
   if (!url) return '';
   if (url.startsWith('/uploads/') || url.startsWith('/api') || url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
@@ -102,7 +103,7 @@ export const getProxiedMediaUrl = (url: string | null | undefined): string => {
   return url;
 };
 
-export const isSocialWebLink = (url: string | undefined | null): boolean => {
+const isSocialWebLink = (url: string | undefined | null): boolean => {
   if (!url) return false;
   return (
     url.includes('instagram.com/reel/') ||
@@ -269,6 +270,10 @@ export const ChatCanvas: React.FC = () => {
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeMessages = activeConversationId ? messages[activeConversationId] || [] : [];
   const isCustomerTyping = activeConversationId ? isTyping[activeConversationId] : false;
+  const presence = useCustomerPresence(
+    activeConv?.last_activity_at || activeConv?.customer?.last_activity_at || activeConv?.last_customer_message_at || activeConv?.last_message_at,
+    Boolean(isCustomerTyping)
+  );
 
   // AI Copilot Intelligence State
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
@@ -519,7 +524,7 @@ export const ChatCanvas: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="relative">
             <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-            <span className="w-3 h-3 bg-emerald-500 border-2 border-white rounded-full absolute bottom-0 right-0" title="متصل الآن" />
+            <span className={`w-3 h-3 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
           </div>
 
           <div>
@@ -530,7 +535,7 @@ export const ChatCanvas: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-              <span className="text-emerald-600 font-bold">متصل الآن 🟢</span>
+              <span className={presence.colorClass}>{presence.statusText}</span>
               <span>•</span>
               <span>{activeConv.channel}</span>
             </p>

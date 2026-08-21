@@ -47,6 +47,8 @@ class ConversationResponse(BaseModel):
     customer_avatar_url: Optional[str] = None
     last_message_text: Optional[str] = ""
     last_message_at: Optional[datetime] = None
+    last_customer_message_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     sla_due_at: Optional[datetime] = None

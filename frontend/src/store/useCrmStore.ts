@@ -673,7 +673,25 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       return;
     }
 
-    if (event.type === 'NEW_MESSAGE' && event.conversation_id && event.message) {
+    if (event.type === 'customer_typing' || event.type === 'TYPING_INDICATOR') {
+      const convId = event.conversation_id;
+      if (convId) {
+        const isTyping = event.is_typing !== false;
+        set((state) => ({
+          isTyping: { ...state.isTyping, [convId]: isTyping },
+        }));
+        if (isTyping) {
+          setTimeout(() => {
+            set((state) => ({
+              isTyping: { ...state.isTyping, [convId]: false },
+            }));
+          }, 5000);
+        }
+      }
+      return;
+    }
+
+    if ((event.type === 'NEW_MESSAGE' || (event as any).type === 'new_message') && event.conversation_id && event.message) {
       const convId = event.conversation_id;
       const msg = event.message;
 
@@ -692,8 +710,10 @@ export const useCrmStore = create<CrmState>((set, get) => ({
                 ...c,
                 last_message_text: msg.text || 'مرفق جديد',
                 last_message_at: msg.created_at,
+                last_activity_at: msg.created_at,
                 last_customer_message_at:
                   msg.sender_type === 'customer' ? msg.created_at : c.last_customer_message_at,
+                customer: c.customer ? { ...c.customer, last_activity_at: msg.created_at } : c.customer,
                 unread_count:
                   c.id === state.activeConversationId
                     ? 0
