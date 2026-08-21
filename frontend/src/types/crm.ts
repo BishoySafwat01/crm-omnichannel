@@ -47,6 +47,9 @@ export interface Customer {
   stage?: string;
   tags?: string[];
   attributes?: Record<string, string>;
+  is_blocked?: boolean;
+  blocked_at?: string;
+  blocked_reason?: string;
   created_at: string;
   updated_at: string;
   last_activity_at?: string;

@@ -111,6 +111,7 @@ app.include_router(meta_router, prefix="/api/v1")
 app.include_router(respond_io_router, prefix="/api/v1")
 app.include_router(ws_router)
 app.include_router(ws_router, prefix="/api/v1")
+app.include_router(ws_router)
 app.include_router(webhooks_router)
 
 

@@ -349,6 +349,9 @@ export const ChatCanvas: React.FC = () => {
     toggleReaction,
   } = useCrmStore();
 
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
+
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -1508,7 +1511,7 @@ export const ChatCanvas: React.FC = () => {
               </div>
 
               {/* Send Button */}
-              <button
+             المزيد  <button
                 type="button"
                 onClick={handleSend}
                 disabled={!draftText.trim() && !stagedMedia}

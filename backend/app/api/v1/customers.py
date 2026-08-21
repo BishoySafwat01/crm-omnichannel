@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
 from app.schemas.customer import (
+    CustomerBlockRequest,
     CustomerDetailResponse,
     CustomerIdentityResponse,
     CustomerResponse,
@@ -394,3 +395,58 @@ async def delete_customer_note(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(pe)
         )
+
+
+@router.post(
+    "/{customer_id}/block",
+    response_model=CustomerResponse,
+    summary="Block Customer (Admin Only)",
+)
+async def block_customer(
+    customer_id: uuid.UUID,
+    payload: CustomerBlockRequest = CustomerBlockRequest(),
+    current_admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Blocks a customer from messaging and interactions. Strictly restricted to Admin role."""
+    try:
+        customer = await CustomerService.block_customer(
+            session=db,
+            customer_id=customer_id,
+            reason=payload.reason,
+            admin_user_id=current_admin.id,
+            admin_name=current_admin.full_name,
+        )
+        return CustomerResponse.model_validate(customer)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
+
+@router.post(
+    "/{customer_id}/unblock",
+    response_model=CustomerResponse,
+    summary="Unblock Customer (Admin Only)",
+)
+async def unblock_customer(
+    customer_id: uuid.UUID,
+    current_admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unblocks a customer. Strictly restricted to Admin role."""
+    try:
+        customer = await CustomerService.unblock_customer(
+            session=db,
+            customer_id=customer_id,
+            admin_user_id=current_admin.id,
+            admin_name=current_admin.full_name,
+        )
+        return CustomerResponse.model_validate(customer)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+

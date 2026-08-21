@@ -170,6 +170,9 @@ class MessageService:
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found.")
 
+        if conv.customer and getattr(conv.customer, "is_blocked", False):
+            raise ValueError("العميل محظور حالياً من قِبل الإدارة. يرجى إلغاء الحظر أولاً لتتمكن من إرسال الرسائل.")
+
         # Validate provider & channel and resolve adapter
         if conv.provider == ProviderEnum.META:
             valid_channels = [ChannelEnum.MESSENGER, ChannelEnum.INSTAGRAM, ChannelEnum.WHATSAPP]
