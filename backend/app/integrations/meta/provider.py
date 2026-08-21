@@ -125,6 +125,12 @@ class MetaProvider:
             page_id=page_id,
             tag=tag,
         )
+        return {
+            "external_message_id": res.get("message_id") or res.get("id"),
+            "recipient_id": res.get("recipient_id") or recipient_external_id,
+            "raw": res,
+        }
+
     async def send_outbound_attachment(
         self,
         recipient_external_id: str,

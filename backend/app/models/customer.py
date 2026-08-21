@@ -20,6 +20,8 @@ class Customer(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     tier: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="درجة أولى", server_default="درجة أولى")
     skin_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="عادية", server_default="عادية")
     stage: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="جديد", server_default="جديد")

@@ -15,23 +15,21 @@ import {
   Trash2,
   Clock,
   X,
-  ShieldCheck,
-  ShieldAlert,
   Mic,
   User,
   AlertCircle,
   Plus,
   MapPin,
   ExternalLink,
-  Share2,
+  ChevronDown,
 } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
-import { Message, MetaMessageTag, Attachment } from '../types/crm';
+import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 import { aiApi } from '../services/api';
 
-// Custom Inline Audio Player Component (Material 3 SaaS Light)
+// Custom Inline Audio Player Component
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -55,7 +53,7 @@ const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
   };
 
   return (
-    <div className="flex items-center gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200 my-1">
+    <div className="flex items-center gap-2.5 bg-slate-100/80 p-2 rounded-xl border border-slate-200 my-1">
       <audio
         ref={audioRef}
         src={url}
@@ -66,15 +64,15 @@ const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
       <button
         type="button"
         onClick={togglePlay}
-        className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center hover:bg-teal-700 transition shrink-0 shadow-xs"
+        className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition shrink-0 shadow-2xs"
       >
-        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+        {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
       </button>
 
       <div className="flex-1 space-y-1">
         <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
           <div
-            className="h-full bg-teal-600 transition-all duration-100"
+            className="h-full bg-emerald-600 transition-all duration-100"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -222,12 +220,12 @@ const AGENTS = [
 ];
 
 const AVAILABLE_BRANDS = [
-  { id: 'LAVVA', label: 'LAVVA', code: 'LV' },
-  { id: 'MOON LIGHT', label: 'MOON LIGHT', code: 'ML' },
-  { id: 'LOTUS BLUE', label: 'LOTUS BLUE', code: 'LB' },
-  { id: 'BEAUTY CENTER', label: 'BEAUTY CENTER', code: 'BC' },
-  { id: 'LOXX KING', label: 'LOXX KING', code: 'LK' },
-  { id: 'FLARE', label: 'FLARE', code: 'FL' },
+  { id: 'LAVVA', label: 'LAVVA' },
+  { id: 'MOON LIGHT', label: 'MOON LIGHT' },
+  { id: 'LOTUS BLUE', label: 'LOTUS BLUE' },
+  { id: 'BEAUTY CENTER', label: 'BEAUTY CENTER' },
+  { id: 'LOXX KING', label: 'LOXX KING' },
+  { id: 'FLARE', label: 'FLARE' },
 ];
 
 export const ChatCanvas: React.FC = () => {
@@ -256,7 +254,6 @@ export const ChatCanvas: React.FC = () => {
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
 
   // Live Voice Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -275,6 +272,7 @@ export const ChatCanvas: React.FC = () => {
 
   // AI Copilot Intelligence State
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
+  const [isAiPopoverOpen, setIsAiPopoverOpen] = useState(false);
   const [aiInsights, setAiInsights] = useState<{
     summary?: string;
     intent?: string;
@@ -314,7 +312,6 @@ export const ChatCanvas: React.FC = () => {
     }
   };
 
-  // 24-Hour Policy Window calculation
   const lastCustomerMsgAt = activeConv?.last_customer_message_at
     ? new Date(activeConv.last_customer_message_at).getTime()
     : Date.now();
@@ -323,7 +320,6 @@ export const ChatCanvas: React.FC = () => {
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUpRef = useRef<boolean>(false);
 
-  // Smooth or instant scroll to bottom using anchor
   const scrollToBottom = React.useCallback((behavior: ScrollBehavior = 'auto') => {
     if (bottomAnchorRef.current) {
       bottomAnchorRef.current.scrollIntoView({ behavior, block: 'end' });
@@ -334,7 +330,6 @@ export const ChatCanvas: React.FC = () => {
     }
   }, []);
 
-  // Monitor user manual scrolling
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
@@ -343,12 +338,10 @@ export const ChatCanvas: React.FC = () => {
       loadMoreMessages();
     }
 
-    // Consider scrolled up only if user is more than 150px away from bottom
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     isUserScrolledUpRef.current = distanceFromBottom > 150;
   }, [isFetchingMore, loadMoreMessages]);
 
-  // 1. Thread switch: Reset user state and force instant scroll to bottom
   React.useLayoutEffect(() => {
     isUserScrolledUpRef.current = false;
     scrollToBottom('auto');
@@ -356,14 +349,12 @@ export const ChatCanvas: React.FC = () => {
     return () => clearTimeout(timer);
   }, [activeConversationId, scrollToBottom]);
 
-  // 2. Message updates: Scroll to bottom if user hasn't scrolled up
   React.useLayoutEffect(() => {
     if (!isUserScrolledUpRef.current) {
       scrollToBottom('auto');
     }
   }, [activeMessages.length, activeConv?.last_message_at, isCustomerTyping, scrollToBottom]);
 
-  // 3. ResizeObserver: When images/videos expand container, keep locked to bottom if user was at bottom
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -378,15 +369,15 @@ export const ChatCanvas: React.FC = () => {
     return () => resizeObserver.disconnect();
   }, [scrollToBottom]);
 
-  // Dedicated live polling loop every 2.5s for active conversation messages
   useEffect(() => {
     if (!activeConversationId) return;
 
     fetchMessages(activeConversationId);
 
+    // P2-8: Fallback poll — 15 s interval (WebSocket events drive updates when connected)
     const msgInterval = setInterval(() => {
       fetchMessages(activeConversationId);
-    }, 2500);
+    }, 15000);
 
     return () => clearInterval(msgInterval);
   }, [activeConversationId, fetchMessages]);
@@ -397,97 +388,71 @@ export const ChatCanvas: React.FC = () => {
     }
   }, [scrollToBottom]);
 
-  // Recording Timer Effect
-  useEffect(() => {
-    if (isRecording) {
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      clearInterval(recordingTimerRef.current);
-      setRecordingSeconds(0);
-    }
-    return () => clearInterval(recordingTimerRef.current);
-  }, [isRecording]);
-
-  const getSupportedMimeType = () => {
-    if (typeof MediaRecorder === 'undefined') return '';
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
-    if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/mp4')) return 'audio/mp4';
-    if (MediaRecorder.isTypeSupported('audio/ogg')) return 'audio/ogg';
-    return '';
-  };
-
-  // Voice Recording Handlers
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const mimeType = getSupportedMimeType();
-      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
       };
 
-      mediaRecorder.start(100);
+      mediaRecorder.start();
       setIsRecording(true);
-    } catch (e) {
-      console.error('Failed to access microphone for recording:', e);
-      alert('تعذر الوصول إلى الميكروفون للتسجيل الصوتى');
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      alert('تعذر الوصول إلى الميكروفون. يرجى تفعيل إذن الصوت بالمتصفح.');
     }
   };
 
   const stopAndSendRecording = () => {
-    if (!mediaRecorderRef.current || !isRecording) return;
+    if (!mediaRecorderRef.current || !activeConversationId) return;
 
-    mediaRecorderRef.current.onstop = () => {
-      const mimeType = getSupportedMimeType() || 'audio/webm';
-      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-      console.log('[VoiceRecorder] Captured blob size:', audioBlob.size, 'type:', audioBlob.type);
+    clearInterval(recordingTimerRef.current);
+    const mediaRecorder = mediaRecorderRef.current;
 
-      if (audioBlob.size < 500) {
-        console.warn('[VoiceRecorder] Captured blob size too small, skipping upload.');
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/ogg; codecs=opus' });
+      const audioFile = new File([audioBlob], `voice_${Date.now()}.ogg`, { type: 'audio/ogg' });
+
+      try {
+        await uploadAndSendMedia(audioFile);
+      } catch (err) {
+        alert('فشل إرسال التسجيل الصوتي.');
+      } finally {
         setIsRecording(false);
-        return;
+        setRecordingSeconds(0);
+        mediaRecorder.stream.getTracks().forEach((track) => track.stop());
       }
-
-      const ext = mimeType.includes('mp4') ? 'mp4' : (mimeType.includes('ogg') ? 'ogg' : 'webm');
-      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.${ext}`, {
-        type: mimeType,
-      });
-      uploadAndSendMedia(audioFile);
-      setIsRecording(false);
     };
 
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+    mediaRecorder.stop();
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current) {
+      clearInterval(recordingTimerRef.current);
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
     }
     setIsRecording(false);
-    audioChunksRef.current = [];
+    setRecordingSeconds(0);
   };
 
-
-
   const handleSend = () => {
-    if (!draftText.trim() || !activeConversationId) return;
-    sendMessage(draftText);
+    if (!activeConversationId || !draftText.trim()) return;
+    sendMessage(draftText.trim());
     setDraftText('');
     setShowCannedPicker(false);
+    setTimeout(() => scrollToBottom('auto'), 50);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -497,250 +462,199 @@ export const ChatCanvas: React.FC = () => {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      uploadAndSendMedia(file);
+    if (!file || !activeConversationId) return;
+    try {
+      await uploadAndSendMedia(file);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err) {
+      alert('فشل رفع الملف/الصورة.');
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      uploadAndSendMedia(file);
-    }
-  };
-
-  const formatMessageTime = (isoStr: string) => {
+  const formatMessageTime = (isoStr?: string) => {
     if (!isoStr) return '';
-    return new Date(isoStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    return new Date(isoStr).toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const formatSeconds = (sec: number) => {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   if (!activeConv) {
     return (
-      <main className="flex-1 bg-[#F8FAFC] flex flex-col items-center justify-center p-8 text-slate-400">
-        <Sparkles className="w-12 h-12 text-slate-300 animate-pulse mb-3" />
-        <h2 className="text-sm font-bold text-slate-600">حدد محادثة من القائمة للبدء</h2>
+      <main className="flex-1 bg-gradient-to-b from-slate-50 to-slate-100/50 flex items-center justify-center p-6 dir-rtl text-right">
+        <div className="bg-white/80 backdrop-blur-xl border border-white/80 shadow-xl rounded-3xl p-8 max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#1A73E8]/10 to-teal-500/10 text-[#1A73E8] flex items-center justify-center mx-auto shadow-inner border border-[#1A73E8]/20">
+            <Sparkles className="w-8 h-8" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-base font-extrabold text-slate-900">لا توجد محادثة محددة</h3>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+              اختر محادثة من القائمة الجانبية للبدء، أو قم بتغيير القناة / التصفية من الشريط العلوي.
+            </p>
+          </div>
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-medium">
+            تتم المزامنة تلقائياً عبر WebSockets & Meta Graph API
+          </div>
+        </div>
       </main>
     );
   }
 
-  const customerName = activeConv.customer?.display_name || activeConv.customer_display_name || 'عميل جديد';
-  const customerAvatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
-  const brandName = activeConv.brand_name || 'LUXIRA';
+  const customerName = activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
+  const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
 
   return (
-    <main
-      onDragOver={(e) => {
-        e.preventDefault();
-        setIsDragging(true);
-      }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
-      className={`flex-1 bg-[#F8FAFC] flex flex-col h-full relative z-10 transition-colors ${
-        isDragging ? 'bg-teal-50/60 border-2 border-dashed border-teal-500' : ''
-      }`}
-    >
-      {/* Drag & Drop Overlay */}
-      {isDragging && (
-        <div className="absolute inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center text-teal-800 font-bold space-y-2">
-          <Paperclip className="w-10 h-10 text-teal-600 animate-bounce" />
-          <p className="text-sm">إفلات الملف هنا لإرساله فوراً للمحادثة</p>
-        </div>
-      )}
-
-      {/* Active Chat Header & Agent Assignment Controls */}
-      <header className="h-16 bg-white/85 backdrop-blur-md border-b border-slate-200/80 px-5 flex items-center justify-between shrink-0 shadow-xs">
+    <main className="flex-1 bg-white/75 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col h-[calc(100vh-80px)] relative z-10 overflow-hidden">
+      {/* Sleek 56px Google Glass Chat Header Bar */}
+      <header className="h-14 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-6 flex items-center justify-between shrink-0 z-20">
+        {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
         <div className="flex items-center gap-3">
-          <UserAvatar name={customerName} avatarUrl={customerAvatarUrl} size="md" />
+          <div className="relative">
+            <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
+            <span className="w-3 h-3 bg-emerald-500 border-2 border-white rounded-full absolute bottom-0 right-0" title="متصل الآن" />
+          </div>
+
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
-              <span className="text-[10px] bg-teal-50 text-teal-700 font-semibold px-2 py-0.5 rounded-full border border-teal-200/60">
-                {brandName}
+              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+                {activeConv.brand || activeConv.brand_name || 'LUXIRA'}
               </span>
-              {activeConv?.sla_status === 'met' && (
-                <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                  <CheckCheck className="w-3 h-3 text-emerald-600" />
-                  <span>SLA محقق</span>
-                </span>
-              )}
-              {activeConv?.sla_status === 'breached' && (
-                <span className="text-[10px] bg-rose-500 text-white border border-rose-600 px-2 py-0.5 rounded-full font-bold animate-pulse flex items-center gap-1 shadow-xs">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>تجاوز الـ SLA</span>
-                </span>
-              )}
-              {activeConv?.sla_status === 'pending' && activeConv?.sla_due_at && (
-                <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-600" />
-                  <span>متبقي {Math.max(0, Math.ceil((new Date(activeConv.sla_due_at).getTime() - Date.now()) / 60000))} دقيقة</span>
-                </span>
-              )}
             </div>
-
-            {/* 24-Hour Policy Window Badge */}
-            {!is24hWindowExpired ? (
-              <p className="text-[11px] text-emerald-700 flex items-center gap-1 font-medium mt-0.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                نافذة المراسلة نشطة (24h)
-              </p>
-            ) : (
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[10px] bg-amber-50 text-amber-700 font-semibold px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
-                  <ShieldAlert className="w-3 h-3 text-amber-600" />
-                  انتهت نافذة الـ 24 ساعة
-                </span>
-                <select
-                  value={selectedMetaTag}
-                  onChange={(e) => setSelectedMetaTag(e.target.value as MetaMessageTag)}
-                  className="bg-slate-100 text-[10px] text-slate-800 rounded-lg px-2 py-0.5 border border-slate-200 focus:outline-none"
-                >
-                  {META_TAGS.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+              <span className="text-emerald-600 font-bold">متصل الآن 🟢</span>
+              <span>•</span>
+              <span>{activeConv.channel}</span>
+            </p>
           </div>
         </div>
 
-        {/* Conversation Assignment & Status Controls */}
+        {/* Grouped Actions Toolbar (RTL Left) */}
         <div className="flex items-center gap-2">
-          {/* Store / Brand Selector Dropdown */}
-          <div className="flex items-center gap-1 bg-teal-50/80 px-2.5 py-1 rounded-xl border border-teal-200/80">
-            <span className="text-xs">🏢</span>
-            <select
-              value={activeConv.brand || 'LAVVA'}
-              onChange={(e) => updateConversationBrand(activeConv.id, e.target.value)}
-              className="bg-transparent text-xs font-bold text-teal-800 focus:outline-none cursor-pointer"
+          {/* AI Insights Floating Popover Button */}
+          <div className="relative">
+            <button
+              onClick={() => setIsAiPopoverOpen(!isAiPopoverOpen)}
+              className={`p-1.5 rounded-full border transition flex items-center gap-1 text-xs font-bold ${
+                isAiPopoverOpen
+                  ? 'bg-[#1A73E8] text-white border-[#1A73E8] shadow-xs'
+                  : 'bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border-[#1A73E8]/20'
+              }`}
+              title="تحليلات الذكاء الاصطناعي"
             >
-              {AVAILABLE_BRANDS.map((b) => (
-                <option key={b.id} value={b.id} className="bg-white text-slate-800 font-medium">
-                  {b.label} ({b.code})
-                </option>
-              ))}
-            </select>
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>AI</span>
+            </button>
+
+            {isAiPopoverOpen && (
+              <div className="absolute top-full left-0 mt-2 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-100 text-right">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#1A73E8]" />
+                    تحليلات الذكاء الاصطناعي
+                  </span>
+                  <button
+                    onClick={() => setIsAiPopoverOpen(false)}
+                    className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                  {aiInsights.summary ? `✨ ${aiInsights.summary}` : 'لا يوجد ملخص متاح حالياً. انقر زر التحليل لتوليد ملخص للمحادثة.'}
+                </p>
+
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                  <div className="flex items-center gap-1.5">
+                    {aiInsights.intent && (
+                      <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] font-bold px-2 py-0.5 rounded-full border border-[#1A73E8]/20">
+                        🎯 {aiInsights.intent}
+                      </span>
+                    )}
+                    {aiInsights.sentiment && (
+                      <span className="text-[10px] bg-[#E6F4EA] text-[#137333] font-bold px-2 py-0.5 rounded-full border border-[#CEEAD6]">
+                        {aiInsights.sentiment}
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleRunAIAnalysis}
+                    disabled={isAnalyzingAI}
+                    className="text-xs bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold px-3 py-1 rounded-full transition shadow-2xs flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
+                    <span>{isAnalyzingAI ? 'تحليل...' : 'تحديث ✨'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Agent Assignment */}
-          <div className="flex items-center gap-1 bg-slate-100/80 px-2.5 py-1 rounded-xl border border-slate-200/60">
-            <User className="w-3.5 h-3.5 text-indigo-600" />
-            <select
-              value={activeConv.assigned_agent_id || ''}
-              onChange={(e) => assignAgentToConversation(activeConv.id, e.target.value || null)}
-              className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none"
-            >
-              {AGENTS.map((a) => (
-                <option key={a.id} value={a.id} className="bg-white text-slate-800">
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* 24-Hour Policy Window Alert */}
+          {is24hWindowExpired && (
+            <div className="flex items-center gap-1.5 bg-amber-50 text-amber-900 px-2 py-0.5 rounded-full border border-amber-200 text-xs font-semibold">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>24h</span>
+              <select
+                value={selectedMetaTag}
+                onChange={(e) => setSelectedMetaTag(e.target.value as MetaMessageTag)}
+                className="bg-white text-xs text-slate-800 rounded-full px-1.5 py-0.5 border border-amber-300 focus:outline-none font-medium"
+              >
+                {META_TAGS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {/* Priority Selector */}
-          <div className="flex items-center gap-1 bg-slate-100/80 px-2.5 py-1 rounded-xl border border-slate-200/60">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-            <select
-              value={activeConv.priority || 'normal'}
-              onChange={(e) =>
-                setConversationPriority(activeConv.id, e.target.value as any)
-              }
-              className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none"
-            >
-              <option value="low" className="bg-white">منخفضة</option>
-              <option value="normal" className="bg-white">عادية</option>
-              <option value="high" className="bg-white">عالية</option>
-              <option value="urgent" className="bg-white">عاجلة</option>
-            </select>
-          </div>
+          {/* Status Dropdown Pill */}
+          <select
+            value={activeConv.status || 'open'}
+            onChange={(e) => setConversationStatus(activeConv.id, e.target.value as any)}
+            className="bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-full px-3 py-1 focus:outline-none cursor-pointer"
+          >
+            <option value="open">مفتوحة</option>
+            <option value="pending">قيد الانتظار</option>
+            <option value="completed">المغلقة</option>
+          </select>
 
+          {/* Complete Action Button */}
           <button
             onClick={() => setConversationStatus(activeConv.id, 'completed')}
-            className="px-3 py-1.5 text-xs font-bold bg-teal-50 text-teal-700 rounded-xl hover:bg-teal-100 transition border border-teal-200 flex items-center gap-1"
+            className="px-3 py-1 text-xs font-bold bg-[#1A73E8] hover:bg-[#1557B0] text-white rounded-full transition flex items-center gap-1 shadow-2xs"
           >
             <UserCheck className="w-3.5 h-3.5" />
-            إكمال الطلب
+            <span>إكمال</span>
           </button>
         </div>
       </header>
 
-      {/* AI Copilot Intelligence Banner Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 text-white px-5 py-2 border-b border-teal-500/20 flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 shrink-0 bg-teal-500/20 text-teal-300 px-2.5 py-0.5 rounded-full border border-teal-400/30 text-[11px] font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>AI Copilot</span>
-          </div>
-
-          <div className="flex-1 min-w-0 text-xs">
-            {aiInsights.summary ? (
-              <p className="text-slate-200 truncate font-medium" title={aiInsights.summary}>
-                ✨ {aiInsights.summary}
-              </p>
-            ) : (
-              <p className="text-slate-400 text-[11px] font-medium">اضغط توليد التحليل الذكي للتعرف على ملخص المحادثة ونية العميل</p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {aiInsights.intent && (
-            <span className="text-[10px] bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 px-2 py-0.5 rounded-full font-bold">
-              🎯 {aiInsights.intent}
-            </span>
-          )}
-
-          {aiInsights.sentiment && (
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-              aiInsights.sentiment.includes('غاضب') || aiInsights.sentiment.includes('Frustrated')
-                ? 'bg-rose-500/80 text-white border-rose-400 animate-pulse'
-                : aiInsights.sentiment.includes('سلبي') || aiInsights.sentiment.includes('Negative')
-                ? 'bg-amber-500/80 text-white border-amber-400'
-                : aiInsights.sentiment.includes('إيجابي') || aiInsights.sentiment.includes('Positive')
-                ? 'bg-emerald-500/80 text-white border-emerald-400'
-                : 'bg-slate-700/80 text-slate-200 border-slate-600'
-            }`}>
-              {aiInsights.sentiment}
-            </span>
-          )}
-
-          <button
-            onClick={handleRunAIAnalysis}
-            disabled={isAnalyzingAI}
-            className="text-[11px] bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold px-3 py-1 rounded-full transition shadow-xs flex items-center gap-1 disabled:opacity-50 active:scale-95"
-          >
-            <Sparkles className={`w-3 h-3 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-            <span>{isAnalyzingAI ? 'جاري التحليل...' : 'تحديث التحليل الذكي ✨'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Message Stream */}
+      {/* Message Timeline Stream */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-[#F8FAFC] to-[#F1F5F9]"
+        className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-slate-50/40 scrollbar-none"
       >
         {isFetchingMore && (
-          <div className="text-center py-2 text-xs text-teal-700 animate-pulse font-medium">
+          <div className="text-center py-1 text-xs text-[#1A73E8] animate-pulse font-semibold">
             جاري تحميل الرسائل الأقدم...
           </div>
         )}
 
         {isLoadingMessages ? (
-          <div className="text-center text-xs text-slate-400 py-10 animate-pulse">
+          <div className="text-center text-xs text-slate-400 py-10 animate-pulse font-medium">
             جاري تحميل الرسائل...
           </div>
         ) : (
@@ -753,26 +667,26 @@ export const ChatCanvas: React.FC = () => {
               const media = resolveMedia(msg);
               const hasContent = Boolean(
                 (msg.text && msg.text.trim()) ||
-                msg.media_url ||
-                (media.url && !media.isDoc) ||
-                msg.message_type === 'share_reel' ||
-                msg.message_type === 'share_post' ||
-                msg.message_type === 'share'
+                  media.isAudio ||
+                  media.isImage ||
+                  media.isVideo ||
+                  media.isDoc ||
+                  msg.media_url
               );
+
               if (!hasContent) return null;
 
-              const prevMsg = index > 0 ? sortedMessages[index - 1] : null;
-              const showDateDivider = !prevMsg || isDifferentDay(prevMsg.created_at, msg.created_at);
               const isAgent = msg.sender_type === 'agent';
               const isPending = msg.delivery_status === 'pending';
               const isFailed = msg.delivery_status === 'failed';
+              const prevMsg = index > 0 ? sortedMessages[index - 1] : null;
+              const showDateDivider = !prevMsg || isDifferentDay(msg.created_at, prevMsg.created_at);
 
               return (
                 <React.Fragment key={msg.id}>
-                  {/* Centered Date Divider */}
                   {showDateDivider && (
-                    <div className="my-4 flex items-center justify-center">
-                      <span className="rounded-full border border-slate-200/80 bg-white/90 px-3.5 py-1 text-[11px] font-medium text-slate-500 shadow-xs backdrop-blur-sm">
+                    <div className="flex justify-center my-3">
+                      <span className="text-[11px] bg-white/90 text-slate-500 border border-slate-200/60 px-3 py-0.5 rounded-full font-medium shadow-2xs">
                         {formatChatDateDivider(msg.created_at)}
                       </span>
                     </div>
@@ -780,28 +694,35 @@ export const ChatCanvas: React.FC = () => {
 
                   <div className={`flex flex-col ${isAgent ? 'items-start' : 'items-end'}`}>
                     <div
-                      className={`max-w-lg px-4 py-3 rounded-2xl text-xs font-medium leading-relaxed shadow-xs ${
+                      className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs ${
                         isFailed
-                          ? 'bg-rose-50 text-rose-800 border border-rose-200 rounded-br-xs'
+                          ? 'bg-rose-50 text-rose-800 border border-rose-200 rounded-br-none font-medium'
                           : isAgent
-                          ? 'bg-teal-600 text-white rounded-2xl rounded-tl-xs shadow-xs'
-                          : 'bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tr-xs shadow-xs'
+                          ? 'bg-[#E6F4EA] text-[#137333] border border-emerald-100/60 rounded-2xl rounded-tl-none font-normal'
+                          : 'bg-white text-[#1E293B] border border-slate-100 rounded-2xl rounded-tr-none font-normal'
                       }`}
                     >
-                      {/* Native Audio Waveform Player */}
+                      {/* Sender Tag for Agent Messages */}
+                      {isAgent && (
+                        <span className="text-[10px] text-[#137333] font-bold block mb-1">
+                          موظف الدعم
+                        </span>
+                      )}
+
+                      {/* Native Audio Player */}
                       {media.isAudio && media.url && (
                         <CustomAudioPlayer url={media.url} />
                       )}
 
                       {/* HTML5 Video Player */}
                       {(msg.message_type === 'video' || media.isVideo) && (media.url || msg.media_url) && (
-                        <div className="relative overflow-hidden rounded-2xl max-w-sm mt-1 mb-1 bg-black/10 shadow-xs">
+                        <div className="relative overflow-hidden rounded-xl max-w-xs my-1 bg-black/10">
                           <video
                             controls
                             preload="metadata"
                             onLoadedData={handleMediaLoaded}
                             src={msg.media_url || media.url || ''}
-                            className="w-full max-h-80 object-contain rounded-2xl border border-slate-200/80 shadow-xs bg-black"
+                            className="w-full max-h-72 object-contain rounded-xl bg-black"
                           >
                             <source src={msg.media_url || media.url || ''} />
                             متصفحك لا يدعم تشغيل الفيديو.
@@ -811,30 +732,23 @@ export const ChatCanvas: React.FC = () => {
 
                       {/* Inline Image Preview */}
                       {media.isImage && media.url && (
-                        <div className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-sm mt-1 mb-1">
+                        <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs my-1">
                           <img
                             src={media.url}
                             alt="مرفق صورة"
                             onLoad={handleMediaLoaded}
-                            className="w-full max-h-72 object-cover rounded-2xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-200/80 shadow-xs"
+                            className="w-full max-h-64 object-cover rounded-xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-100"
                             onClick={() => setPreviewImage(media.url)}
-                            onError={(e) => {
-                              const target = e.currentTarget;
-                              const rawUrl = msg.media_url || (msg as any).metadata_?.attachments?.[0]?.url || (msg as any).metadata?.attachments?.[0]?.url;
-                              if (rawUrl && target.src !== rawUrl) {
-                                target.src = rawUrl;
-                              }
-                            }}
                           />
                         </div>
                       )}
 
-                      {/* Document Download Card for non-audio, non-image files */}
+                      {/* Document Card */}
                       {media.isDoc && media.url && (
-                        <div className="flex items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-800 my-1">
+                        <div className="flex items-center justify-between gap-3 bg-white p-2 rounded-xl border border-slate-100 my-1 text-slate-800">
                           <div className="flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-teal-600" />
-                            <span className="text-xs font-semibold truncate max-w-[150px]">
+                            <FileText className="w-4 h-4 text-[#1A73E8]" />
+                            <span className="text-xs font-bold truncate max-w-[140px]">
                               {media.fileName}
                             </span>
                           </div>
@@ -842,113 +756,39 @@ export const ChatCanvas: React.FC = () => {
                             href={media.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700"
+                            className="p-1 rounded-full bg-[#1A73E8] text-white hover:bg-[#1557B0] transition"
                           >
                             <Download className="w-3.5 h-3.5" />
                           </a>
                         </div>
                       )}
 
-                      {/* Interactive Location Card */}
-                      {(msg.message_type === 'location' || msg.text?.includes('📍') || (media.url && media.url.includes('maps.google.com'))) && (
-                        <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col gap-2 my-1.5 text-slate-800">
-                          <div className="flex items-center gap-1.5 text-rose-600 font-bold text-xs">
-                            <MapPin className="w-4 h-4" />
-                            <span>موقع جغرافي مشترك</span>
-                          </div>
-                          <p className="text-xs text-slate-600 font-sans">{msg.text}</p>
-                          <a
-                            href={media.url || `https://www.google.com/maps?q=${encodeURIComponent(msg.text || '')}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-bold transition-colors border border-rose-200/60"
-                          >
-                            <span>فتح على خرائط Google</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        </div>
-                      )}
-
-                      {/* Message Body Router */}
-                      <div className="space-y-2">
-                        {/* 1. Pure Text Bubble */}
-                        {msg.text && !msg.text.includes('🎬') && msg.text !== 'مرفق وسائط' && msg.text !== 'مرفق صورة' && !msg.text.startsWith('image-') && !msg.text.startsWith('/uploads/') && !msg.text.includes('📍') && (
-                          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.text}</p>
+                      {/* Regular Text Content */}
+                      {msg.text &&
+                        !msg.text.startsWith('voice_') &&
+                        !msg.text.startsWith('img_') &&
+                        !msg.text.startsWith('vid_') &&
+                        !msg.text.startsWith('image-') &&
+                        !msg.text.includes('📍') && (
+                          <p className="whitespace-pre-wrap break-words">{msg.text}</p>
                         )}
 
-                        {/* 2. Instagram Reel / Share Card */}
-                        {(msg.message_type === 'share_reel' || msg.message_type === 'share_post' || msg.message_type === 'share' || (msg.media_url && msg.media_url.includes('instagram.com'))) && (
-                          <div className="overflow-hidden rounded-xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-500/10 to-indigo-500/5 p-3.5 shadow-sm my-1">
-                            <div className="flex items-center gap-2 mb-2.5">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm">
-                                <Share2 className="h-4 w-4" />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-pink-700 dark:text-pink-400">
-                                  {msg.message_type === 'share_reel' ? 'مشاركة ريل إنستغرام (Reel)' : 'مشاركة منشور إنستغرام'}
-                                </h4>
-                                <span className="text-[10px] text-slate-500">رابط وسائط تفاعلي</span>
-                              </div>
-                            </div>
-
-                            {(msg.media_url || media.url) && (
-                              <a
-                                href={
-                                  ((msg.media_url || media.url) ?? '').startsWith('http')
-                                    ? ((msg.media_url || media.url) ?? '')
-                                    : `https://${((msg.media_url || media.url) ?? '').replace(/^\/+/, '')}`
-                                }
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-between gap-2 rounded-lg bg-pink-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-pink-700 active:scale-[0.99]"
-                              >
-                                <span className="truncate">فتح ومشاهدة الفيديو</span>
-                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
+                      {/* Timestamp & Double Checkmarks (✓✓) */}
                       <div
-                        className={`flex items-center gap-1 mt-1.5 text-[10px] ${
-                          isAgent ? 'text-teal-100 justify-start' : 'text-slate-400 justify-end'
+                        className={`flex items-center gap-1 mt-1 text-[10px] ${
+                          isAgent ? 'text-[#137333]/80 justify-start' : 'text-slate-400 justify-end'
                         }`}
                       >
                         <span>{formatMessageTime(msg.created_at)}</span>
-                        {isPending && <Clock className="w-3 h-3 text-amber-300 animate-spin" />}
+                        {isPending && <Clock className="w-3 h-3 text-amber-500 animate-spin" />}
                         {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
                         {isAgent && !isPending && !isFailed && (
-                          <CheckCheck className="w-3.5 h-3.5 text-teal-200" />
+                          <span className="text-[#137333] font-bold text-[11px]" title="تم التوصيل">
+                            ✓✓
+                          </span>
                         )}
                       </div>
                     </div>
-
-                    {isFailed && (
-                      <div className="flex items-center gap-2 mt-1 px-1">
-                        <span className="text-[10px] text-rose-600 font-bold">
-                          {typeof msg.error_message === 'string'
-                            ? msg.error_message
-                            : (typeof (msg as any).error === 'string'
-                                ? (msg as any).error
-                                : ((msg as any).error?.message || (msg as any).error?.detail || 'فشلت عملية الإرسال'))}
-                        </span>
-                        <button
-                          onClick={() => retryMessage(msg.id)}
-                          className="flex items-center gap-1 text-[10px] bg-teal-50 text-teal-700 hover:bg-teal-100 px-2 py-0.5 rounded border border-teal-200 font-bold"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          إعادة المحاولة
-                        </button>
-                        <button
-                          onClick={() => deleteMessage(msg.id)}
-                          className="flex items-center gap-1 text-[10px] bg-rose-50 text-rose-700 hover:bg-rose-100 px-2 py-0.5 rounded border border-rose-200 font-bold"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          حذف
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </React.Fragment>
               );
@@ -956,76 +796,23 @@ export const ChatCanvas: React.FC = () => {
           })()
         )}
 
-        {isCustomerTyping && (
-          <div className="flex items-end gap-2 justify-end">
-            <div className="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl rounded-bl-xs text-xs text-slate-500 flex items-center gap-1.5 shadow-xs">
-              <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce" />
-              <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce [animation-delay:0.2s]" />
-              <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce [animation-delay:0.4s]" />
-              <span className="text-[11px] mr-1 font-medium">يكتب الآن...</span>
-            </div>
-          </div>
-        )}
-
         <div ref={messagesEndRef} />
         <div ref={bottomAnchorRef} className="h-px w-full" />
       </div>
 
-      {/* Image Lightbox Preview Modal */}
-      {previewImage && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="relative max-w-5xl max-h-[90vh] flex flex-col items-center">
-            <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-              <a
-                href={previewImage}
-                download
-                target="_blank"
-                rel="noreferrer"
-                className="p-2 rounded-full bg-white/90 text-slate-800 hover:bg-white shadow-md transition"
-                title="تحميل الصورة"
-              >
-                <Download className="w-5 h-5" />
-              </a>
-              <button
-                onClick={() => setPreviewImage(null)}
-                className="p-2 rounded-full bg-white/90 text-slate-800 hover:bg-white shadow-md transition"
-                title="إغلاق"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <img
-              src={previewImage}
-              alt="Large preview"
-              className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-white/10"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Hidden File Input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        onChange={handleFileUpload}
-        className="hidden"
-        accept="image/*,audio/*,video/*,application/pdf,.doc,.docx"
-      />
-
-      {/* Smart Reply Suggestions Bar */}
+      {/* Floating Smart Reply Chips */}
       {aiInsights.replies && aiInsights.replies.length > 0 && (
-        <div className="px-4 pt-2 flex justify-center">
-          <div className="w-full max-w-3xl flex items-center gap-2 overflow-x-auto pb-1">
-            <span className="text-[10px] font-bold text-teal-800 shrink-0 flex items-center gap-1 bg-teal-100/80 px-2 py-0.5 rounded-full border border-teal-300">
-              <Sparkles className="w-3 h-3 text-amber-600" /> اقتراحات الرد السريع الذكي:
+        <div className="px-6 pt-1 flex justify-center bg-transparent">
+          <div className="w-full max-w-2xl flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <span className="text-[10px] font-bold text-[#1A73E8] shrink-0 flex items-center gap-1 bg-white/90 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
+              <Sparkles className="w-3 h-3 text-amber-500" /> اقتراحات:
             </span>
             {aiInsights.replies.map((reply, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => setDraftText(reply)}
-                className="text-xs bg-white text-slate-800 hover:bg-teal-50 hover:text-teal-900 border border-slate-200 px-3 py-1 rounded-full shrink-0 shadow-2xs font-medium transition active:scale-95 truncate max-w-xs"
-                title="اضغط لإدراج النص في حقل المراسلة"
+                className="text-xs bg-white/90 backdrop-blur-md hover:bg-[#E8F0FE] text-slate-700 border border-slate-200/80 px-3.5 py-1 rounded-full shrink-0 shadow-2xs font-medium transition"
               >
                 "{reply}"
               </button>
@@ -1034,117 +821,62 @@ export const ChatCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* Input Bar & Live Audio Recording UI */}
-      <footer className="p-4 bg-transparent relative z-20 flex justify-center">
-        {/* Canned Responses Popup */}
-        {showCannedPicker && (
-          <div className="absolute bottom-16 right-6 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-2 shadow-xl z-30 w-80 space-y-1">
-            <div className="text-[11px] font-bold text-teal-800 px-2 py-1 flex items-center gap-1 border-b border-slate-100">
-              <Zap className="w-3.5 h-3.5 text-teal-600" />
-              الردود السريعة الجاهزة:
-            </div>
-            {CANNED_RESPONSES.map((resp, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  setDraftText(resp);
-                  setShowCannedPicker(false);
-                }}
-                className="w-full text-right text-xs text-slate-700 hover:bg-teal-50 hover:text-teal-900 p-2 rounded-xl transition font-medium"
-              >
-                {resp}
-              </button>
-            ))}
-          </div>
-        )}
+      {/* Floating Dock Message Composer */}
+      <footer className="px-6 mb-4 mt-1 bg-transparent relative z-20">
+        {/* Rounded All-in-One Floating Dock Composer Box */}
+        <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5">
+          <textarea
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="اكتب رسالتك هنا... (Enter للإرسال)"
+            rows={2}
+            className="w-full bg-transparent text-slate-900 text-xs focus:outline-none resize-none font-medium placeholder-slate-400 px-1"
+          />
 
-        {/* Live Audio Recorder Dock Bar */}
-        {isRecording ? (
-          <div className="w-full max-w-3xl flex items-center justify-between gap-4 bg-rose-50 border border-rose-200 p-3 rounded-full shadow-md animate-pulse">
-            <div className="flex items-center gap-3 pr-2">
-              <div className="w-3 h-3 bg-rose-600 rounded-full animate-ping" />
-              <span className="text-xs font-bold text-rose-800">
-                جاري تسجيل الملاحظة الصوتية: {formatSeconds(recordingSeconds)}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={cancelRecording}
-                className="p-2 rounded-full bg-white text-rose-600 hover:bg-rose-100 transition shadow-xs"
-                title="إلغاء التسجيل"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={stopAndSendRecording}
-                className="p-2 px-4 rounded-full bg-teal-600 text-white hover:bg-teal-700 transition font-bold text-xs flex items-center gap-1 shadow-xs"
-              >
-                <Send className="w-4 h-4 rotate-180" />
-                إرسال التسجيل
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Modern Floating Pill Dock Input Bar */
-          <div className="w-full max-w-3xl bg-white/90 backdrop-blur-lg border border-slate-200 rounded-full px-4 py-2 shadow-sm flex items-center gap-3">
+          {/* Controls Bar */}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100">
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2 rounded-full text-slate-500 hover:text-teal-700 hover:bg-slate-100 transition"
-                title="إرفاق ملف أو صورة"
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                title="إرفاق ملف"
               >
-                <Plus className="w-4 h-4" />
+                <Paperclip className="w-4 h-4" />
               </button>
-
-              {/* Live Voice Recorder Mic Trigger */}
               <button
                 type="button"
                 onClick={startRecording}
-                className="p-2 rounded-full text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition"
-                title="تسجيل ملاحظة صوتية مباشرة"
+                className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                title="تسجيل صوتي"
               >
                 <Mic className="w-4 h-4" />
               </button>
-
               <button
                 type="button"
                 onClick={() => setShowCannedPicker(!showCannedPicker)}
-                className="p-2 rounded-full text-slate-500 hover:text-teal-700 hover:bg-slate-100 transition"
-                title="ردود سريعة"
+                className="p-1.5 rounded-full text-slate-400 hover:text-[#1A73E8] hover:bg-blue-50 transition"
+                title="ردود جاهزة"
               >
                 <Zap className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Input Textarea */}
-            <textarea
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="اكتب ردك هنا... (Enter للإرسال)"
-              rows={1}
-              className="flex-1 bg-transparent text-slate-900 text-xs px-2 py-1.5 focus:outline-none resize-none font-medium placeholder-slate-400"
-            />
-
-            {/* Send Button */}
             <button
               onClick={handleSend}
               disabled={!draftText.trim()}
-              className={`p-2.5 rounded-full font-bold flex items-center justify-center transition shadow-xs ${
+              className={`p-2.5 rounded-full font-bold transition flex items-center justify-center ${
                 draftText.trim()
-                  ? 'bg-teal-600 text-white hover:bg-teal-700 active:scale-95'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-sm active:scale-95'
+                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
+              title="إرسال"
             >
               <Send className="w-4 h-4 rotate-180" />
             </button>
           </div>
-        )}
+        </div>
       </footer>
     </main>
   );

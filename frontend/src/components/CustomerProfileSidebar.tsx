@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../store/useCrmStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
-  Sparkles, Copy, Send, History, FileText, Trash2, Clock, MessageSquare, Tag, AlertTriangle
+  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
+import { UserAvatar } from './UserAvatar';
 
 export const CustomerProfileSidebar: React.FC = () => {
   const { conversations, activeConversationId, updateCustomerProfile, setDraftText } = useCrmStore();
@@ -111,8 +112,8 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   if (!customer || !activeConversation) {
     return (
-      <aside className="w-72 md:w-80 bg-white/90 backdrop-blur-md border-r border-slate-200/80 p-6 shrink-0 h-full hidden lg:flex flex-col justify-center items-center text-slate-400 text-xs">
-        <User className="w-10 h-10 text-slate-300 mb-2" />
+      <aside className="w-72 md:w-80 bg-white border-r border-slate-200/80 p-6 shrink-0 h-full hidden lg:flex flex-col justify-center items-center text-slate-400 text-xs">
+        <User className="w-8 h-8 text-slate-300 mb-2" />
         <span>اختر محادثة لعرض ملف العميل</span>
       </aside>
     );
@@ -120,11 +121,13 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   const handleSaveContact = async () => {
     if (customer.id) {
+      const locVal = formData.location.trim() || undefined;
       await updateCustomerProfile(customer.id, {
         display_name: formData.display_name.trim() || customer.display_name,
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim() || undefined,
-        location: formData.location.trim() || undefined,
+        location: locVal,
+        country: locVal,
       });
     }
     setIsEditing(false);
@@ -160,387 +163,247 @@ export const CustomerProfileSidebar: React.FC = () => {
     return `${d.toLocaleDateString('ar-EG')} ${d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
   };
 
+  const formatJoinDate = (isoStr?: string) => {
+    if (!isoStr) return 'غير متوفر';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long' });
+    } catch {
+      return 'غير متوفر';
+    }
+  };
+
+  const formattedLocation = customer.country
+    ? (customer.city ? `${customer.city} - ${customer.country}` : customer.country)
+    : (customer.location || 'غير محدد');
+
+  const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
+
   return (
-    <aside className="w-72 md:w-80 bg-slate-50/90 backdrop-blur-md border-r border-slate-200/80 shrink-0 h-full flex flex-col hidden lg:flex relative z-10 overflow-hidden">
-      {/* 1. STICKY TOP CARD: Customer Avatar & Basic Info (Never Scrolls Away) */}
-      <div className="shrink-0 p-4 border-b border-slate-200/80 bg-white/95 shadow-xs">
-        <div className="flex flex-col items-center text-center relative">
-          <div className="relative mb-2">
-            {activeConversation.customer_avatar_url || customer.avatar_url ? (
-              <img
-                src={activeConversation.customer_avatar_url || customer.avatar_url}
-                alt=""
-                className="h-16 w-16 rounded-full object-cover shadow-sm ring-4 ring-teal-500/10"
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 text-teal-800 font-bold text-xl ring-4 ring-teal-500/10 shadow-xs">
-                {(formData.display_name || customer.display_name || 'U').charAt(0).toUpperCase()}
-              </div>
-            )}
-          </div>
-
-          {isEditing ? (
-            <input
-              type="text"
-              value={formData.display_name}
-              onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-              placeholder="اسم العميل"
-              className="w-full text-xs font-bold text-center border border-teal-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-teal-50/40"
-            />
-          ) : (
-            <h3 className="font-bold text-xs text-slate-900">{customer.display_name || 'عميل بدون اسم'}</h3>
-          )}
-
-          <span className="text-[11px] text-teal-700 font-semibold mt-1">
-            {activeConversation.brand || activeConversation.brand_name || 'LUXIRA'} • {activeConversation.channel}
-          </span>
-        </div>
-      </div>
-
-      {/* Tab Selector Bar */}
-      <div className="flex items-center justify-around bg-slate-100/90 border-b border-slate-200/80 p-1 text-[11px] font-bold">
-        <button
-          onClick={() => setActiveSidebarTab('profile')}
-          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
-            activeSidebarTab === 'profile'
-              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <User className="w-3 h-3 text-teal-600" />
-          <span>الملف</span>
-        </button>
-        <button
-          onClick={() => setActiveSidebarTab('timeline')}
-          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
-            activeSidebarTab === 'timeline'
-              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <History className="w-3 h-3 text-teal-600" />
-          <span>التايم لاين</span>
-        </button>
-        <button
-          onClick={() => setActiveSidebarTab('notes')}
-          className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1 ${
-            activeSidebarTab === 'notes'
-              ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80 font-bold'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <FileText className="w-3 h-3 text-teal-600" />
-          <span>الملاحظات ({notes.length})</span>
-        </button>
-      </div>
-
-      {/* 2. SCROLLABLE BODY */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-        {activeSidebarTab === 'timeline' ? (
-          /* Customer 360 Timeline Feed */
-          <div className="space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <History className="w-4 h-4 text-teal-600" /> سجّل التفاعلات (360 Timeline)
-              </span>
-              <button
-                onClick={() => customer.id && loadTimeline(customer.id)}
-                className="text-[10px] text-teal-700 font-bold hover:underline"
-              >
-                تحديث
-              </button>
-            </div>
-
-            {isLoadingTimeline ? (
-              <div className="p-6 text-center text-xs text-slate-400">جاري تحميل التايم لاين...</div>
-            ) : timelineEvents.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">لا توجد أحداث سابقة في التايم لاين</div>
-            ) : (
-              <div className="relative border-r-2 border-slate-200 pr-3 space-y-3 my-2">
-                {timelineEvents.map((evt) => (
-                  <div key={evt.id} className="relative group">
-                    <span className="absolute -right-4.5 top-1 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-white" />
-                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs space-y-1">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="font-bold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/60">
-                          {evt.channel}
-                        </span>
-                        <span className="text-slate-400">{formatEventTime(evt.created_at)}</span>
-                      </div>
-                      <p className="text-xs font-bold text-slate-900">{evt.summary}</p>
-                      {evt.details?.text && (
-                        <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100">
-                          "{evt.details.text}"
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : activeSidebarTab === 'notes' ? (
-          /* Internal Agent Notes Tab */
-          <div className="space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-teal-600" /> الملاحظات الداخلية للفريق
-              </span>
-            </div>
-
-            {/* Add Note Form */}
-            <form onSubmit={handleAddNoteSubmit} className="space-y-2">
-              <textarea
-                value={newNoteText}
-                onChange={(e) => setNewNoteText(e.target.value)}
-                placeholder="أضف ملاحظة خاصة لموظفي الدعم..."
-                rows={2}
-                className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 bg-white focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={!newNoteText.trim() || isSubmittingNote}
-                className="w-full bg-teal-600 text-white text-xs font-bold py-1.5 px-3 rounded-xl hover:bg-teal-700 disabled:opacity-50 transition shadow-xs flex items-center justify-center gap-1"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>إضافة ملاحظة</span>
-              </button>
-            </form>
-
-            {/* Notes List */}
-            <div className="space-y-2 pt-2">
-              {notes.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400">لا توجد ملاحظات داخلية مضافة بعد</div>
-              ) : (
-                notes.map((n) => (
-                  <div key={n.id} className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-full">
-                        {n.author_name || 'موظف الدعم'}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400">{formatEventTime(n.created_at)}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteNoteClick(n.id)}
-                          className="text-rose-500 hover:text-rose-700 transition"
-                          title="حذف الملاحظة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-800 leading-relaxed font-medium">{n.text}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Profile Details Tab */
-          <>
-        {/* Contact Details with Click-to-Edit */}
-        <div className="rounded-2xl bg-white border border-slate-200/80 p-3.5 space-y-2.5 shadow-xs">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5 text-teal-600"/> بيانات التواصل
-            </span>
+    <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex flex-col hidden lg:flex relative z-10 overflow-hidden p-3.5 space-y-3.5">
+      {/* Scrollable Container with 3 Distinct Glass Cards */}
+      <div className="flex-1 overflow-y-auto space-y-3.5 scrollbar-none pr-0.5">
+        
+        {/* CARD 1: بيانات العميل (Customer Info Glass Card) */}
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+              <User className="w-4 h-4 text-[#1A73E8]" />
+              <span>بيانات العميل</span>
+            </h4>
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center gap-1 text-[11px] font-bold text-teal-700 hover:text-teal-800 transition"
+                className="text-[11px] font-bold text-[#1A73E8] hover:underline transition flex items-center gap-0.5"
               >
-                <Edit2 className="h-3 w-3"/> تعديل
+                <Edit2 className="w-3 h-3" />
+                <span>تعديل</span>
               </button>
             ) : (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={handleSaveContact}
-                  className="text-emerald-700 hover:bg-emerald-50 p-1 rounded-md transition"
-                  title="حفظ التعديلات"
+                  className="text-teal-700 hover:bg-teal-50 p-1 rounded-lg transition"
                 >
-                  <Check className="h-3.5 w-3.5 font-bold"/>
+                  <Check className="w-3.5 h-3.5 font-bold" />
                 </button>
                 <button
                   onClick={() => setIsEditing(false)}
-                  className="text-rose-600 hover:bg-rose-50 p-1 rounded-md transition"
-                  title="إلغاء"
+                  className="text-rose-600 hover:bg-rose-50 p-1 rounded-lg transition"
                 >
-                  <X className="h-3.5 w-3.5"/>
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Location */}
-          <div className="flex items-center gap-2 text-xs text-slate-700">
-            <MapPin className="h-3.5 w-3.5 text-teal-600 shrink-0"/>
+          {/* Centered Avatar & Status */}
+          <div className="flex flex-col items-center text-center py-1">
+            <div className="relative mb-2">
+              <UserAvatar name={customer.display_name || 'عميل'} avatarUrl={customer.avatar_url} size="lg" />
+              <span className="w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full absolute bottom-0 right-0" />
+            </div>
+
             {isEditing ? (
               <input
                 type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                placeholder="الموقع / الدولة"
-                className="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs focus:ring-1 focus:ring-teal-500 outline-none"
+                value={formData.display_name}
+                onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                placeholder="اسم العميل"
+                className="w-full text-xs font-bold text-center border border-blue-300 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 bg-blue-50/40"
               />
             ) : (
-              <span className="font-semibold text-slate-800">{customer.location || 'غير ذلك'}</span>
+              <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || 'عميل غير مسمى'}</h3>
             )}
+
+            <span className="text-xs text-emerald-600 font-bold mt-0.5">متصل الآن 🟢</span>
           </div>
 
-          {/* Phone */}
-          <div className="flex items-center gap-2 text-xs text-slate-700">
-            <Phone className="h-3.5 w-3.5 text-teal-600 shrink-0"/>
-            {isEditing ? (
-              <input
-                type="text"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="رقم الهاتف"
-                className="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs focus:ring-1 focus:ring-teal-500 outline-none"
-              />
-            ) : (
-              <span className={customer.phone ? "text-slate-800 font-mono" : "text-slate-400"}>
-                {customer.phone || 'غير مسجل'}
+          {/* Contact Information Fields */}
+          <div className="space-y-2 pt-1 border-t border-slate-100 text-xs">
+            {/* Phone */}
+            <div className="flex items-center gap-2.5 text-slate-700">
+              <Phone className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="رقم الهاتف"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                />
+              ) : (
+                <span className="font-mono text-slate-800 font-semibold">{customer.phone || 'غير مسجل'}</span>
+              )}
+            </div>
+
+            {/* Email */}
+            <div className="flex items-center gap-2.5 text-slate-700">
+              <Mail className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              {isEditing ? (
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="البريد الإلكتروني"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                />
+              ) : (
+                <span className="font-medium text-slate-700 truncate">{customer.email || 'غير مسجل'}</span>
+              )}
+            </div>
+
+            {/* Location */}
+            <div className="flex items-center gap-2.5 text-slate-700">
+              <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="الموقع"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                />
+              ) : (
+                <span className="font-semibold text-slate-800">{formattedLocation}</span>
+              )}
+            </div>
+
+            {/* Join Date */}
+            <div className="flex items-center gap-2.5 text-slate-700">
+              <History className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <span className="font-medium text-slate-500 text-[11px]">العميل منذ: {formatJoinDate(customer.created_at)}</span>
+            </div>
+          </div>
+
+          <button className="w-full mt-2 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition text-center">
+            عرض الملف الشخصي الكامل
+          </button>
+        </div>
+
+        {/* CARD 2: تفاصيل الطلب (Order Info Glass Card) */}
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>تفاصيل الطلب الحالي</span>
+            </h4>
+            {customerOrder?.status && (
+              <span className="text-[10px] bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                {customerOrder.status}
               </span>
             )}
           </div>
 
-          {/* Email */}
-          <div className="flex items-center gap-2 text-xs text-slate-700">
-            <Mail className="h-3.5 w-3.5 text-teal-600 shrink-0"/>
-            {isEditing ? (
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="البريد الإلكتروني"
-                className="w-full rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs focus:ring-1 focus:ring-teal-500 outline-none"
-              />
-            ) : (
-              <span className={customer.email ? "text-slate-800 truncate" : "text-slate-400"}>
-                {customer.email || 'غير مسجل'}
-              </span>
-            )}
-          </div>
-
-          {isEditing && (
-            <button
-              onClick={handleSaveContact}
-              className="w-full mt-2 py-1 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-700 transition shadow-xs"
-            >
-              حفظ البيانات
-            </button>
+          {customerOrder ? (
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">رقم الطلب:</span>
+                <span className="font-extrabold text-slate-900 font-mono">#{customerOrder.id || customerOrder.number}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">تاريخ الطلب:</span>
+                <span className="font-semibold text-slate-700">{customerOrder.date || 'اليوم'}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <span className="text-slate-600 font-bold">إجمالي المبلغ:</span>
+                <span className="font-extrabold text-[#1A73E8] text-sm">{customerOrder.amount || '0.00 EGP'}</span>
+              </div>
+              <button className="w-full mt-2 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5">
+                <span>عرض تفاصيل الطلب</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="p-3 text-center text-xs text-slate-400 font-medium space-y-2">
+              <p>لا توجد طلبات مسجلة حالياً</p>
+              <button
+                type="button"
+                className="w-full py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5"
+              >
+                <span>+ تسجيل طلب جديد</span>
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Google Material 3 Segmented Classifications */}
-        <div className="space-y-3.5 pt-1">
-          {/* Tier */}
-          <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1.5">تقييم العميل (الدرجة)</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {['درجة أولى', 'درجة ثانية', 'درجة ثالثة'].map((tier) => (
-                <button
-                  key={tier}
-                  onClick={() => handleSelectAttribute('tier', tier)}
-                  className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold transition-all text-center border ${
-                    currentTier === tier
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-bold'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 font-medium'
-                  }`}
-                >
-                  {tier}
-                </button>
-              ))}
-            </div>
+        {/* CARD 3: ملاحظات الفريق (Internal Team Notes Glass Card) */}
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-[#1A73E8]" />
+              <span>ملاحظات فريق العمل</span>
+            </h4>
           </div>
 
-          {/* Skin Type */}
-          <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1.5">نوع البشرة</label>
-            <div className="grid grid-cols-4 gap-1">
-              {['دهنية', 'جافة', 'مختلطة', 'عادية'].map((skin) => (
-                <button
-                  key={skin}
-                  onClick={() => handleSelectAttribute('skin_type', skin)}
-                  className={`py-1.5 px-1 rounded-xl text-[11px] font-semibold transition-all text-center border ${
-                    currentSkin === skin
-                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs font-bold'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 font-medium'
-                  }`}
-                >
-                  {skin}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Add Note Quick Input */}
+          <form onSubmit={handleAddNoteSubmit} className="space-y-2">
+            <textarea
+              value={newNoteText}
+              onChange={(e) => setNewNoteText(e.target.value)}
+              placeholder="أضف ملاحظة خاصة بفريق الدعم..."
+              rows={2}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-[#1A73E8] focus:outline-none bg-slate-50 font-medium placeholder-slate-400"
+            />
+            <button
+              type="submit"
+              disabled={!newNoteText.trim() || isSubmittingNote}
+              className="w-full bg-[#1A73E8] text-white text-xs font-bold py-1.5 px-3 rounded-xl hover:bg-[#1557B0] disabled:opacity-50 transition shadow-2xs flex items-center justify-center gap-1.5"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>إضافة ملاحظة</span>
+            </button>
+          </form>
 
-          {/* Sales Stage */}
-          <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1.5">مرحلة الشراء والطلب</label>
-            <div className="grid grid-cols-4 gap-1">
-              {['جديد', 'قيد المتابعة', 'تم البيع', 'ملغى'].map((stage) => (
-                <button
-                  key={stage}
-                  onClick={() => handleSelectAttribute('stage', stage)}
-                  className={`py-1.5 px-1 rounded-xl text-[11px] font-semibold transition-all text-center border ${
-                    currentStage === stage
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs font-bold'
-                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 font-medium'
-                  }`}
-                >
-                  {stage}
-                </button>
-              ))}
-            </div>
+          {/* Notes Feed */}
+          <div className="space-y-2 pt-1">
+            {notes.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-400 font-medium">لا توجد ملاحظات سابقة</div>
+            ) : (
+              notes.map((n) => (
+                <div key={n.id} className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 space-y-1">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-bold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200/60">
+                      {n.author_name || 'موظف الدعم'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400">{formatEventTime(n.created_at)}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNoteClick(n.id)}
+                        className="text-rose-500 hover:text-rose-700 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-800 font-medium leading-relaxed">{n.text}</p>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
-        {/* Smart Dynamic Sales Scripts */}
-        <div className="pt-3 border-t border-slate-200/80 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-amber-500"/> القوالب الذكية المقترحة
-            </span>
-            <span className="text-[10px] bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-bold">
-              {currentSkin}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {relevantScripts.map((script) => (
-              <div key={script.id} className="rounded-xl border border-slate-200/80 bg-white p-3 space-y-2 shadow-xs hover:border-teal-300 transition">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800">{script.title}</h4>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">
-                    {script.filterKey}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-600 leading-relaxed font-sans">{script.text}</p>
-                <div className="flex items-center gap-1.5 pt-1">
-                  <button
-                    onClick={() => handleInjectScript(script)}
-                    className="flex-1 py-1 px-2 rounded-lg bg-teal-600 text-white text-[10px] font-bold hover:bg-teal-700 transition text-center shadow-xs flex items-center justify-center gap-1"
-                  >
-                    <Send className="w-3 h-3" />
-                    <span>إدراج في الشات</span>
-                  </button>
-                  <button
-                    onClick={() => handleCopyScript(script)}
-                    className="p-1 px-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition flex items-center justify-center gap-1 text-[10px] font-bold"
-                    title="نسخ القالب"
-                  >
-                    <Copy className="h-3.5 w-3.5 text-slate-500"/>
-                    <span>{copiedScriptId === script.id ? 'تم!' : 'نسخ'}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        </>
-        )}
       </div>
     </aside>
   );

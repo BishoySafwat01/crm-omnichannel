@@ -6,7 +6,7 @@ import jwt
 from app.core.config import settings
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (P2-3: reduced from 7 days)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

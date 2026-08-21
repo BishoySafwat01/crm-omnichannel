@@ -56,6 +56,7 @@ class ConversationResponse(BaseModel):
     detected_intent: Optional[str] = None
     detected_sentiment: Optional[str] = None
     ai_suggested_replies: list[str] = []
+    customer: Optional[CustomerResponse] = None
 
 
 class ConversationDetailResponse(ConversationResponse):

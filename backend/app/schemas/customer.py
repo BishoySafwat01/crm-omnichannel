@@ -32,6 +32,8 @@ class CustomerBase(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     location: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
     tier: Optional[str] = "درجة أولى"
     skin_type: Optional[str] = "عادية"
     stage: Optional[str] = "جديد"
@@ -48,6 +50,8 @@ class CustomerUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     location: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
     tier: Optional[str] = None
     skin_type: Optional[str] = None
     stage: Optional[str] = None

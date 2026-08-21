@@ -83,22 +83,36 @@ class ConversationService:
         search: Optional[str] = None,
         brand: Optional[str] = None,
         location: Optional[str] = None,
+        country: Optional[str] = None,
         sla_status: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         stmt = select(Conversation).options(selectinload(Conversation.customer))
         count_stmt = select(func.count(Conversation.id))
 
-        if location and location.strip():
+        target_country = country if country is not None else location
+        if target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]:
             stmt = stmt.join(Conversation.customer)
             count_stmt = count_stmt.join(Conversation.customer)
-            if location == "غير ذلك":
-                loc_filter = (Customer.location == "غير ذلك") | (Customer.location == None) | (Customer.location == "")
+            clean_c = target_country.strip().lower()
+            if clean_c in ["unspecified", "none", "غير محدد", "غير ذلك"]:
+                loc_filter = (
+                    Customer.country.is_(None) |
+                    (Customer.country == "") |
+                    (Customer.location == "غير ذلك") |
+                    Customer.location.is_(None) |
+                    (Customer.location == "")
+                )
                 stmt = stmt.where(loc_filter)
                 count_stmt = count_stmt.where(loc_filter)
             else:
-                clean_search = location.split()[0]
-                stmt = stmt.where(Customer.location.ilike(f"%{clean_search}%"))
-                count_stmt = count_stmt.where(Customer.location.ilike(f"%{clean_search}%"))
+                clean_search = target_country.strip().split()[0]
+                loc_filter = (
+                    (Customer.country == target_country.strip()) |
+                    Customer.country.ilike(f"%{clean_search}%") |
+                    Customer.location.ilike(f"%{clean_search}%")
+                )
+                stmt = stmt.where(loc_filter)
+                count_stmt = count_stmt.where(loc_filter)
 
         if brand and hasattr(Conversation, "brand") and brand.lower() not in ["all", "الكل", "none", ""]:
             stmt = stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
@@ -195,6 +209,22 @@ class ConversationService:
                 "sla_due_at": getattr(conv, "sla_due_at", None),
                 "sla_status": getattr(conv, "sla_status", "none") or "none",
                 "first_response_time_seconds": getattr(conv, "first_response_time_seconds", None),
+                "customer": {
+                    "id": cust.id,
+                    "display_name": cust.display_name,
+                    "email": cust.email,
+                    "phone": cust.phone,
+                    "avatar_url": cust.avatar_url,
+                    "location": cust.location,
+                    "country": cust.country,
+                    "city": cust.city,
+                    "tier": getattr(cust, "tier", "درجة أولى"),
+                    "skin_type": getattr(cust, "skin_type", "عادية"),
+                    "stage": getattr(cust, "stage", "جديد"),
+                    "tags": getattr(cust, "tags", []) or [],
+                    "created_at": cust.created_at,
+                    "updated_at": cust.updated_at,
+                } if cust else None,
             }
             items.append(item)
 
@@ -284,3 +314,25 @@ class ConversationService:
         )
         result = await session.execute(stmt)
         return list(result.scalars().all())
+
+    @staticmethod
+    async def update_conversation_status(
+        session: AsyncSession,
+        conversation_id: uuid.UUID,
+        new_status: str | ConversationStatusEnum,
+    ) -> Optional[Conversation]:
+        conv = await session.get(Conversation, conversation_id)
+        if not conv:
+            return None
+        if isinstance(new_status, str):
+            try:
+                enum_status = ConversationStatusEnum(new_status.lower())
+            except ValueError:
+                enum_status = ConversationStatusEnum.CLOSED
+        else:
+            enum_status = new_status
+        conv.status = enum_status
+        await session.commit()
+        await session.refresh(conv)
+        return conv
+

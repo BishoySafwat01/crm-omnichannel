@@ -4,28 +4,26 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
-from app.models.enums import SenderTypeEnum
 from app.models.message import Message
+from app.services.llm.groq_client import analyze_with_groq_cascade
 
 logger = logging.getLogger(__name__)
 
 
 class AIService:
-    """Fault-Tolerant AI Engine Service for CRM Copilot Intelligence."""
-
-    INTENT_MAP = [
-        (["مكسور", "إرجاع", "استبدال", "تالف", "استرجاع"], "طلب إرجاع أو استبدال"),
-        (["سعر", "بكام", "تكلفة", "خصم", "عرض", "ثمن"], "استفسار عن سعر"),
-        (["تأخير", "شحن", "وصل", "توصيل", "فين الطلب", "متابعة"], "متابعة شحن وطلب"),
-        (["غضبان", "سيء", "شكوى", "مشكلة", "زفت", "تأخير فظيع"], "شكوى"),
-    ]
+    """Enterprise AI Engine Service for CRM Copilot Intelligence with 3-Tier Groq Cascade."""
 
     @staticmethod
     async def analyze_conversation(
         session: AsyncSession,
         conversation: Conversation,
     ) -> Dict[str, Any]:
-        """Analyzes recent transcript to extract summary, intent, sentiment, and 3 smart replies."""
+        """
+        Analyzes recent conversation transcript using 3-Tier Groq AI Cascade:
+        Tier 1: openai/gpt-oss-120b
+        Tier 2: openai/gpt-oss-20b
+        Tier 3: Local Rule-Based Heuristic NLP Fallback Engine
+        """
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation.id)
@@ -33,56 +31,34 @@ class AIService:
             .limit(20)
         )
         res = await session.execute(stmt)
-        messages = list(res.scalars().all())
+        raw_messages = list(res.scalars().all())
 
         brand_name = conversation.brand or "LUXIRA"
 
-        if not messages:
-            summary = "محادثة جديدة بدون رسائل سابقة. في انتظار استفسار العميل."
-            intent = "استفسار عام"
-            sentiment = "محايد (Neutral)"
-            replies = [
-                f"أهلاً بك في {brand_name}! كيف يمكنني مساعدتك اليوم؟",
-                "يسعدنا تواصلك معنا، كيف أستطيع خدمتك؟",
-                "أهلاً بك! تفضل باستفسارك وسأقوم بالرد فوراً.",
-            ]
-        else:
-            customer_texts = [
-                m.text for m in messages if m.sender_type == SenderTypeEnum.CUSTOMER and m.text
-            ]
-            combined_cust_text = " ".join(customer_texts)
-            last_cust_text = customer_texts[-1] if customer_texts else ""
+        formatted_messages: List[Dict[str, str]] = []
+        for msg in raw_messages:
+            sender_val = msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type)
+            formatted_messages.append({
+                "sender": sender_val,
+                "text": msg.text or "",
+            })
 
-            # 1. Intent Detection
-            intent = "استفسار عام"
-            for keywords, matched_intent in AIService.INTENT_MAP:
-                if any(kw in combined_cust_text for kw in keywords):
-                    intent = matched_intent
-                    break
+        # Execute 3-Tier Cascading AI Analysis
+        ai_res = await analyze_with_groq_cascade(formatted_messages, brand_name)
 
-            # 2. Sentiment Detection
-            low_text = combined_cust_text.lower()
-            if any(kw in low_text for kw in ["غضبان", "مكسور", "سيء", "زفت", "استرجاع فوري", "تأخير فظيع"]):
-                sentiment = "غاضب (Frustrated)"
-            elif any(kw in low_text for kw in ["مشكلة", "للأسف", "خطأ", "تأخير", "تالف"]):
-                sentiment = "سلبي (Negative)"
-            elif any(kw in low_text for kw in ["شكراً", "ممتاز", "جميل", "يعطيك العافية", "رائع", "شكرا"]):
-                sentiment = "إيجابي (Positive)"
-            else:
-                sentiment = "محايد (Neutral)"
+        summary = ai_res.get("summary", "محادثة جارية مع العميل.")
+        intent = ai_res.get("intent", "استفسار عام")
+        sentiment = ai_res.get("sentiment", "محايد (Neutral)")
+        replies = ai_res.get("suggested_replies", [
+            f"أهلاً بك في {brand_name}! كيف يمكنني مساعدتك اليوم؟",
+            "يسعدنا تواصلك معنا، كيف أستطيع خدمتك؟",
+            "أهلاً بك! تفضل باستفسارك وسأقوم بالرد فوراً.",
+        ])
+        is_urgent = ai_res.get("is_urgent", False)
 
-            # 3. Summary Generation
-            if last_cust_text:
-                summary = f"العميل يتواصل بخصوص {intent}. الرسالة الأخيرة: '{last_cust_text[:90]}'."
-            else:
-                summary = f"المحادثة جارية مع العميل بخصوص {intent}."
-
-            # 4. Contextual Smart Replies Generation
-            replies = AIService._generate_replies_for_intent(intent, brand_name, last_cust_text)
-
-        # Priority Auto-Escalation Hook for Frustrated / Complaint Conversations
+        # Priority Auto-Escalation Hook for Frustrated / Complaint / Urgent Conversations
         updated_priority = conversation.priority
-        if sentiment in ("غاضب (Frustrated)", "سلبي (Negative)") or intent in ("شكوى", "طلب إرجاع أو استبدال"):
+        if is_urgent or sentiment in ("غاضب (Frustrated)", "سلبي (Negative)") or intent in ("شكوى", "طلب إرجاع أو استبدال"):
             conversation.priority = "urgent"
             updated_priority = "urgent"
 
@@ -91,14 +67,28 @@ class AIService:
         conversation.detected_sentiment = sentiment
         conversation.ai_suggested_replies = replies
 
+        # Auto-Persist Extracted Location to Customer Profile if Present
+        detected_loc = ai_res.get("detected_location")
+        if detected_loc and isinstance(detected_loc, str) and detected_loc.strip() and detected_loc.lower() != "null":
+            clean_loc = detected_loc.strip()
+            if conversation.customer_id:
+                from app.models.customer import Customer
+                cust_res = await session.execute(select(Customer).where(Customer.id == conversation.customer_id))
+                cust_obj = cust_res.scalar_one_or_none()
+                if cust_obj:
+                    cust_obj.country = clean_loc
+                    cust_obj.location = clean_loc
+                    session.add(cust_obj)
+
         await session.commit()
         await session.refresh(conversation)
 
         logger.info(
-            "✨ [AI Engine] Analyzed Conv %s | Intent: %s | Sentiment: %s | Priority: %s",
+            "✨ [AIService Cascade] Analyzed Conv %s | Intent: %s | Sentiment: %s | Loc: %s | Priority: %s",
             conversation.id,
             intent,
             sentiment,
+            detected_loc,
             updated_priority,
         )
 
@@ -110,36 +100,3 @@ class AIService:
             "ai_suggested_replies": replies,
             "updated_priority": updated_priority,
         }
-
-    @staticmethod
-    def _generate_replies_for_intent(intent: str, brand_name: str, last_text: str) -> List[str]:
-        if intent == "طلب إرجاع أو استبدال":
-            return [
-                f"أهلاً بك! نأسف جداً لذلك، سنقوم ببدء إجراءات الإستبدال والتعويض فوراً لرضاكم في {brand_name}.",
-                "يرجى تزويدنا برقم الطلب وصورة للمنتج لنتمكن من شحن بديل فوراً بدون أي تكلفة.",
-                "تم تحويل طلبك للقسم المختص للمتابعة العاجلة والشحن الفوري.",
-            ]
-        elif intent == "استفسار عن سعر":
-            return [
-                f"أهلاً بك! يسعدنا اهتمامك بمنتجات {brand_name}، يتوفر خصم خاص حالياً شامل الشحن.",
-                "السعر حالياً يشمل العرض المميز لفترة محدودة، هل ترغب في حجز طلبك الآن؟",
-                "يتوفر لدينا تفاصيل ومواصفات المنتج مع ضمان شامل، هل أساعدك في إتمام الطلب؟",
-            ]
-        elif intent == "متابعة شحن وطلب":
-            return [
-                "أهلاً بك! جاري متابعة حالة الشحنة مع شركة التوصيل وسنزودك برقم التتبع خلال دقائق.",
-                "طلبكم في مرحلة التجهيز النهائية وسيصلكم خلال الموعد المحدد بإذن الله.",
-                "يرجى تأكيد العنوان ورقم التواصل للتنسيق مع مندوب الشحن فوراً.",
-            ]
-        elif intent == "شكوى":
-            return [
-                f"أهلاً بك! نعتذر بشدة عن أي إزعاج، فريق {brand_name} يعمل على حل المشكلة فوراً.",
-                "حقك علينا كامل! يرجى توضيح التفاصيل وسنقوم بالمعالجة العاجلة وتوفير التعويض المناسب.",
-                "تم رفع الشكوى للإدارة للمتابعة المباشرة وتأكيد التواصل معكم اليوم.",
-            ]
-        else:
-            return [
-                f"أهلاً بك في {brand_name}! يسعدنا تواصلك معنا، كيف يمكننا مساعدتك اليوم؟",
-                "شكراً لتواصلك! تفضل باستفسارك وسنقوم بخدمتك فوراً.",
-                "أهلاً بك، نحن هنا لمساعدتك وتوفير أفضل تجربة تسوق لك.",
-            ]

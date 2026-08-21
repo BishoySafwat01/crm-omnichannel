@@ -1,7 +1,9 @@
 import json
+import os
 from typing import Any
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 
 class Settings(BaseSettings):
@@ -15,7 +17,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
     SECRET_KEY: str = "change_this_to_a_secure_random_secret_key_in_production"
-    UPLOAD_DIR: str = "/app/uploads"
+    UPLOAD_DIR: str = "./uploads"
 
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
@@ -37,13 +39,35 @@ class Settings(BaseSettings):
     META_PAGE_ID: str | None = "1302055352987458"
     META_PAGE_ACCESS_TOKEN: str | None = None
     META_GRAPH_API_VERSION: str = "v19.0"
-    META_WEBHOOK_VERIFY_TOKEN: str | None = None
+    META_WEBHOOK_VERIFY_TOKEN: str | None = "LUXIRA_META_WEBHOOK_VERIFY_TOKEN"
     META_APP_SECRET: str | None = None
+    WHATSAPP_PHONE_NUMBER_ID: str | None = "105938472819405"
+    WHATSAPP_WABA_ID: str | None = "948301847582019"
+    INSTAGRAM_ACCOUNT_ID: str | None = "17841405938201948"
 
     # Respond.io Integration Settings
     RESPOND_IO_API_TOKEN: str | None = None
     RESPOND_IO_API_BASE_URL: str = "https://api.respond.io/v2"
     RESPOND_IO_WEBHOOK_SECRET: str | None = ""
+
+    # Groq AI Copilot Settings
+    GROQ_API_KEY: str | None = None
+    GROQ_TIER1_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_TIER2_MODEL: str = "openai/gpt-oss-20b"
+    GROQ_TIMEOUT_SECONDS: float = 6.0
+
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def validate_secret_key(cls, v: str, info: Any) -> str:
+        _INSECURE_DEFAULT = "change_this_to_a_secure_random_secret_key_in_production"
+        if v == _INSECURE_DEFAULT:
+            env = (info.data or {}).get("ENVIRONMENT", "development")
+            if env not in ("development", "testing"):
+                raise ValueError(
+                    "SECRET_KEY must be changed from the default placeholder in non-development environments. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+        return v
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -74,5 +98,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-import os
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

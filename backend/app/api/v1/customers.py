@@ -1,9 +1,11 @@
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models.customer import Customer
 from app.schemas.customer import (
     CustomerDetailResponse,
     CustomerIdentityResponse,
@@ -33,6 +35,34 @@ async def list_customers(
     )
     items = [CustomerResponse.model_validate(c) for c in customers]
     return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get(
+    "/locations",
+    summary="Get Distinct Customer Countries / Locations",
+)
+async def get_customer_locations(
+    db: AsyncSession = Depends(get_db),
+):
+    stmt_c = (
+        select(distinct(Customer.country))
+        .where(
+            Customer.country.isnot(None),
+            Customer.country != "",
+        )
+    )
+    stmt_l = (
+        select(distinct(Customer.location))
+        .where(
+            Customer.location.isnot(None),
+            Customer.location != "",
+        )
+    )
+    res_c = await db.execute(stmt_c)
+    res_l = await db.execute(stmt_l)
+    loc_set = set(res_c.scalars().all()) | set(res_l.scalars().all())
+    locations = sorted([loc for loc in loc_set if loc])
+    return {"locations": locations}
 
 
 @router.get(
@@ -102,6 +132,11 @@ async def update_customer_tags(
     return {"status": "success", "customer_id": str(customer_id), "tags": customer.tags}
 
 
+@router.put(
+    "/{customer_id}",
+    response_model=CustomerResponse,
+    summary="Update Customer Information & Attributes",
+)
 @router.patch(
     "/{customer_id}",
     response_model=CustomerResponse,
@@ -125,6 +160,14 @@ async def update_customer(
     for field, val in update_data.items():
         if val is not None:
             setattr(customer, field, val)
+
+    # Harmonize location and country auto-mapping
+    if payload.country is not None:
+        customer.country = payload.country
+    if payload.location is not None:
+        customer.location = payload.location
+        if not customer.country or payload.country is None:
+            customer.country = payload.location
 
     await db.commit()
     await db.refresh(customer)

@@ -127,28 +127,45 @@ async def list_conversations(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     customer_id: Optional[uuid.UUID] = Query(None, description="Filter by customer ID"),
     provider: Optional[ProviderEnum] = Query(None, description="Filter by provider"),
-    channel: Optional[ChannelEnum] = Query(None, description="Filter by channel"),
+    channel: Optional[str] = Query(None, description="Filter by channel"),
     status_filter: Optional[ConversationStatusEnum] = Query(
         None, alias="status", description="Filter by status"
     ),
     search: Optional[str] = Query(None, description="Search by subject"),
     brand: Optional[str] = Query(None, description="Filter by brand"),
     location: Optional[str] = Query(None, description="Filter by customer location"),
+    country: Optional[str] = Query(None, description="Filter by customer country"),
     sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
+    # Fallback/alias location to country if location not provided
+    effective_country = country if country is not None else location
+
+    parsed_channel: Optional[ChannelEnum] = None
+    if channel:
+        if isinstance(channel, ChannelEnum):
+            parsed_channel = channel
+        elif isinstance(channel, str):
+            norm_ch = channel.strip().lower()
+            if norm_ch not in ["all", "none", "", "الكل"]:
+                try:
+                    parsed_channel = ChannelEnum(norm_ch)
+                except ValueError:
+                    parsed_channel = None
+
     items_raw, total = await ConversationService.list_conversations(
         session=db,
         page=page,
         page_size=page_size,
         customer_id=customer_id,
         provider=provider,
-        channel=channel,
+        channel=parsed_channel,
         status=status_filter,
         search=search,
         brand=brand,
-        location=location,
+        location=effective_country,
+        country=effective_country,
         sla_status=sla_status,
     )
     items = [ConversationResponse.model_validate(c) for c in items_raw]
@@ -335,13 +352,14 @@ async def update_conversation_status(
             detail=f"Conversation {conversation_id} not found.",
         )
     new_status = payload.get("status", "closed")
-    try:
-        updated = await ConversationService.update_conversation_status(
-            session=db, conversation_id=conversation_id, new_status=new_status
-        )
-        return {"status": "success", "conversation_id": str(conversation_id), "new_status": updated.status.value if hasattr(updated.status, "value") else str(updated.status)}
-    except Exception as e:
-        return {"status": "success", "conversation_id": str(conversation_id), "new_status": new_status}
+    updated = await ConversationService.update_conversation_status(
+        session=db, conversation_id=conversation_id, new_status=new_status
+    )
+    return {
+        "status": "success",
+        "conversation_id": str(conversation_id),
+        "new_status": updated.status.value if hasattr(updated.status, "value") else str(updated.status),
+    }
 
 
 @router.patch(
@@ -370,14 +388,13 @@ async def assign_conversation_agent(
     await db.commit()
     await db.refresh(conv)
 
+    assigned_by_uuid = current_user.id if current_user else None
     assigned_to_uuid = None
     if agent_id:
         try:
             assigned_to_uuid = uuid.UUID(agent_id)
         except ValueError:
             assigned_to_uuid = None
-
-    assigned_by_uuid = current_user.id if current_user else None
 
     # Log assignment via AuditService
     await AuditService.log_assignment(
@@ -391,12 +408,12 @@ async def assign_conversation_agent(
 
     # Broadcast WebSocket event
     try:
-        from app.api.v1.websockets import ws_manager
+        from app.api.v1.ws import manager as ws_manager
         await ws_manager.broadcast({
             "type": "CONVERSATION_ASSIGNED",
             "data": {
                 "conversation_id": str(conversation_id),
-                "assigned_agent_id": agent_id,
+                "assigned_agent_id": str(assigned_to_uuid) if assigned_to_uuid else None,
                 "assigned_by_user_id": str(assigned_by_uuid) if assigned_by_uuid else None,
                 "reason": reason,
             }
@@ -407,7 +424,7 @@ async def assign_conversation_agent(
     return {
         "status": "success",
         "conversation_id": str(conversation_id),
-        "assigned_agent_id": agent_id,
+        "assigned_agent_id": str(raw_agent_id) if raw_agent_id is not None else None,
     }
 
 

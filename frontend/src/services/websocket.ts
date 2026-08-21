@@ -2,6 +2,8 @@ import { WebSocketEvent } from '../types/crm';
 
 type MessageHandler = (event: WebSocketEvent) => void;
 
+const WS_CLOSE_AUTH_FAILURE = 4001;
+
 export class RealtimeWebSocketService {
   private socket: WebSocket | null = null;
   private listeners: Set<MessageHandler> = new Set();
@@ -10,17 +12,25 @@ export class RealtimeWebSocketService {
   private currentReconnectDelay = 3000;
   private isExplicitlyClosed = false;
 
+  /** Read the access token from wherever the app stores it. */
+  private getToken(): string | null {
+    return localStorage.getItem('auth_token');
+  }
+
   public connect() {
     this.isExplicitlyClosed = false;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/chat`;
+    const token = this.getToken();
+    // Append token as query param so the server can authenticate the handshake
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    const wsUrl = `${protocol}//${host}/ws/chat${tokenParam}`;
 
     try {
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
-        console.log('Real-time WebSocket Connected:', wsUrl);
+        console.log('Real-time WebSocket Connected:', wsUrl.split('?')[0]);
         this.currentReconnectDelay = this.reconnectInterval;
       };
 
@@ -33,9 +43,15 @@ export class RealtimeWebSocketService {
         }
       };
 
-      this.socket.onclose = () => {
+      this.socket.onclose = (closeEvent) => {
+        if (closeEvent.code === WS_CLOSE_AUTH_FAILURE) {
+          // Server rejected the token — don't retry; the user needs to log in again.
+          console.warn('WebSocket authentication rejected (4001). Please log in again.');
+          this.isExplicitlyClosed = true;
+          return;
+        }
         if (!this.isExplicitlyClosed) {
-          console.warn(`WebSocket closed. Reconnecting in ${this.currentReconnectDelay / 1000}s...`);
+          console.warn(`WebSocket closed (${closeEvent.code}). Reconnecting in ${this.currentReconnectDelay / 1000}s...`);
           setTimeout(() => {
             this.currentReconnectDelay = Math.min(
               this.currentReconnectDelay * 1.5,

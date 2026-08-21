@@ -36,7 +36,11 @@ class Conversation(Base):
         default=ConversationStatusEnum.OPEN,
         index=True,
     )
-    assigned_agent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    assigned_agent_id: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
     priority: Mapped[str] = mapped_column(String(50), nullable=False, default="normal", server_default="normal")
     brand: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="LAVVA", server_default="LAVVA", index=True)
     subject: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -64,6 +68,9 @@ class Conversation(Base):
     )
     last_message_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    last_customer_message_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
     )
 
     customer: Mapped["Customer"] = relationship("Customer", back_populates="conversations")

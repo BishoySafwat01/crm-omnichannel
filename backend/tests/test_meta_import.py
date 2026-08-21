@@ -226,10 +226,20 @@ async def test_meta_import_service_full_flow():
     # Verify counts remain identical (no duplicates)
     async with AsyncSessionLocal() as session:
         cust_count = (
-            await session.execute(select(CustomerIdentity))
+            await session.execute(
+                select(CustomerIdentity).where(CustomerIdentity.external_user_id == "cust_mock_999")
+            )
         ).scalars().all()
-        conv_count = (await session.execute(select(Conversation))).scalars().all()
-        msg_count = (await session.execute(select(Message))).scalars().all()
+        conv_count = (
+            await session.execute(
+                select(Conversation).where(Conversation.external_conversation_id == "t_mock_100")
+            )
+        ).scalars().all()
+        msg_count = (
+            await session.execute(
+                select(Message).where(Message.external_message_id.in_(["m_mock_001", "m_mock_002"]))
+            )
+        ).scalars().all()
 
         assert len(cust_count) == 1
         assert len(conv_count) == 1

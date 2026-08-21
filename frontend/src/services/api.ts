@@ -12,10 +12,18 @@ export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Reco
   return headers;
 };
 
-export const getConversationsDirect = async (brand_id?: string): Promise<any> => {
-  const query = (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل')
-    ? `?brand=${encodeURIComponent(brand_id)}`
-    : '';
+export const getConversationsDirect = async (brand_id?: string, channel?: string, country?: string): Promise<any> => {
+  const params = new URLSearchParams();
+  if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
+    params.set('brand', brand_id);
+  }
+  if (channel && channel.toLowerCase() !== 'all') {
+    params.set('channel', channel);
+  }
+  if (country && country.toLowerCase() !== 'all') {
+    params.set('country', country);
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
 
   const urls = [
     `${API_BASE}/conversations${query}`,
@@ -110,8 +118,9 @@ export const markConversationReadDirect = async (conversationId: string): Promis
 };
 
 export const MOCK_BRANDS = [
-  { id: 'all', name: 'الكل', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
+  { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
   { id: 'LAVVA', name: 'LAVVA', avatar: 'LV', color: 'from-teal-600 to-teal-700', page_id: '1302055352987458' },
+  { id: 'LUXIRA', name: 'LUXIRA', avatar: 'LX', color: 'from-[#1A73E8] to-blue-600', page_id: '1302055352987459' },
   { id: 'MOON LIGHT', name: 'MOON LIGHT', avatar: 'ML', color: 'from-indigo-600 to-indigo-700', page_id: '100099887766554' },
   { id: 'LOTUS BLUE', name: 'LOTUS BLUE', avatar: 'LB', color: 'from-cyan-600 to-cyan-700', page_id: '100099887766555' },
   { id: 'BEAUTY CENTER', name: 'BEAUTY CENTER', avatar: 'BC', color: 'from-rose-600 to-rose-700', page_id: '100099887766556' },
@@ -584,6 +593,28 @@ export interface CustomerTimelineEvent {
 }
 
 export const customerApi = {
+  async getLocations(): Promise<string[]> {
+    const res = await safeFetch(`/customers/locations`, {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      return data.locations || [];
+    }
+    return [];
+  },
+
+  async updateCustomer(customerId: string, payload: Partial<Customer>): Promise<Customer> {
+    const res = await safeFetch(`/customers/${customerId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to update customer');
+  },
+
   async getTimeline(customerId: string, page: number = 1): Promise<{ items: any[]; total: number }> {
     const res = await safeFetch(`/customers/${customerId}/timeline?page=${page}`, {
       method: 'GET',
@@ -767,6 +798,27 @@ export const aiApi = {
       conversation_id: conversationId,
       ai_suggested_replies: [],
     };
+  },
+};
+
+export const metaApi = {
+  async getIntegrationsStatus() {
+    const res = await safeFetch('/meta/integrations/status', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return null;
+  },
+
+  async sendTestPing(channel: string) {
+    const res = await safeFetch('/meta/test-ping', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify({ channel }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Test ping failed');
   },
 };
 

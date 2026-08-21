@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
-import { apiService, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect } from '../services/api';
+import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect } from '../services/api';
 import { realtimeService } from '../services/websocket';
 
 export type ChannelFilterType = 'all' | 'messenger' | 'instagram' | 'whatsapp';
@@ -61,6 +61,7 @@ const areConversationsEqual = (a: Conversation[], b: Conversation[]): boolean =>
       a[i].last_message_at !== b[i].last_message_at ||
       a[i].customer_display_name !== b[i].customer_display_name ||
       a[i].customer?.location !== b[i].customer?.location ||
+      a[i].customer?.country !== b[i].customer?.country ||
       a[i].customer?.tier !== b[i].customer?.tier ||
       a[i].customer?.skin_type !== b[i].customer?.skin_type ||
       a[i].customer?.stage !== b[i].customer?.stage
@@ -90,6 +91,9 @@ const areMessagesEqual = (a: Message[] | undefined, b: Message[]): boolean => {
 interface CrmState {
   selectedBrandId: string;
   selectedChannel: ChannelFilterType;
+  selectedCountry: string;
+  availableCountries: string[];
+  isIntegrationsModalOpen: boolean;
   searchQuery: string;
   activeFilterTab: FilterTab;
   conversations: Conversation[];
@@ -107,6 +111,9 @@ interface CrmState {
   // Actions
   setSelectedBrandId: (brandId: string) => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
+  setSelectedCountry: (country: string) => void;
+  fetchAvailableCountries: () => Promise<void>;
+  setIsIntegrationsModalOpen: (open: boolean) => void;
   setSearchQuery: (query: string) => void;
   setActiveFilterTab: (tab: FilterTab) => void;
   setActiveConversationId: (id: string) => void;
@@ -133,6 +140,9 @@ interface CrmState {
 export const useCrmStore = create<CrmState>((set, get) => ({
   selectedBrandId: 'all',
   selectedChannel: 'all',
+  selectedCountry: 'all',
+  availableCountries: [],
+  isIntegrationsModalOpen: false,
   searchQuery: '',
   activeFilterTab: 'all',
   conversations: [],
@@ -151,7 +161,6 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     brands: {},
   },
 
-
   setSelectedBrandId: (brandId) => {
     set({ selectedBrandId: brandId });
     get().fetchConversations();
@@ -159,6 +168,25 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   setSelectedChannel: (channel) => {
     set({ selectedChannel: channel });
+    get().fetchConversations();
+  },
+
+  setSelectedCountry: (country) => {
+    set({ selectedCountry: country });
+    get().fetchConversations();
+  },
+
+  fetchAvailableCountries: async () => {
+    try {
+      const locations = await customerApi.getLocations();
+      set({ availableCountries: locations });
+    } catch (err) {
+      console.warn('[Store] fetchAvailableCountries error:', err);
+    }
+  },
+
+  setIsIntegrationsModalOpen: (open) => {
+    set({ isIntegrationsModalOpen: open });
   },
 
   setSearchQuery: (query) => {
@@ -217,7 +245,9 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   fetchConversations: async () => {
     try {
       const selectedBrand = get().selectedBrandId;
-      const raw = await getConversationsDirect(selectedBrand);
+      const selectedChannel = get().selectedChannel;
+      const selectedCountry = get().selectedCountry;
+      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry);
 
       let items: Conversation[] = [];
       if (Array.isArray(raw)) {
@@ -269,6 +299,13 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         if (validActive) {
           get().fetchMessages(validActive);
         }
+      } else {
+        set({
+          conversations: [],
+          activeConversationId: null,
+          isLoadingConversations: false,
+          error: null,
+        });
       }
     } catch (err: any) {
       console.warn('[Store] Live fetch error, keeping existing state:', err);
@@ -625,6 +662,9 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     });
 
     await apiService.updateCustomerProfile(customerId, payload);
+    if (payload.location || (payload as any).country) {
+      get().fetchAvailableCountries();
+    }
   },
 
   handleRealtimeEvent: (event) => {

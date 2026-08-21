@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,15 +42,40 @@ async def login(
             detail="User account is deactivated.",
         )
 
+    # P2-4: Record last login timestamp
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(user)
+
     access_token = create_access_token(subject=user.id)
     user_response = UserResponse.model_validate(user)
-    
+
     logger.info("User logged in successfully: email=%s, id=%s", user.email, user.id)
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
         user=user_response,
     )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Invalidate Current Session",
+)
+async def logout(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    P2-3: Client-side logout endpoint.
+
+    The client MUST discard the JWT token upon receiving this response.
+    Full server-side token revocation requires a Redis blocklist — track as a
+    follow-up when the refresh-token flow is implemented.
+    """
+    logger.info("User logged out: id=%s, email=%s", current_user.id, current_user.email)
+    # 204 No Content — client discards token
+    return
 
 
 @router.get(

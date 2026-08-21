@@ -42,12 +42,23 @@ class MessageService:
         )
         session.add(message)
 
-        # Update last_message_at on parent conversation
+        # Update last_message_at on parent conversation & auto-detect location
         stmt = select(Conversation).where(Conversation.id == conversation_id)
         result = await session.execute(stmt)
         conversation = result.scalar_one_or_none()
         if conversation:
             conversation.last_message_at = datetime.now(timezone.utc)
+            if text:
+                from app.services.location_extractor import extract_location_from_text
+                detected_loc = extract_location_from_text(text)
+                if detected_loc and conversation.customer_id:
+                    cust_stmt = select(Customer).where(Customer.id == conversation.customer_id)
+                    cust_res = await session.execute(cust_stmt)
+                    cust = cust_res.scalar_one_or_none()
+                    if cust:
+                        cust.country = detected_loc
+                        cust.location = detected_loc
+                        session.add(cust)
 
         await session.commit()
         await session.refresh(message)
@@ -336,6 +347,19 @@ class MessageService:
         )
         session.add(new_message)
         conv.last_message_at = now_utc
+
+        # Auto-detect location from outbound text and update customer record
+        if clean_text:
+            from app.services.location_extractor import extract_location_from_text
+            detected_loc = extract_location_from_text(clean_text)
+            if detected_loc and conv.customer_id:
+                cust_stmt = select(Customer).where(Customer.id == conv.customer_id)
+                cust_res = await session.execute(cust_stmt)
+                cust_obj = cust_res.scalar_one_or_none()
+                if cust_obj:
+                    cust_obj.country = detected_loc
+                    cust_obj.location = detected_loc
+                    session.add(cust_obj)
 
         # Record agent response for SLA tracking
         try:

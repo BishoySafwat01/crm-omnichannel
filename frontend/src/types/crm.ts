@@ -40,6 +40,8 @@ export interface Customer {
   avatar_url?: string;
   locale?: string;
   location?: string;
+  country?: string;
+  city?: string;
   tier?: string;
   skin_type?: string;
   stage?: string;

@@ -1,3 +1,5 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -5,8 +7,6 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-
-import os
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.admin.analytics import router as admin_analytics_router
@@ -28,30 +28,42 @@ import asyncio
 from app.services.meta_import_service import meta_import_service
 
 
+logger = logging.getLogger("app.main")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup actions
-    async def poller_loop():
+    # Startup: ensure upload directory exists (side-effect moved from config.py)
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    async def meta_sync_loop():
         await asyncio.sleep(5)
         while True:
             try:
                 await meta_import_service.sync_live_conversations()
             except Exception:
-                pass
+                logger.exception("[MetaSync] Unhandled exception in Meta sync loop")
+            await asyncio.sleep(5)
 
+    async def sla_eval_loop():
+        from app.services.sla_service import SlaService
+        await asyncio.sleep(10)
+        while True:
             try:
-                from app.services.sla_service import SlaService
                 async with AsyncSessionLocal() as session:
                     await SlaService.evaluate_overdue_conversations(session)
             except Exception:
-                pass
+                logger.exception("[SLAEngine] Unhandled exception in SLA evaluation loop")
+            await asyncio.sleep(30)
 
-            await asyncio.sleep(5)
+    meta_task = asyncio.create_task(meta_sync_loop())
+    sla_task = asyncio.create_task(sla_eval_loop())
 
-    poller_task = asyncio.create_task(poller_loop())
     yield
-    # Shutdown actions
-    poller_task.cancel()
+
+    # Shutdown
+    meta_task.cancel()
+    sla_task.cancel()
     await close_redis_client()
 
 
@@ -63,11 +75,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware — use explicitly configured origins only (OWASP A05 fix)
+_cors_origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["http://localhost:3000", "http://127.0.0.1:3000"]
+_allow_credentials = "*" not in _cors_origins  # credentials require scoped origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,7 +89,10 @@ app.add_middleware(
 # Mount static uploads directory with Range headers support
 uploads_dir = settings.UPLOAD_DIR
 os.makedirs(uploads_dir, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=uploads_dir, html=False), name="uploads")
+try:
+    app.mount("/uploads", StaticFiles(directory=uploads_dir, html=False), name="uploads")
+except Exception:
+    pass  # Graceful degradation: upload serving skipped if directory unavailable
 
 # Routers
 app.include_router(auth_router, prefix="/api/v1")

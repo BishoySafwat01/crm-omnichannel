@@ -44,6 +44,9 @@ class MessageResponse(MessageBase):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     updated_customer_location: Optional[str] = None
+    # P3-2: Delivery tracking and Meta messaging tag
+    delivery_status: Optional[str] = None
+    meta_tag: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -107,6 +110,9 @@ class MessageResponse(MessageBase):
             data["media_url"] = url
             data["media_type"] = str(m_type) if m_type else None
             data["updated_customer_location"] = loc
+            # P3-2: propagate delivery_status and meta_tag from raw dict
+            data.setdefault("delivery_status", data.get("delivery_status"))
+            data.setdefault("meta_tag", data.get("meta_tag"))
             return data
         else:
             return {
@@ -123,4 +129,7 @@ class MessageResponse(MessageBase):
                 "media_url": url,
                 "media_type": str(m_type) if m_type else None,
                 "updated_customer_location": loc,
+                # P3-2: include delivery_status and meta_tag from ORM object
+                "delivery_status": getattr(data, "delivery_status", None),
+                "meta_tag": getattr(data, "meta_tag", None),
             }

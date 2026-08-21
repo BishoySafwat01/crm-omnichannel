@@ -411,7 +411,14 @@ class MetaImportService:
             logger.warning("Meta webhook: received empty entry list")
             return {"status": "processed", "message": "Ignored empty Meta webhook entry list."}
 
-        expected_page_id = settings.META_PAGE_ID
+        valid_page_ids = {
+            p.strip() for p in [
+                settings.META_PAGE_ID,
+                settings.WHATSAPP_WABA_ID,
+                settings.WHATSAPP_PHONE_NUMBER_ID,
+                settings.INSTAGRAM_ACCOUNT_ID,
+            ] if p and p.strip()
+        }
         total_processed = 0
         created_count = 0
         last_result_msg_id = None
@@ -419,8 +426,8 @@ class MetaImportService:
 
         for entry in entries:
             entry_page_id = str(entry.get("id", ""))
-            if expected_page_id and expected_page_id.strip() and entry_page_id and entry_page_id.strip() != expected_page_id.strip():
-                logger.warning("Meta webhook: ignoring entry for page_id '%s' (expected '%s')", entry_page_id, expected_page_id)
+            if valid_page_ids and entry_page_id and entry_page_id.strip() not in valid_page_ids:
+                logger.warning("Meta webhook: ignoring entry for ID '%s' (valid IDs: %s)", entry_page_id, valid_page_ids)
                 continue
 
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
@@ -676,6 +683,9 @@ class MetaImportService:
                 if not is_echo and sender_type_str == "customer":
                     conv.unread_count = (getattr(conv, "unread_count", 0) or 0) + 1
                     conv.updated_at = datetime.now(timezone.utc)
+                    # Update last_customer_message_at so the 24h Meta messaging window is tracked correctly
+                    if conv.last_customer_message_at is None or norm_event.created_at > conv.last_customer_message_at:
+                        conv.last_customer_message_at = norm_event.created_at
 
                 await session.commit()
 

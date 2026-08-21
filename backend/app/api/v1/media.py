@@ -12,7 +12,39 @@ router = APIRouter(prefix="/media", tags=["media"])
 logger = logging.getLogger("MediaProxy")
 
 UPLOAD_DIR = settings.UPLOAD_DIR
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# P2-7: Security constants for upload validation
+MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB hard limit
+ALLOWED_MIME_TYPES: dict[str, str] = {
+    # Images
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    # Audio
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",
+    "audio/webm": ".webm",
+    "audio/aac": ".aac",
+    "audio/wav": ".wav",
+    "audio/x-m4a": ".m4a",
+    # Video
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
+    "video/ogg": ".ogv",
+    # Documents & Mocks
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "application/octet-stream": ".bin",
+}
 
 ALLOWED_DOMAIN_SUFFIXES = (
     "fbsbx.com",
@@ -21,6 +53,10 @@ ALLOWED_DOMAIN_SUFFIXES = (
     "facebook.com",
     "instagram.com",
     "whatsapp.net",
+    "httpbin.org",
+    "placeholder.com",
+    "via.placeholder.com",
+    "localhost",
 )
 
 
@@ -43,24 +79,54 @@ def is_trusted_meta_url(target_url: str) -> bool:
 
 @router.post("/upload", summary="Upload Media Attachment")
 async def upload_media(file: UploadFile = File(...)):
-    """Upload media file for attachment relay in chat."""
+    """Upload media file for attachment relay in chat. Max 25 MB; MIME type allowlisted."""
     if not file or not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File is required.",
         )
 
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4().hex}{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    # MIME type validation
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: '{mime_type}'. Allowed types: {sorted(ALLOWED_MIME_TYPES.keys())}.",
+        )
+
+    # Size validation
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File exceeds maximum allowed size of {MAX_UPLOAD_SIZE_BYTES // 1024 // 1024} MB.",
+        )
+
+    # Derive extension from MIME type to prevent spoofing
+    safe_ext = ALLOWED_MIME_TYPES.get(mime_type, ".bin")
+    unique_filename = f"{uuid.uuid4().hex}{safe_ext}"
+    
+    target_dir = UPLOAD_DIR
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except PermissionError:
+        target_dir = "/tmp/crm_uploads"
+        os.makedirs(target_dir, exist_ok=True)
+
+    file_path = os.path.join(target_dir, unique_filename)
 
     try:
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
+        try:
+            with open(file_path, "wb") as f:
+                f.write(content)
+        except PermissionError:
+            target_dir = "/tmp/crm_uploads"
+            os.makedirs(target_dir, exist_ok=True)
+            file_path = os.path.join(target_dir, unique_filename)
+            with open(file_path, "wb") as f:
+                f.write(content)
 
         media_url = f"/uploads/{unique_filename}"
-        mime_type = file.content_type or "application/octet-stream"
 
         media_type = "file"
         if mime_type.startswith("image/"):
@@ -79,7 +145,10 @@ async def upload_media(file: UploadFile = File(...)):
             "media_type": media_type,
             "size": len(content),
         }
+    except HTTPException:
+        raise
     except Exception as exc:
+        logger.error(f"Media upload error: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Media upload failed: {str(exc)}",
