@@ -36,6 +36,14 @@ async def lifespan(app: FastAPI):
     # Startup: ensure upload directory exists (side-effect moved from config.py)
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
+    # Security: warn loudly at startup if webhook signature secret is missing,
+    # because /api/v1/meta/webhook runs fail-closed and will reject all payloads.
+    if not (settings.META_APP_SECRET and settings.META_APP_SECRET.strip()):
+        logger.warning(
+            "[SECURITY] META_APP_SECRET is not configured — the Meta webhook endpoint "
+            "(/api/v1/meta/webhook) will REJECT all inbound payloads until it is set."
+        )
+
     async def meta_sync_loop():
         await asyncio.sleep(5)
         while True:

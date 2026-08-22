@@ -285,28 +285,38 @@ async def receive_meta_webhook(
     body_bytes = await request.body()
     logger.info("Meta webhook POST event received: payload_size=%d bytes", len(body_bytes))
 
-    # 1. Optional Signature Validation (if META_APP_SECRET is configured)
+    # 1. Signature Validation (FAIL-CLOSED: META_APP_SECRET must be configured)
     app_secret = settings.META_APP_SECRET
-    if app_secret and app_secret.strip():
-        if not x_hub_signature_256 or not x_hub_signature_256.startswith("sha256="):
-            logger.warning("Meta webhook signature validation failed: missing or invalid X-Hub-Signature-256 header")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid X-Hub-Signature-256 header.",
-            )
+    if not app_secret or not app_secret.strip():
+        logger.error(
+            "Meta webhook REJECTED: META_APP_SECRET is not configured. "
+            "Refusing unsigned/unverifiable payloads (fail-closed policy). "
+            "Set META_APP_SECRET to enable webhook processing."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook signature validation unavailable: server app secret is not configured.",
+        )
 
-        expected_sig = "sha256=" + hmac.new(
-            app_secret.strip().encode("utf-8"),
-            body_bytes,
-            hashlib.sha256,
-        ).hexdigest()
+    if not x_hub_signature_256 or not x_hub_signature_256.startswith("sha256="):
+        logger.warning("Meta webhook signature validation failed: missing or invalid X-Hub-Signature-256 header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid X-Hub-Signature-256 header.",
+        )
 
-        if not secrets.compare_digest(x_hub_signature_256, expected_sig):
-            logger.warning("Meta webhook signature validation failed: HMAC signature mismatch")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid X-Hub-Signature-256 signature.",
-            )
+    expected_sig = "sha256=" + hmac.new(
+        app_secret.strip().encode("utf-8"),
+        body_bytes,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not secrets.compare_digest(x_hub_signature_256, expected_sig):
+        logger.warning("Meta webhook signature validation failed: HMAC signature mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid X-Hub-Signature-256 signature.",
+        )
 
     # 2. Parse JSON Body
     try:
