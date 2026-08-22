@@ -181,9 +181,10 @@ export const apiService = {
     conversationId: string,
     text: string,
     attachments?: any[],
-    meta_tag?: string
+    meta_tag?: string,
+    reply_to_message_id?: string
   ): Promise<Message> {
-    const payload = { text, attachments, meta_tag };
+    const payload = { text, attachments, meta_tag, reply_to_message_id };
     const res = await safeFetch(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -658,6 +659,7 @@ export interface TeamMember {
   full_name: string;
   role: 'admin' | 'supervisor' | 'agent' | string;
   brand_access: string[];
+  channel_access?: string[];
   is_active: boolean;
   created_at: string;
   last_login_at?: string | null;
@@ -687,6 +689,15 @@ export interface AuditLogListResponse {
 }
 
 export const teamApi = {
+  async listSupportedChannels(): Promise<string[]> {
+    const res = await safeFetch('/admin/team/channels', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return ['messenger', 'instagram', 'whatsapp', 'tiktok'];
+  },
+
   async listMembers(): Promise<TeamMember[]> {
     const res = await safeFetch('/admin/team/members', {
       method: 'GET',
@@ -702,6 +713,7 @@ export const teamApi = {
     full_name: string;
     role: string;
     brand_access: string[];
+    channel_access?: string[];
     is_active?: boolean;
   }): Promise<TeamMember> {
     const res = await safeFetch('/admin/team/members', {
@@ -722,6 +734,7 @@ export const teamApi = {
       full_name?: string;
       role?: string;
       brand_access?: string[];
+      channel_access?: string[];
       is_active?: boolean;
       password?: string;
     }
@@ -750,6 +763,7 @@ export const teamApi = {
     action?: string;
     user_id?: string;
     resource_type?: string;
+    search?: string;
     page?: number;
     page_size?: number;
   }): Promise<AuditLogListResponse> {
@@ -757,6 +771,7 @@ export const teamApi = {
     if (filters?.action && filters.action !== 'all') params.append('action', filters.action);
     if (filters?.user_id) params.append('user_id', filters.user_id);
     if (filters?.resource_type) params.append('resource_type', filters.resource_type);
+    if (filters?.search && filters.search.trim()) params.append('search', filters.search.trim());
     if (filters?.page) params.append('page', filters.page.toString());
     if (filters?.page_size) params.append('page_size', filters.page_size.toString());
 
@@ -821,6 +836,72 @@ export const metaApi = {
     throw new Error('Test ping failed');
   },
 };
+
+export const messageActionsApi = {
+  async editMessage(conversationId: string, messageId: string, text: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تعديل الرسالة' }));
+      throw new Error(err?.detail || 'فشل تعديل الرسالة');
+    }
+    return await res.json();
+  },
+
+  async deleteMessage(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل حذف الرسالة' }));
+      throw new Error(err?.detail || 'فشل حذف الرسالة');
+    }
+    return await res.json();
+  },
+
+  async toggleReaction(conversationId: string, messageId: string, emoji: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ emoji }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إضافة التفاعل' }));
+      throw new Error(err?.detail || 'فشل إضافة التفاعل');
+    }
+    return await res.json();
+  },
+
+  async togglePin(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/pin`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تثبيت/إلغاء تثبيت الرسالة' }));
+      throw new Error(err?.detail || 'فشل تثبيت/إلغاء تثبيت الرسالة');
+    }
+    return await res.json();
+  },
+
+  async forwardMessage(conversationId: string, messageId: string, targetConversationId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/forward`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ target_conversation_id: targetConversationId }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إعادة توجيه الرسالة' }));
+      throw new Error(err?.detail || 'فشل إعادة توجيه الرسالة');
+    }
+    return await res.json();
+  },
+};
+
 
 
 

@@ -5,7 +5,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import ConversationAssignmentLog, UserAuditLog
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("AuditService")
+
+SENSITIVE_KEYS = {
+    "password",
+    "password_hash",
+    "token",
+    "access_token",
+    "refresh_token",
+    "secret",
+    "api_key",
+    "authorization",
+}
+
+
+def sanitize_payload(obj: Any) -> Any:
+    """Recursively strip sensitive keys (passwords, tokens, API keys) from audit payloads."""
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if str(k).lower() in SENSITIVE_KEYS:
+                cleaned[k] = "[REDACTED]"
+            else:
+                cleaned[k] = sanitize_payload(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [sanitize_payload(item) for item in obj]
+    elif isinstance(obj, uuid.UUID):
+        return str(obj)
+    return obj
 
 
 class AuditService:
@@ -18,24 +46,25 @@ class AuditService:
         resource_id: Optional[str] = None,
         payload: Optional[dict[str, Any]] = None,
         ip_address: Optional[str] = None,
-    ) -> UserAuditLog:
-        """Create and persist an immutable user audit log record."""
-        audit_entry = UserAuditLog(
-            user_id=user_id,
-            action=action,
-            resource_type=resource_type,
-            resource_id=str(resource_id) if resource_id is not None else None,
-            payload=payload or {},
-            ip_address=ip_address,
-        )
-        session.add(audit_entry)
+    ) -> Optional[UserAuditLog]:
+        """Create and persist an immutable user audit log record with automatic sanitization."""
         try:
+            safe_payload = sanitize_payload(payload) if payload else {}
+            audit_entry = UserAuditLog(
+                user_id=user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=str(resource_id) if resource_id is not None else None,
+                payload=safe_payload,
+                ip_address=ip_address,
+            )
+            session.add(audit_entry)
             await session.commit()
             await session.refresh(audit_entry)
+            return audit_entry
         except Exception as exc:
-            logger.error("[AuditService] Failed to commit UserAuditLog: %s", exc)
-            await session.rollback()
-        return audit_entry
+            logger.error("[AuditService] Failed to record UserAuditLog (%s on %s): %s", action, resource_type, exc)
+            return None
 
     @staticmethod
     async def log_assignment(
@@ -45,8 +74,9 @@ class AuditService:
         assigned_to_user_id: Optional[uuid.UUID],
         previous_agent_id: Optional[str] = None,
         reason: Optional[str] = None,
+        ip_address: Optional[str] = None,
     ) -> ConversationAssignmentLog:
-        """Log a conversation assignment event in conversation_assignment_logs and user_audit_logs."""
+        """Log a conversation assignment or unassignment event."""
         assignment_log = ConversationAssignmentLog(
             conversation_id=conversation_id,
             assigned_by_user_id=assigned_by_user_id,
@@ -56,7 +86,7 @@ class AuditService:
         )
         session.add(assignment_log)
 
-        # Create corresponding UserAuditLog entry
+        action_name = "conversation.assigned" if assigned_to_user_id else "conversation.unassigned"
         audit_payload = {
             "conversation_id": str(conversation_id),
             "assigned_to_user_id": str(assigned_to_user_id) if assigned_to_user_id else None,
@@ -66,10 +96,11 @@ class AuditService:
 
         audit_entry = UserAuditLog(
             user_id=assigned_by_user_id,
-            action="conversation.assigned",
+            action=action_name,
             resource_type="conversation",
             resource_id=str(conversation_id),
             payload=audit_payload,
+            ip_address=ip_address,
         )
         session.add(audit_entry)
 

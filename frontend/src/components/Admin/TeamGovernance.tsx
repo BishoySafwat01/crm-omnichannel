@@ -43,8 +43,15 @@ export const TeamGovernance: React.FC = () => {
     full_name: '',
     role: 'agent',
     brand_access: ['LAVVA'] as string[],
+    channel_access: ['ALL'] as string[],
     is_active: true,
   });
+  const [availableChannels, setAvailableChannels] = useState<string[]>([
+    'messenger',
+    'instagram',
+    'whatsapp',
+    'tiktok',
+  ]);
   const [modalError, setModalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -52,21 +59,29 @@ export const TeamGovernance: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loadingAudit, setLoadingAudit] = useState<boolean>(false);
   const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+  const [searchAuditQuery, setSearchAuditQuery] = useState<string>('');
   const [auditPage, setAuditPage] = useState<number>(1);
   const [totalAuditLogs, setTotalAuditLogs] = useState<number>(0);
   const [totalAuditPages, setTotalAuditPages] = useState<number>(1);
+  const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLog | null>(null);
 
   const availableBrands = MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => b.id);
 
   useEffect(() => {
     fetchMembers();
+    teamApi.listSupportedChannels().then((chans) => {
+      if (chans && chans.length > 0) setAvailableChannels(chans);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (activeTab === 'audit') {
-      fetchAuditLogs();
+      const handler = setTimeout(() => {
+        fetchAuditLogs();
+      }, 250);
+      return () => clearTimeout(handler);
     }
-  }, [activeTab, auditActionFilter, auditPage]);
+  }, [activeTab, auditActionFilter, searchAuditQuery, auditPage]);
 
   const fetchMembers = async () => {
     setLoadingMembers(true);
@@ -85,6 +100,7 @@ export const TeamGovernance: React.FC = () => {
     try {
       const res = await teamApi.listAuditLogs({
         action: auditActionFilter !== 'all' ? auditActionFilter : undefined,
+        search: searchAuditQuery.trim() ? searchAuditQuery.trim() : undefined,
         page: auditPage,
         page_size: 20,
       });
@@ -106,6 +122,7 @@ export const TeamGovernance: React.FC = () => {
       full_name: '',
       role: 'agent',
       brand_access: ['LAVVA'],
+      channel_access: ['ALL'],
       is_active: true,
     });
     setModalError(null);
@@ -120,6 +137,7 @@ export const TeamGovernance: React.FC = () => {
       full_name: member.full_name,
       role: member.role,
       brand_access: Array.isArray(member.brand_access) ? member.brand_access : ['LAVVA'],
+      channel_access: Array.isArray(member.channel_access) && member.channel_access.length > 0 ? member.channel_access : ['ALL'],
       is_active: member.is_active,
     });
     setModalError(null);
@@ -143,6 +161,27 @@ export const TeamGovernance: React.FC = () => {
     });
   };
 
+  const handleToggleChannelAccess = (channelId: string) => {
+    setFormData((prev) => {
+      let updated: string[];
+      const isAllToggle = channelId.toUpperCase() === 'ALL' || channelId === 'الكل';
+      const hasAll = prev.channel_access.some((c) => c.toUpperCase() === 'ALL' || c === 'الكل');
+
+      if (isAllToggle) {
+        updated = hasAll ? [] : ['ALL'];
+      } else {
+        const filtered = prev.channel_access.filter((c) => c.toUpperCase() !== 'ALL' && c !== 'الكل');
+        const normChan = channelId.toLowerCase();
+        if (filtered.map((x) => x.toLowerCase()).includes(normChan)) {
+          updated = filtered.filter((c) => c.toLowerCase() !== normChan);
+        } else {
+          updated = [...filtered, normChan];
+        }
+      }
+      return { ...prev, channel_access: updated };
+    });
+  };
+
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.full_name.trim()) {
@@ -163,6 +202,7 @@ export const TeamGovernance: React.FC = () => {
           full_name: formData.full_name,
           role: formData.role,
           brand_access: formData.brand_access,
+          channel_access: formData.channel_access,
           is_active: formData.is_active,
           password: formData.password.trim() ? formData.password : undefined,
         });
@@ -173,6 +213,7 @@ export const TeamGovernance: React.FC = () => {
           full_name: formData.full_name,
           role: formData.role,
           brand_access: formData.brand_access,
+          channel_access: formData.channel_access,
           is_active: formData.is_active,
         });
       }
@@ -237,19 +278,105 @@ export const TeamGovernance: React.FC = () => {
   };
 
   const getActionBadge = (action: string) => {
-    if (action.includes('login')) {
-      return <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200">{action}</span>;
+    switch (action) {
+      case 'auth.login':
+        return <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">تسجيل دخول</span>;
+      case 'auth.logout':
+        return <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold border border-slate-200">تسجيل خروج</span>;
+      case 'user.created':
+        return <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">إنشاء عضو</span>;
+      case 'user.updated':
+        return <span className="px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 text-[11px] font-bold border border-cyan-200">تعديل عضو</span>;
+      case 'user.activated':
+        return <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-bold border border-teal-200">تفعيل حساب</span>;
+      case 'user.deactivated':
+        return <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">تعطيل حساب</span>;
+      case 'conversation.assigned':
+        return <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200">إسناد محادثة</span>;
+      case 'conversation.unassigned':
+        return <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 text-[11px] font-bold border border-orange-200">إلغاء إسناد</span>;
+      case 'conversation.status_changed':
+        return <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-200">تغيير حالة المحادثة</span>;
+      case 'conversation.priority_changed':
+        return <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-[11px] font-bold border border-violet-200">تغيير الأولوية</span>;
+      case 'message.sent':
+        return <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">إرسال رسالة</span>;
+      case 'message.media_sent':
+        return <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[11px] font-bold border border-purple-200">إرسال وسائط</span>;
+      case 'customer.created':
+        return <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-200">إنشاء عميل</span>;
+      case 'customer.updated':
+        return <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-200">تعديل عميل</span>;
+      case 'customer.stage_changed':
+        return <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[11px] font-bold border border-blue-200">تغيير مرحلة العميل</span>;
+      case 'customer.tier_changed':
+        return <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200">تغيير درجة العميل</span>;
+      case 'customer.note_created':
+        return <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-bold border border-teal-200">إضافة ملاحظة</span>;
+      case 'customer.note_deleted':
+        return <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">حذف ملاحظة</span>;
+      case 'automation.created':
+        return <span className="px-2 py-0.5 rounded-full bg-fuchsia-50 text-fuchsia-700 text-[11px] font-bold border border-fuchsia-200">إنشاء أتمتة</span>;
+      case 'automation.updated':
+      case 'automation.enabled':
+      case 'automation.disabled':
+        return <span className="px-2 py-0.5 rounded-full bg-pink-50 text-pink-700 text-[11px] font-bold border border-pink-200">تعديل أتمتة</span>;
+      case 'automation.deleted':
+        return <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">حذف أتمتة</span>;
+      case 'media.uploaded':
+        return <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[11px] font-bold border border-purple-200">رفع وسائط</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold border border-slate-200">{action}</span>;
     }
-    if (action.includes('created')) {
-      return <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">{action}</span>;
+  };
+
+  const renderPayloadSummary = (log: AuditLog) => {
+    const p = log.payload || {};
+    if (log.action === 'message.sent' || log.action === 'message.media_sent') {
+      return (
+        <span className="text-slate-700 font-medium">
+          {p.message_type === 'text' ? 'نص' : p.message_type || 'وسائط'}
+          {p.channel ? ` • ${p.channel}` : ''}
+          {p.brand ? ` • ${p.brand}` : ''}
+          {p.filename ? ` • ملف: ${p.filename}` : ''}
+        </span>
+      );
     }
-    if (action.includes('assigned')) {
-      return <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">{action}</span>;
+    if (log.action.startsWith('user.')) {
+      if (p.changes) {
+        const changedFields = Object.keys(p.changes).join(', ');
+        return <span className="text-slate-700 font-medium">{p.email || ''} • تعديل: {changedFields}</span>;
+      }
+      return <span className="text-slate-700 font-medium">{p.full_name || p.email || '-'} {p.role ? `(${p.role})` : ''}</span>;
     }
-    if (action.includes('deactivated')) {
-      return <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">{action}</span>;
+    if (log.action.startsWith('customer.')) {
+      if (p.changes) {
+        const changesSummary = Object.entries(p.changes)
+          .map(([k, v]: any) => `${k}: ${v?.new || v?.to || JSON.stringify(v)}`)
+          .join(' • ');
+        return <span className="text-slate-700 font-medium">{p.customer_name ? `${p.customer_name}: ` : ''}{changesSummary}</span>;
+      }
+      if (p.note_id) {
+        return <span className="text-slate-700 font-medium">ملاحظة #{p.note_id.slice(0, 8)}</span>;
+      }
+      return <span className="text-slate-700 font-medium">{p.customer_name || '-'}</span>;
     }
-    return <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">{action}</span>;
+    if (log.action === 'conversation.status_changed') {
+      return <span className="text-slate-700 font-medium">من {p.previous_status || '-'} إلى {p.new_status || '-'} {p.brand ? `• ${p.brand}` : ''}</span>;
+    }
+    if (log.action === 'conversation.priority_changed') {
+      return <span className="text-slate-700 font-medium">الأولوية: من {p.previous_priority || '-'} إلى {p.new_priority || '-'}</span>;
+    }
+    if (log.action === 'conversation.assigned' || log.action === 'conversation.unassigned') {
+      return <span className="text-slate-700 font-medium">{p.reason ? `السبب: ${p.reason}` : p.assigned_to_user_id ? 'تم الإسناد' : 'إلغاء الإسناد'}</span>;
+    }
+    if (log.action.startsWith('automation.')) {
+      return <span className="text-slate-700 font-medium">{p.name || ''} {p.trigger_type ? `• ${p.trigger_type}` : ''}</span>;
+    }
+    if (log.action.startsWith('auth.')) {
+      return <span className="text-slate-700 font-medium">{p.email || ''} {p.role ? `(${p.role})` : ''}</span>;
+    }
+    return <span className="text-slate-600 font-mono text-[10px] truncate max-w-xs block">{JSON.stringify(p)}</span>;
   };
 
   return (
@@ -351,6 +478,7 @@ export const TeamGovernance: React.FC = () => {
                       <th className="py-3.5 px-4">العضو والمستخدم</th>
                       <th className="py-3.5 px-4">الدور الوظيفي</th>
                       <th className="py-3.5 px-4">البراندات المصرحة</th>
+                      <th className="py-3.5 px-4">القنوات المصرحة</th>
                       <th className="py-3.5 px-4">الحالة والنشاط</th>
                       <th className="py-3.5 px-4">المحادثات النشطة</th>
                       <th className="py-3.5 px-4 text-center">الإجراءات</th>
@@ -388,6 +516,26 @@ export const TeamGovernance: React.FC = () => {
                               ))
                             ) : (
                               <span className="text-[11px] text-slate-400">لا يوجد براندات</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {Array.isArray(member.channel_access) && (member.channel_access.includes('ALL') || member.channel_access.includes('all')) ? (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-[10px] font-extrabold border border-slate-200">
+                                كل القنوات (ALL)
+                              </span>
+                            ) : Array.isArray(member.channel_access) && member.channel_access.length > 0 ? (
+                              member.channel_access.map((ch) => (
+                                <span
+                                  key={ch}
+                                  className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-[10px] font-bold border border-blue-200 uppercase"
+                                >
+                                  {ch}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[11px] text-slate-400">لا يوجد قنوات</span>
                             )}
                           </div>
                         </td>
@@ -444,33 +592,81 @@ export const TeamGovernance: React.FC = () => {
       {activeTab === 'audit' && (
         <div className="space-y-4">
           {/* Audit Controls */}
-          <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-teal-600" />
-                <span>نوع الإجراء:</span>
-              </label>
-              <select
-                value={auditActionFilter}
-                onChange={(e) => {
-                  setAuditActionFilter(e.target.value);
-                  setAuditPage(1);
-                }}
-                className="bg-slate-50 text-xs font-bold text-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 focus:bg-white focus:outline-none"
-              >
-                <option value="all">كل الإجراءات</option>
-                <option value="auth.login">تسجيل الدخول (auth.login)</option>
-                <option value="user.created">إنشاء عضو (user.created)</option>
-                <option value="user.updated">تعديل عضو (user.updated)</option>
-                <option value="user.deactivated">تعطيل عضو (user.deactivated)</option>
-                <option value="conversation.assigned">إسناد محادثة (conversation.assigned)</option>
-                <option value="data.exported">تصدير بيانات (data.exported)</option>
-              </select>
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchAuditQuery}
+                  onChange={(e) => {
+                    setSearchAuditQuery(e.target.value);
+                    setAuditPage(1);
+                  }}
+                  placeholder="بحث في الإجراءات، الموظفين، أو معرف العنصر..."
+                  className="w-full pl-3 pr-9 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                />
+                {searchAuditQuery && (
+                  <button
+                    onClick={() => setSearchAuditQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Action Filter */}
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                <select
+                  value={auditActionFilter}
+                  onChange={(e) => {
+                    setAuditActionFilter(e.target.value);
+                    setAuditPage(1);
+                  }}
+                  className="bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2 rounded-xl border border-slate-200 focus:bg-white focus:outline-none cursor-pointer"
+                >
+                  <option value="all">كل الإجراءات</option>
+                  <optgroup label="المصادقة والحسابات">
+                    <option value="auth.login">تسجيل الدخول (auth.login)</option>
+                    <option value="auth.logout">تسجيل الخروج (auth.logout)</option>
+                  </optgroup>
+                  <optgroup label="فريق العمل والمستخدمين">
+                    <option value="user.created">إنشاء عضو (user.created)</option>
+                    <option value="user.updated">تعديل عضو (user.updated)</option>
+                    <option value="user.activated">تفعيل حساب (user.activated)</option>
+                    <option value="user.deactivated">تعطيل حساب (user.deactivated)</option>
+                  </optgroup>
+                  <optgroup label="المحادثات والرسائل">
+                    <option value="message.sent">إرسال رسالة نصية (message.sent)</option>
+                    <option value="message.media_sent">إرسال وسائط (message.media_sent)</option>
+                    <option value="conversation.assigned">إسناد محادثة (conversation.assigned)</option>
+                    <option value="conversation.unassigned">إلغاء إسناد (conversation.unassigned)</option>
+                    <option value="conversation.status_changed">تغيير حالة محادثة (conversation.status_changed)</option>
+                    <option value="conversation.priority_changed">تغيير الأولوية (conversation.priority_changed)</option>
+                  </optgroup>
+                  <optgroup label="العملاء والملاحظات">
+                    <option value="customer.updated">تعديل عميل (customer.updated)</option>
+                    <option value="customer.stage_changed">تغيير مرحلة عميل (customer.stage_changed)</option>
+                    <option value="customer.tier_changed">تغيير درجة عميل (customer.tier_changed)</option>
+                    <option value="customer.note_created">إضافة ملاحظة (customer.note_created)</option>
+                    <option value="customer.note_deleted">حذف ملاحظة (customer.note_deleted)</option>
+                  </optgroup>
+                  <optgroup label="الأتمتة والوسائط">
+                    <option value="automation.created">إنشاء أتمتة (automation.created)</option>
+                    <option value="automation.updated">تعديل أتمتة (automation.updated)</option>
+                    <option value="automation.deleted">حذف أتمتة (automation.deleted)</option>
+                    <option value="media.uploaded">رفع وسائط (media.uploaded)</option>
+                  </optgroup>
+                </select>
+              </div>
             </div>
 
             <button
               onClick={fetchAuditLogs}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 flex items-center gap-1.5 transition"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center gap-2 transition shrink-0"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingAudit ? 'animate-spin' : ''}`} />
               <span>تحديث السجل</span>
@@ -480,14 +676,15 @@ export const TeamGovernance: React.FC = () => {
           {/* Audit Table */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             {loadingAudit ? (
-              <div className="p-12 text-center text-xs text-slate-500 font-semibold flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-teal-600" />
-                <span>جاري تحميل سجل التدقيق والعمليات...</span>
+              <div className="p-16 text-center text-xs text-slate-500 font-semibold flex flex-col items-center justify-center gap-3">
+                <RefreshCw className="w-6 h-6 animate-spin text-teal-600" />
+                <span>جاري تحميل سجل العمليات والتدقيق...</span>
               </div>
             ) : auditLogs.length === 0 ? (
-              <div className="p-12 text-center space-y-2">
-                <FileText className="w-10 h-10 text-slate-300 mx-auto" />
-                <p className="text-xs font-bold text-slate-700">لا يوجد سجلات تدقيق مسجلة حتى الآن</p>
+              <div className="p-16 text-center space-y-2">
+                <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-700">لا توجد سجلات تدقيق مطابقة</p>
+                <p className="text-xs text-slate-400">جرّب تغيير خيارات البحث أو التصفية</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -498,35 +695,51 @@ export const TeamGovernance: React.FC = () => {
                       <th className="py-3.5 px-4">المنفذ / المستخدم</th>
                       <th className="py-3.5 px-4">نوع الإجراء</th>
                       <th className="py-3.5 px-4">نوع العنصر Target</th>
-                      <th className="py-3.5 px-4">تفاصيل الباي لود Payload</th>
+                      <th className="py-3.5 px-4">تفاصيل وملخص العملية</th>
+                      <th className="py-3.5 px-4 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {auditLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600 dir-ltr text-right">
+                      <tr
+                        key={log.id}
+                        onClick={() => setSelectedAuditLog(log)}
+                        className="hover:bg-teal-50/30 transition-colors cursor-pointer group"
+                      >
+                        <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600 dir-ltr text-right whitespace-nowrap">
                           {new Date(log.created_at).toLocaleString('ar-EG')}
                         </td>
                         <td className="py-3.5 px-4">
                           {log.user_name ? (
                             <div>
-                              <p className="font-bold text-slate-900">{log.user_name}</p>
-                              <p className="text-[11px] text-slate-500">{log.user_email}</p>
+                              <p className="font-bold text-slate-900 group-hover:text-teal-800 transition-colors">{log.user_name}</p>
+                              <p className="text-[11px] text-slate-500 font-mono">{log.user_email}</p>
                             </div>
                           ) : (
                             <span className="text-slate-400 font-mono text-[11px]">النظام / أوتوماتيكي</span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4">{getActionBadge(log.action)}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-800 text-[11px] font-semibold rounded border border-slate-200">
+                        <td className="py-3.5 px-4 whitespace-nowrap">{getActionBadge(log.action)}</td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-800 text-[11px] font-semibold rounded-md border border-slate-200">
                             {log.resource_type} {log.resource_id ? `#${log.resource_id.slice(0, 8)}` : ''}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 max-w-xs">
-                          <pre className="text-[10px] font-mono bg-slate-50 p-1.5 rounded border border-slate-200 overflow-x-auto text-slate-700">
-                            {log.payload ? JSON.stringify(log.payload) : '{}'}
-                          </pre>
+                        <td className="py-3.5 px-4 max-w-sm">
+                          <div className="truncate text-xs">
+                            {renderPayloadSummary(log)}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAuditLog(log);
+                            }}
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-800 border border-slate-200 transition"
+                          >
+                            عرض التفاصيل
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -537,28 +750,116 @@ export const TeamGovernance: React.FC = () => {
 
             {/* Pagination Footer */}
             {totalAuditPages > 1 && (
-              <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 bg-slate-50/50">
-                <span>
-                  عرض الصفحة {auditPage} من {totalAuditPages} (إجمالي {totalAuditLogs} سجل)
+              <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 bg-slate-50/50">
+                <span className="font-medium">
+                  عرض الصفحة <span className="font-bold text-teal-800">{auditPage}</span> من <span className="font-bold text-teal-800">{totalAuditPages}</span> (إجمالي {totalAuditLogs} سجل)
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     disabled={auditPage <= 1}
                     onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
-                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30"
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 transition"
+                    title="الصفحة السابقة"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <button
                     disabled={auditPage >= totalAuditPages}
                     onClick={() => setAuditPage((p) => p + 1)}
-                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30"
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-30 transition"
+                    title="الصفحة التالية"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Audit Log Detail Modal */}
+      {selectedAuditLog && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150" dir="rtl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">تفاصيل سجل العملية والتدقيق</h3>
+                  <span className="text-[11px] text-slate-400 font-mono">ID: {selectedAuditLog.id}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAuditLog(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <div>
+                  <span className="text-slate-400 font-bold block text-[10px] mb-0.5">نوع الإجراء</span>
+                  <div>{getActionBadge(selectedAuditLog.action)}</div>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block text-[10px] mb-0.5">توقيت التنفيذ</span>
+                  <span className="font-mono text-slate-800 dir-ltr text-right block">
+                    {new Date(selectedAuditLog.created_at).toLocaleString('ar-EG')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block text-[10px] mb-0.5">المستخدم المنفذ</span>
+                  <span className="font-bold text-slate-900 block">
+                    {selectedAuditLog.user_name || 'النظام'}
+                  </span>
+                  {selectedAuditLog.user_email && (
+                    <span className="text-slate-500 text-[11px] font-mono block">
+                      {selectedAuditLog.user_email}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block text-[10px] mb-0.5">العنصر والهدف</span>
+                  <span className="font-bold text-slate-800 block">
+                    {selectedAuditLog.resource_type}
+                  </span>
+                  {selectedAuditLog.resource_id && (
+                    <span className="text-slate-500 text-[11px] font-mono block">
+                      #{selectedAuditLog.resource_id}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {selectedAuditLog.ip_address && (
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
+                  <span className="text-slate-500 font-bold">عنوان IP:</span>
+                  <span className="font-mono text-slate-800">{selectedAuditLog.ip_address}</span>
+                </div>
+              )}
+
+              {/* Payload Structured Details */}
+              <div className="space-y-1.5">
+                <span className="text-slate-700 font-bold block">تفاصيل البيانات (Payload):</span>
+                <pre className="p-3 bg-slate-900 text-teal-300 font-mono text-[11px] rounded-xl overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-60">
+                  {JSON.stringify(selectedAuditLog.payload || {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setSelectedAuditLog(null)}
+                className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+              >
+                إغلاق
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -662,6 +963,44 @@ export const TeamGovernance: React.FC = () => {
                       <span>{b}</span>
                     </label>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">القنوات المصرح بها (Authorized Channels):</label>
+                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.channel_access.includes('ALL') || formData.channel_access.includes('all')}
+                      onChange={() => handleToggleChannelAccess('ALL')}
+                      className="rounded text-teal-600 focus:ring-teal-500"
+                    />
+                    <span>كل القنوات (ALL)</span>
+                  </label>
+
+                  {availableChannels.map((c) => {
+                    const isAll = formData.channel_access.includes('ALL') || formData.channel_access.includes('all');
+                    const isChecked = isAll || formData.channel_access.map((x) => x.toLowerCase()).includes(c.toLowerCase());
+                    const labelMap: Record<string, string> = {
+                      messenger: 'Messenger (ماسنجر)',
+                      instagram: 'Instagram (إنستغرام)',
+                      whatsapp: 'WhatsApp (واتساب)',
+                      tiktok: 'TikTok (تيك توك)',
+                    };
+                    return (
+                      <label key={c} className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          disabled={isAll}
+                          checked={isChecked}
+                          onChange={() => handleToggleChannelAccess(c)}
+                          className="rounded text-teal-600 focus:ring-teal-500"
+                        />
+                        <span>{labelMap[c.toLowerCase()] || c}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

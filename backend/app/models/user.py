@@ -25,6 +25,7 @@ class User(Base):
         index=True,
     )
     brand_access: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)  # e.g. ["LAVVA", "FLARE"] or ["ALL"]
+    channel_access: Mapped[list[Any]] = mapped_column(JSONB, default=lambda: ["ALL"], server_default='["ALL"]', nullable=False)  # e.g. ["messenger", "whatsapp"] or ["ALL"]
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
