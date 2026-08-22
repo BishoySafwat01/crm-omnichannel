@@ -311,3 +311,126 @@ class CustomerService:
         await session.refresh(identity)
         return customer, identity
 
+    @staticmethod
+    async def block_customer(
+        session: AsyncSession,
+        customer_id: uuid.UUID,
+        reason: Optional[str] = None,
+        admin_user_id: Optional[uuid.UUID] = None,
+        admin_name: Optional[str] = None,
+    ) -> Customer:
+        customer = await session.get(Customer, customer_id)
+        if not customer:
+            raise ValueError("العميل غير موجود.")
+
+        from datetime import datetime, timezone
+        customer.is_blocked = True
+        customer.blocked_at = datetime.now(timezone.utc)
+        customer.blocked_reason = reason
+        session.add(customer)
+
+        # Log to Customer 360 Timeline
+        try:
+            from app.services.customer_timeline_service import CustomerTimelineService
+            await CustomerTimelineService.record_event(
+                session=session,
+                customer_id=customer.id,
+                event_type="customer.blocked",
+                channel="admin",
+                summary=f"تم حظر العميل بواسطة المشرف {admin_name or ''}".strip(),
+                details={"reason": reason, "admin_user_id": str(admin_user_id) if admin_user_id else None},
+            )
+        except Exception:
+            pass
+
+        # Log User Audit
+        try:
+            from app.services.audit_service import AuditService
+            await AuditService.record_audit_log(
+                session=session,
+                user_id=admin_user_id,
+                action="CUSTOMER_BLOCKED",
+                resource_type="customer",
+                resource_id=str(customer_id),
+                payload={"reason": reason},
+            )
+        except Exception:
+            pass
+
+        await session.commit()
+        await session.refresh(customer)
+
+        # Real-time WebSocket Broadcast
+        try:
+            from app.api.v1.ws import manager
+            await manager.broadcast({
+                "type": "CUSTOMER_BLOCKED",
+                "customer_id": str(customer.id),
+                "is_blocked": True,
+                "blocked_reason": reason,
+            })
+        except Exception:
+            pass
+
+        return customer
+
+    @staticmethod
+    async def unblock_customer(
+        session: AsyncSession,
+        customer_id: uuid.UUID,
+        admin_user_id: Optional[uuid.UUID] = None,
+        admin_name: Optional[str] = None,
+    ) -> Customer:
+        customer = await session.get(Customer, customer_id)
+        if not customer:
+            raise ValueError("العميل غير موجود.")
+
+        customer.is_blocked = False
+        customer.blocked_at = None
+        customer.blocked_reason = None
+        session.add(customer)
+
+        # Log to Customer 360 Timeline
+        try:
+            from app.services.customer_timeline_service import CustomerTimelineService
+            await CustomerTimelineService.record_event(
+                session=session,
+                customer_id=customer.id,
+                event_type="customer.unblocked",
+                channel="admin",
+                summary=f"تم إلغاء حظر العميل بواسطة المشرف {admin_name or ''}".strip(),
+                details={"admin_user_id": str(admin_user_id) if admin_user_id else None},
+            )
+        except Exception:
+            pass
+
+        # Log User Audit
+        try:
+            from app.services.audit_service import AuditService
+            await AuditService.record_audit_log(
+                session=session,
+                user_id=admin_user_id,
+                action="CUSTOMER_UNBLOCKED",
+                resource_type="customer",
+                resource_id=str(customer_id),
+                payload={},
+            )
+        except Exception:
+            pass
+
+        await session.commit()
+        await session.refresh(customer)
+
+        # Real-time WebSocket Broadcast
+        try:
+            from app.api.v1.ws import manager
+            await manager.broadcast({
+                "type": "CUSTOMER_UNBLOCKED",
+                "customer_id": str(customer.id),
+                "is_blocked": False,
+            })
+        except Exception:
+            pass
+
+        return customer
+
