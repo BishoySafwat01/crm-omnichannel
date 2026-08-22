@@ -1,3 +1,4 @@
+import logging
 import secrets
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -11,6 +12,8 @@ from app.integrations.respond_io import RespondIoAPIError, RespondIoProvider
 from app.models.enums import ChannelEnum
 from app.schemas.migration import MigrationJobResponse
 from app.services.respond_io_import_service import RespondIoImportService
+
+logger = logging.getLogger("app.api.respond_io")
 
 router = APIRouter(prefix="/respond-io", tags=["respond-io-integration-internal"])
 
@@ -62,17 +65,27 @@ async def receive_respond_io_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     """Inbound webhook receiver for real-time Respond.io events."""
-    # 1. Secret authentication check (constant-time compare)
+    # 1. Secret authentication check (FAIL-CLOSED: RESPOND_IO_WEBHOOK_SECRET must be configured)
     expected_secret = settings.RESPOND_IO_WEBHOOK_SECRET
-    if expected_secret and expected_secret.strip():
-        provided_secret = x_respond_secret or x_webhook_secret
-        if not provided_secret or not secrets.compare_digest(
-            provided_secret.strip(), expected_secret.strip()
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Respond.io webhook secret.",
-            )
+    if not expected_secret or not expected_secret.strip():
+        logger.error(
+            "Respond.io webhook REJECTED: RESPOND_IO_WEBHOOK_SECRET is not configured. "
+            "Refusing unauthenticated payloads (fail-closed policy). "
+            "Set RESPOND_IO_WEBHOOK_SECRET to enable webhook processing."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook secret validation unavailable: server secret is not configured.",
+        )
+
+    provided_secret = x_respond_secret or x_webhook_secret
+    if not provided_secret or not secrets.compare_digest(
+        provided_secret.strip(), expected_secret.strip()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Respond.io webhook secret.",
+        )
 
     # 2. Parse request JSON body safely
     try:

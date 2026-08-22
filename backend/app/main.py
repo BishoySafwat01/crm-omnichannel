@@ -45,6 +45,12 @@ async def lifespan(app: FastAPI):
             "(/api/v1/meta/webhook) will REJECT all inbound payloads until it is set."
         )
 
+    if not (settings.RESPOND_IO_WEBHOOK_SECRET and settings.RESPOND_IO_WEBHOOK_SECRET.strip()):
+        logger.warning(
+            "[SECURITY] RESPOND_IO_WEBHOOK_SECRET is not configured — the Respond.io webhook endpoint "
+            "(/api/v1/respond-io/webhook) will REJECT all inbound payloads until it is set."
+        )
+
     async def meta_sync_loop():
         await asyncio.sleep(5)
         while True:
