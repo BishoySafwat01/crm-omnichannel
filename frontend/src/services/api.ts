@@ -846,6 +846,25 @@ export const metaApi = {
     if (res && res.ok) return await res.json();
     throw new Error('Test ping failed');
   },
+
+  async publishPost(message: string, link?: string): Promise<{ post_id?: string }> {
+    const res = await safeFetch('/meta/posts', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify({ message, link }),
+    });
+    if (!res || !res.ok) {
+      let detail = 'Failed to publish post';
+      if (res) {
+        try {
+          const err = await res.json();
+          detail = err.detail || detail;
+        } catch { /* keep default detail */ }
+      }
+      throw new Error(detail);
+    }
+    return await res.json();
+  },
 };
 
 export interface SocialComment {

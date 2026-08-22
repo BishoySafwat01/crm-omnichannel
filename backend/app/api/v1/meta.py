@@ -222,7 +222,10 @@ class PublishPagePostRequest(BaseModel):
 
 
 @router.post("/posts", summary="Publish Post to Facebook Page Feed with Click-to-Chat CTA")
-async def create_facebook_page_post(payload: PublishPagePostRequest):
+async def create_facebook_page_post(
+    payload: PublishPagePostRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Publish a new post to Facebook Page feed with 'Send Message' CTA button."""
     provider = MetaProvider()
     try:
