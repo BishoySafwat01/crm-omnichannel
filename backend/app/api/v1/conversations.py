@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_optional_current_user
+from app.api.deps import get_current_user, get_optional_current_user, require_admin
 from app.core.database import get_db
 from app.integrations.meta import MetaAPIError
 from app.models.conversation import Conversation
@@ -465,7 +465,9 @@ async def update_conversation_priority(
 
 
 @router.post("/sync-now", summary="Trigger Immediate Meta Graph API Sync")
-async def trigger_immediate_sync():
+async def trigger_immediate_sync(
+    admin_user: User = Depends(require_admin),
+):
     """Trigger an immediate, on-demand sync with Meta Graph API."""
     from app.services.meta_import_service import meta_import_service
     await meta_import_service.sync_live_conversations()

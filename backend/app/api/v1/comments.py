@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.user import User
 from app.integrations.meta.client import MetaClient
@@ -43,13 +43,18 @@ COMMENT_AUTOMATIONS_STORE = [
 
 
 @router.get("/automations", summary="Get Comment Automations")
-async def get_comment_automations():
+async def get_comment_automations(
+    admin_user: User = Depends(require_admin),
+):
     """Retrieve all active comment automation rules."""
     return COMMENT_AUTOMATIONS_STORE
 
 
 @router.post("/automations", summary="Create Comment Automation")
-async def create_comment_automation(rule: dict):
+async def create_comment_automation(
+    rule: dict,
+    admin_user: User = Depends(require_admin),
+):
     """Create a new comment automation rule."""
     rule_id = str(rule.get("id") or f"rule_{uuid.uuid4().hex[:8]}")
     rule["id"] = rule_id
@@ -58,7 +63,10 @@ async def create_comment_automation(rule: dict):
 
 
 @router.delete("/automations/{rule_id}", summary="Delete Comment Automation")
-async def delete_comment_automation(rule_id: str):
+async def delete_comment_automation(
+    rule_id: str,
+    admin_user: User = Depends(require_admin),
+):
     """Delete a comment automation rule."""
     global COMMENT_AUTOMATIONS_STORE
     COMMENT_AUTOMATIONS_STORE = [r for r in COMMENT_AUTOMATIONS_STORE if r.get("id") != rule_id]
@@ -66,7 +74,10 @@ async def delete_comment_automation(rule_id: str):
 
 
 @router.post("/sync", summary="Trigger live Graph API comments sync & seeding")
-async def sync_meta_comments(db: AsyncSession = Depends(get_db)):
+async def sync_meta_comments(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
     """Triggers live fetch from Meta Graph API for post comments & seeds sample comments if empty."""
     from app.services.meta_comment_sync_service import MetaCommentSyncService
     service = MetaCommentSyncService(db)

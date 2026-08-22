@@ -72,7 +72,10 @@ class TestPingRequest(BaseModel):
 
 
 @router.post("/test-ping", summary="Send Test Ping Message to Integration Channel")
-async def send_integration_test_ping(payload: TestPingRequest):
+async def send_integration_test_ping(
+    payload: TestPingRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Executes a diagnostic test ping on WhatsApp, Instagram, or Messenger."""
     channel = payload.channel.lower()
     if channel not in ["whatsapp", "instagram", "messenger"]:
