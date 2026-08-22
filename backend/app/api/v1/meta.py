@@ -40,26 +40,25 @@ async def get_meta_integrations_status():
     return {
         "whatsapp": {
             "connected": bool(wa_phone_id and wa_waba_id),
-            "phone_number_id": wa_phone_id,
-            "waba_id": wa_waba_id,
-            "display_phone_number": "+20 100 123 4567" if (wa_phone_id and wa_waba_id) else "غير مهيأ",
+            "phone_number_id_configured": bool(wa_phone_id and wa_phone_id.strip()),
+            "waba_id_configured": bool(wa_waba_id and wa_waba_id.strip()),
             "status": "ACTIVE" if (wa_phone_id and wa_waba_id) else "UNCONFIGURED",
         },
         "instagram": {
             "connected": bool(ig_acc_id and (has_token or has_page)),
-            "page_id": ig_acc_id or page_id,
+            "page_id_configured": bool(ig_acc_id and str(ig_acc_id).strip()),
             "username": "@luxira.official" if ig_acc_id else "غير مهيأ",
             "status": "VALID" if ig_acc_id else "UNCONFIGURED",
         },
         "messenger": {
             "connected": has_page,
-            "page_id": page_id,
+            "page_id_configured": has_page,
             "pages": ["LAVVA", "LUXIRA"],
             "status": "SUBSCRIBED" if has_page else "UNCONFIGURED",
         },
         "webhook": {
             "url": "https://api.luxira.com/api/v1/meta/webhook",
-            "verify_token": verify_token or "LUXIRA_META_WEBHOOK_VERIFY_TOKEN",
+            "verify_token_configured": bool(verify_token and verify_token.strip()),
             "secured": True,
         },
     }
