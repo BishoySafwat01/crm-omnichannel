@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.api.deps import require_admin
 from app.core.database import get_db
+from app.models.user import User
 from app.integrations.meta import MetaAPIError, MetaProvider
 from app.schemas.messaging import MessageResponse
 from app.schemas.migration import MigrationJobResponse
@@ -134,7 +136,10 @@ async def get_meta_conversations_preview():
 
 
 @router.post("/import", response_model=MigrationJobResponse, summary="Execute Meta Conversation History Import")
-async def import_meta_history(db: AsyncSession = Depends(get_db)):
+async def import_meta_history(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
     """Run historical Messenger conversation import into PostgreSQL."""
     try:
         job = await MetaImportService.run_import(session=db)
@@ -154,6 +159,7 @@ async def import_meta_history(db: AsyncSession = Depends(get_db)):
 async def send_meta_outbound_message(
     conversation_id: uuid.UUID,
     payload: SendMetaMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send an agent reply to a Messenger conversation through the Meta Graph API."""
@@ -193,6 +199,7 @@ class MetaDirectSendMessageRequest(BaseModel):
 )
 async def send_meta_direct_message(
     payload: MetaDirectSendMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send outbound Meta message directly by conversation_id or recipient_psid."""

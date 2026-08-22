@@ -83,6 +83,7 @@ async def get_unread_summary(
 )
 async def mark_conversation_read(
     conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Reset unread count to 0 and set last_read_at timestamp to now."""
@@ -273,7 +274,7 @@ async def send_outbound_reply(
     conversation_id: uuid.UUID,
     payload: SendMessageRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Send an outbound agent reply message to a conversation.
     Determines provider automatically from conversation metadata."""
@@ -317,6 +318,7 @@ async def send_outbound_reply(
 async def update_conversation_metadata(
     conversation_id: uuid.UUID,
     payload: dict,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update conversation brand/store or status."""
@@ -342,6 +344,7 @@ async def update_conversation_metadata(
 async def update_conversation_status(
     conversation_id: uuid.UUID,
     payload: dict,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update conversation status (e.g. open, closed, resolved)."""
@@ -370,7 +373,7 @@ async def assign_conversation_agent(
     conversation_id: uuid.UUID,
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Assign or unassign an agent to a conversation."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -435,6 +438,7 @@ async def assign_conversation_agent(
 async def update_conversation_priority(
     conversation_id: uuid.UUID,
     payload: dict,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update priority level of a conversation (low, normal, high, urgent)."""
@@ -474,6 +478,7 @@ async def trigger_immediate_sync():
 )
 async def analyze_conversation_ai(
     conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger AI analysis on a conversation to detect intent, sentiment, summary, and smart replies."""

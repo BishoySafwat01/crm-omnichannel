@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.api.deps import require_admin
 from app.core.database import get_db
+from app.models.user import User
 from app.integrations.respond_io import RespondIoAPIError, RespondIoProvider
 from app.models.enums import ChannelEnum
 from app.schemas.migration import MigrationJobResponse
@@ -38,6 +40,7 @@ async def test_respond_io_access():
 )
 async def import_respond_io_contacts(
     channel: ChannelEnum = ChannelEnum.WHATSAPP,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Triggers real Respond.io contact import into provider-agnostic CRM database."""

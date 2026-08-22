@@ -3,10 +3,12 @@ import os
 import uuid
 from urllib.parse import urlparse
 import httpx
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
+from app.api.deps import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/media", tags=["media"])
 logger = logging.getLogger("MediaProxy")
@@ -78,7 +80,10 @@ def is_trusted_meta_url(target_url: str) -> bool:
 
 
 @router.post("/upload", summary="Upload Media Attachment")
-async def upload_media(file: UploadFile = File(...)):
+async def upload_media(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     """Upload media file for attachment relay in chat. Max 25 MB; MIME type allowlisted."""
     if not file or not file.filename:
         raise HTTPException(
