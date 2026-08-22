@@ -5,8 +5,8 @@ import { useCrmStore, ChannelFilterType } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'automations' | 'dashboard' | 'database' | 'team';
-  setActiveMainView?: (view: 'chat' | 'automations' | 'dashboard' | 'database' | 'team') => void;
+  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
+  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
@@ -99,7 +99,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           <span className="text-sm font-extrabold text-slate-900 tracking-tight hidden sm:inline">LUXIRA</span>
         </div>
 
-        {/* 5-Way View Navigation Tabs */}
+        {/* 6-Way View Navigation Tabs */}
         {isUserAdmin && setActiveMainView && (
           <nav className="flex items-center gap-1 bg-slate-100/60 p-1 rounded-full border border-slate-200/50 backdrop-blur-md">
             <button
@@ -112,6 +112,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             >
               <MessageSquare className="w-3.5 h-3.5 text-[#1A73E8]" />
               <span>الشات المباشر</span>
+            </button>
+            <button
+              onClick={() => setActiveMainView('comments')}
+              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
+                activeMainView === 'comments'
+                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+              <span>التعليقات</span>
             </button>
             <button
               onClick={() => setActiveMainView('automations')}

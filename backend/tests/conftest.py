@@ -17,6 +17,7 @@ async def cleanup_db():
             "conversation_assignment_logs",
             "user_audit_logs",
             "messages",
+            "social_comments",
             "automation_execution_logs",
             "automation_rules",
             "conversations",
