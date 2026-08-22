@@ -345,4 +345,60 @@ class MetaClient:
                 raise
             raise MetaAPIError(f"Failed to publish Facebook Page post: {str(exc)}", status_code=500)
 
+    async def hide_comment(self, comment_id: str, is_hidden: bool = True) -> dict[str, Any]:
+        """Hide or unhide a social media comment."""
+        try:
+            return await self._request("POST", f"/{comment_id}", params={"is_hidden": str(is_hidden).lower()})
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to hide comment {comment_id}: {str(exc)}", status_code=500)
+
+    async def delete_comment(self, comment_id: str) -> dict[str, Any]:
+        """Delete a social media comment."""
+        try:
+            return await self._request("DELETE", f"/{comment_id}")
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to delete comment {comment_id}: {str(exc)}", status_code=500)
+
+    async def reply_to_comment(self, comment_id: str, message: str) -> dict[str, Any]:
+        """Publish a public reply to a social media comment."""
+        try:
+            return await self._request("POST", f"/{comment_id}/comments", json_data={"message": message})
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to reply to comment {comment_id}: {str(exc)}", status_code=500)
+
+    async def send_private_reply(self, comment_id: str, message: str) -> dict[str, Any]:
+        """Send a private Messenger DM in response to a public comment."""
+        page_id = self.page_id
+        if not page_id:
+            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
+        payload = {
+            "recipient": {"comment_id": comment_id},
+            "message": {"text": message},
+        }
+        try:
+            return await self._request("POST", f"/{page_id}/messages", json_data=payload)
+        except Exception as exc:
+            if isinstance(exc, MetaAPIError):
+                raise
+            raise MetaAPIError(f"Failed to send private reply for comment {comment_id}: {str(exc)}", status_code=500)
+
+    async def get_post_details(self, post_id: str) -> dict[str, Any]:
+        """Fetch post metadata including permalink_url, full_picture, message, and attachments."""
+        if not post_id or post_id == "post_unknown":
+            return {}
+        try:
+            return await self._request(
+                "GET",
+                f"/{post_id}",
+                params={"fields": "permalink_url,full_picture,message,attachments"},
+            )
+        except Exception:
+            return {}
+
 

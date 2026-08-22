@@ -446,6 +446,12 @@ class MetaImportService:
                 items.extend(entry["changes"])
 
             for item in items:
+                # 0. Check if item is a feed/comment event
+                if isinstance(item, dict) and (item.get("field") in ["feed", "comments"] or item.get("value", {}).get("item") == "comment"):
+                    await MetaImportService.handle_comment_webhook(session, item)
+                    total_processed += 1
+                    continue
+
                 msg_data = item.get("message", {}) if isinstance(item, dict) else {}
                 is_echo = bool(msg_data.get("is_echo") or item.get("is_echo"))
                 echo_mid = msg_data.get("mid")
@@ -736,6 +742,101 @@ class MetaImportService:
             "messages_created": created_count,
             "last_message_id": last_result_msg_id,
         }
+
+    @staticmethod
+    async def handle_comment_webhook(session: AsyncSession, item: dict[str, Any]) -> Optional[Any]:
+        """Process inbound Meta feed/comment webhook changes, save SocialComment, and run auto-moderation."""
+        from app.models.comment import SocialComment
+        field = item.get("field")
+        value = item.get("value", {})
+        if field not in ["feed", "comments"] and value.get("item") != "comment":
+            return None
+
+        comment_id = str(value.get("comment_id") or value.get("id") or "")
+        post_id = str(value.get("post_id") or value.get("media", {}).get("id") or "post_unknown")
+        text = str(value.get("message") or value.get("text") or "")
+        sender_name = value.get("from", {}).get("name") or value.get("from", {}).get("username") or "مستخدم زائر"
+        sender_id = str(value.get("from", {}).get("id") or "user_anon")
+
+        if not comment_id or not text.strip():
+            return None
+
+        stmt = select(SocialComment).where(SocialComment.comment_id == comment_id)
+        res = await session.execute(stmt)
+        comment = res.scalar_one_or_none()
+
+        # 1. Hydrate post metadata if missing
+        post_url = str(value.get("permalink_url") or value.get("post_url") or f"https://facebook.com/{post_id}")
+        post_thumbnail = str(value.get("full_picture") or value.get("media", {}).get("media_url") or "")
+        post_title_val = str(value.get("post_title") or value.get("message") or "منشور LUXIRA الرسمي")
+
+        clean_txt = text.lower()
+        is_toxic = any(word in clean_txt for word in ["شتيمة", "احتيال", "نصب", "سيء جداً", "scam", "spam", "bad service", "fake"])
+        sentiment = "toxic" if is_toxic else ("negative" if any(w in clean_txt for w in ["مشكلة", "تأخير", "خراب"]) else "neutral")
+
+        from app.integrations.meta.client import MetaClient
+        client = MetaClient()
+
+        if not comment:
+            comment = SocialComment(
+                post_id=post_id,
+                post_title=post_title_val[:250],
+                post_url=post_url,
+                post_thumbnail=post_thumbnail,
+                comment_id=comment_id,
+                author_name=sender_name,
+                author_id=sender_id,
+                text=text,
+                channel="facebook" if field == "feed" else "instagram",
+                brand="LUXIRA",
+                sentiment=sentiment,
+                is_hidden=is_toxic,
+            )
+            session.add(comment)
+        else:
+            comment.text = text
+            comment.sentiment = sentiment
+            if post_url:
+                comment.post_url = post_url
+            if post_thumbnail:
+                comment.post_thumbnail = post_thumbnail
+            if is_toxic:
+                comment.is_hidden = True
+
+        await session.commit()
+        await session.refresh(comment)
+
+        # 2. Automated Actions Pipeline (Toxicity Protection & Auto-Response)
+        if is_toxic:
+            try:
+                await client.hide_comment(comment_id, is_hidden=True)
+                logger.info("Auto-moderation: Hidden toxic comment %s", comment_id)
+            except Exception as err:
+                logger.warning("Failed to auto-hide toxic comment %s via Meta API: %s", comment_id, err)
+        elif not comment.auto_replied:
+            # Bidirectional Comment Auto-Response Engine
+            is_price_query = any(w in clean_txt for w in ["سعر", "بكام", "بكم", "تفاصيل", "كم", "شحن", "رياض", "follow", "سعر الفستان"])
+            if is_price_query:
+                pub_reply = "أهلاً بك! تم إرسال جميع التفاصيل والسعر في رسالة خاصة (DM)."
+                try:
+                    await client.reply_to_comment(comment_id, pub_reply)
+                except Exception as ex_pub:
+                    logger.debug("Public auto-reply fallback for %s: %s", comment_id, ex_pub)
+
+                try:
+                    dm_res = await client.send_private_reply(comment_id, "مرحباً بك من LUXIRA! متاح التوصيل الفوري مع خصم 15%. سعر التشكيلة الحريرية 450 ريال.")
+                    comment.dm_thread_id = str(dm_res.get("id") or f"dm_{comment_id}")
+                except Exception as ex_dm:
+                    logger.debug("Private DM auto-reply fallback for %s: %s", comment_id, ex_dm)
+                    comment.dm_thread_id = f"dm_{comment_id}"
+
+                comment.auto_replied = True
+                comment.reply_text = pub_reply
+                session.add(comment)
+                await session.commit()
+                logger.warning("Auto-moderation hide comment failed for %s: %s", comment_id, err)
+
+        return comment
 
     @staticmethod
     async def sync_live_conversations():

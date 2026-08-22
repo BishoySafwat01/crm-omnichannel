@@ -39,9 +39,6 @@ class CustomerBase(BaseModel):
     stage: Optional[str] = "جديد"
     locale: Optional[str] = None
     tags: Optional[list[str]] = []
-    is_blocked: bool = False
-    blocked_at: Optional[datetime] = None
-    blocked_reason: Optional[str] = None
 
 
 class CustomerCreate(CustomerBase):
@@ -58,12 +55,6 @@ class CustomerUpdate(BaseModel):
     tier: Optional[str] = None
     skin_type: Optional[str] = None
     stage: Optional[str] = None
-    is_blocked: Optional[bool] = None
-    blocked_reason: Optional[str] = None
-
-
-class CustomerBlockRequest(BaseModel):
-    reason: Optional[str] = None
 
 
 class CustomerResponse(CustomerBase):
@@ -73,9 +64,6 @@ class CustomerResponse(CustomerBase):
     created_at: datetime
     updated_at: datetime
     last_activity_at: Optional[datetime] = None
-    is_blocked: bool = False
-    blocked_at: Optional[datetime] = None
-    blocked_reason: Optional[str] = None
 
 
 class CustomerDetailResponse(CustomerResponse):

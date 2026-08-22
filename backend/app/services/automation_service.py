@@ -32,10 +32,8 @@ class AutomationService:
         res = await session.execute(stmt)
         rules = list(res.scalars().all())
 
-        if not rules:
-            return None
-
-        conv_brand = (conversation.brand or "").strip()
+        if rules:
+            conv_brand = (conversation.brand or "").strip()
         conv_channel = conversation.channel.value.lower() if hasattr(conversation.channel, "value") else str(conversation.channel).lower()
 
         for rule in rules:
@@ -118,7 +116,7 @@ class AutomationService:
             session.add(execution_log)
             await session.commit()
 
-            # 6. Dispatch Outbound Auto-Reply via MessageService
+            # 6. Execute Multi-Step Actions or Default Single Response
             outbound_msg = None
             try:
                 from app.services.message_service import MessageService
@@ -135,6 +133,17 @@ class AutomationService:
             except Exception as dispatch_err:
                 logger.error(
                     f"⚠️ [Automation Engine] Meta API dispatch error for Rule '{rule.name}': {dispatch_err}"
+                )
+
+            # Check if multi-step timed action sequence exists
+            if rule.actions and isinstance(rule.actions, list) and len(rule.actions) > 0:
+                import asyncio
+                asyncio.create_task(
+                    AutomationService.run_action_sequence_background(
+                        rule_id=rule.id,
+                        conversation_id=conversation.id,
+                        actions=rule.actions,
+                    )
                 )
 
             # 7. Broadcast via WebSockets if message was created
@@ -161,5 +170,63 @@ class AutomationService:
 
             return outbound_msg
 
+        # 8. Unmatched Inbound Routing & Escalation Policy (Track 3)
+        if conversation.priority in ["normal", "low"] or not conversation.priority:
+            conversation.priority = "urgent"
+            await session.commit()
+            logger.info("Unmatched conversation escalation: Escalated Conv %s priority to 'urgent'", conversation.id)
+
+            try:
+                from app.api.v1.ws import manager
+                await manager.broadcast({
+                    "type": "conversation:unmatched_escalation",
+                    "conversation_id": str(conversation.id),
+                    "priority": "urgent",
+                    "customer_name": conversation.customer_display_name,
+                })
+            except Exception as ws_err:
+                logger.warning("[Escalation] WebSocket escalation broadcast error: %s", ws_err)
 
         return None
+
+    @staticmethod
+    async def run_action_sequence_background(
+        rule_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        actions: list[dict],
+    ) -> None:
+        """Background task runner for timed action sequences (Track 2)."""
+        import asyncio
+        from app.core.database import AsyncSessionLocal
+        from app.services.message_service import MessageService
+
+        for action in actions:
+            delay = action.get("delay_seconds", 0)
+            if delay > 0:
+                logger.info("Automation Action Sequence: Sleeping %ds for Conv %s", delay, conversation_id)
+                await asyncio.sleep(delay)
+
+            action_type = action.get("type")
+            payload = action.get("payload", {})
+
+            async with AsyncSessionLocal() as session:
+                try:
+                    if action_type == "SEND_MESSAGE":
+                        msg_text = payload.get("text")
+                        if msg_text:
+                            await MessageService.send_agent_reply(
+                                session=session,
+                                conversation_id=conversation_id,
+                                text=msg_text,
+                                sender_external_id="automation_sequence_bot",
+                            )
+                    elif action_type == "SET_PRIORITY":
+                        prio = payload.get("priority", "urgent")
+                        stmt = select(Conversation).where(Conversation.id == conversation_id)
+                        res = await session.execute(stmt)
+                        conv = res.scalar_one_or_none()
+                        if conv:
+                            conv.priority = prio
+                            await session.commit()
+                except Exception as step_err:
+                    logger.error("Automation Action Sequence error in step %s: %s", action_type, step_err)

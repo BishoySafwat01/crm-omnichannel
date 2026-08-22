@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
@@ -252,17 +252,9 @@ export const ConversationList: React.FC = () => {
                       {getChannelBadgeDot(conv.channel)}
                       <span className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
                     </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-extrabold text-slate-900' : 'font-bold text-slate-800'}`}>
-                        {customerName}
-                      </h3>
-                      {conv.customer?.is_blocked && (
-                        <span className="shrink-0 bg-rose-100 text-rose-700 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md flex items-center gap-0.5" title="عميل محظور">
-                          <Ban className="w-2.5 h-2.5" />
-                          <span>محظور</span>
-                        </span>
-                      )}
-                    </div>
+                    <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-extrabold text-slate-900' : 'font-bold text-slate-800'}`}>
+                      {customerName}
+                    </h3>
                   </div>
 
                   <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0">

@@ -9,6 +9,7 @@ import { AutomationsManager } from './components/Admin/AutomationsManager';
 import { ExecutiveDashboard } from './components/Admin/ExecutiveDashboard';
 import { CustomerDataHub } from './components/Admin/CustomerDataHub';
 import { TeamGovernance } from './components/Admin/TeamGovernance';
+import { CommentsHub } from './components/CommentsHub';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
@@ -16,7 +17,7 @@ import { realtimeService } from './services/websocket';
 export const App: React.FC = () => {
   const { fetchConversations, fetchUnreadSummary, fetchAvailableCountries, handleRealtimeEvent } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
-  const [activeMainView, setActiveMainView] = useState<'chat' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
+  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(wsConnected);
@@ -89,7 +90,9 @@ export const App: React.FC = () => {
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
 
       {/* Main View Area */}
-      {isUserAdmin && activeMainView === 'automations' ? (
+      {isUserAdmin && activeMainView === 'comments' ? (
+        <CommentsHub />
+      ) : isUserAdmin && activeMainView === 'automations' ? (
         <AutomationsManager />
       ) : isUserAdmin && activeMainView === 'dashboard' ? (
         <ExecutiveDashboard />

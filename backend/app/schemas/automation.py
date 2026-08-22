@@ -13,6 +13,7 @@ class AutomationRuleCreate(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     response_text: str = Field(..., min_length=1)
     response_media_url: Optional[str] = None
+    actions: Optional[list[dict[str, Any]]] = Field(default_factory=list)
     cooldown_minutes: int = Field(15, ge=0)
     is_active: bool = True
 
@@ -26,6 +27,7 @@ class AutomationRuleUpdate(BaseModel):
     keywords: Optional[list[str]] = None
     response_text: Optional[str] = None
     response_media_url: Optional[str] = None
+    actions: Optional[list[dict[str, Any]]] = None
     cooldown_minutes: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
 
@@ -40,6 +42,7 @@ class AutomationRuleResponse(BaseModel):
     keywords: list[str]
     response_text: str
     response_media_url: Optional[str] = None
+    actions: Optional[list[dict[str, Any]]] = None
     cooldown_minutes: int
     is_active: bool
     created_by: Optional[uuid.UUID] = None

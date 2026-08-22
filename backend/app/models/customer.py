@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Any, List, Optional
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,9 +27,6 @@ class Customer(Base):
     stage: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, default="جديد", server_default="جديد")
     locale: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True, default=list)
-    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False, index=True)
-    blocked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    blocked_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -14,6 +14,7 @@ from app.api.v1.admin.automations import router as admin_automations_router
 from app.api.v1.admin.customers import router as admin_customers_router
 from app.api.v1.admin.team import router as admin_team_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.comments import router as comments_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.media import router as media_router
@@ -113,12 +114,12 @@ app.include_router(admin_team_router)
 
 
 
+app.include_router(comments_router, prefix="/api/v1/comments")
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(respond_io_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
-app.include_router(ws_router)
 app.include_router(webhooks_router)
 
 

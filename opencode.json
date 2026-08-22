@@ -1,0 +1,13 @@
+{
+  "projectName": "crm-omnichannel",
+  "techStack": {
+    "backend": ["Python", "FastAPI", "SQLAlchemy Async", "Alembic", "Groq AI", ".NET 6"],
+    "frontend": ["React", "TypeScript", "Vite", "Tailwind CSS", "Zustand", "Lucide Icons"],
+    "database": ["PostgreSQL", "Supabase", "Redis"]
+  },
+  "rules": [
+    "Run 'docker compose exec backend pytest -v' before and after all backend modifications.",
+    "Run 'npm --prefix frontend run build' before committing frontend changes.",
+    "Keep all comments and variable names strictly in English."
+  ]
+}
