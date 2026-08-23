@@ -85,9 +85,24 @@ class ConversationService:
         location: Optional[str] = None,
         country: Optional[str] = None,
         sla_status: Optional[str] = None,
+        allowed_brands: Optional[list[str]] = None,
+        allowed_channels: Optional[list[str]] = None,
     ) -> tuple[list[dict], int]:
         stmt = select(Conversation).options(selectinload(Conversation.customer))
         count_stmt = select(func.count(Conversation.id))
+
+        # Enforce user authorization scoping for brands
+        if allowed_brands is not None:
+            clean_allowed_b = [b.strip().lower() for b in allowed_brands if b.strip()]
+            stmt = stmt.where(func.lower(Conversation.brand).in_(clean_allowed_b))
+            count_stmt = count_stmt.where(func.lower(Conversation.brand).in_(clean_allowed_b))
+
+        # Enforce user authorization scoping for channels
+        if allowed_channels is not None:
+            clean_allowed_c = [c.strip().lower() for c in allowed_channels if c.strip()]
+            enum_channels = [ChannelEnum(c) for c in clean_allowed_c if c in ChannelEnum._value2member_map_]
+            stmt = stmt.where(Conversation.channel.in_(enum_channels))
+            count_stmt = count_stmt.where(Conversation.channel.in_(enum_channels))
 
         target_country = country if country is not None else location
         if target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]:

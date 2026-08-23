@@ -9,7 +9,7 @@ from app.api.deps import get_db, require_admin
 from app.core.security import get_password_hash
 from app.models.audit import UserAuditLog
 from app.models.conversation import Conversation
-from app.models.enums import ConversationStatusEnum, UserRole
+from app.models.enums import ChannelEnum, ConversationStatusEnum, UserRole
 from app.models.user import User
 from app.schemas.team import (
     AuditLogListResponse,
@@ -21,6 +21,18 @@ from app.schemas.team import (
 from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/api/v1/admin/team", tags=["admin-team"])
+
+
+@router.get(
+    "/channels",
+    response_model=List[str],
+    summary="Get List of Supported Channels in System",
+)
+async def list_available_channels(
+    current_user: User = Depends(require_admin),
+):
+    """Return all canonical channels supported by the CRM based on ChannelEnum."""
+    return [c.value for c in ChannelEnum]
 
 
 @router.get(
@@ -59,6 +71,7 @@ async def list_team_members(
             full_name=user.full_name,
             role=role_str,
             brand_access=user.brand_access or [],
+            channel_access=user.channel_access or ["ALL"],
             is_active=user.is_active,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
@@ -98,6 +111,7 @@ async def create_team_member(
         full_name=payload.full_name.strip(),
         role=payload.role,
         brand_access=payload.brand_access,
+        channel_access=payload.channel_access or ["ALL"],
         is_active=payload.is_active,
     )
     db.add(new_user)
@@ -113,7 +127,13 @@ async def create_team_member(
         action="user.created",
         resource_type="user",
         resource_id=str(new_user.id),
-        payload={"email": new_user.email, "role": role_str, "full_name": new_user.full_name},
+        payload={
+            "email": new_user.email,
+            "role": role_str,
+            "full_name": new_user.full_name,
+            "brand_access": new_user.brand_access or [],
+            "channel_access": new_user.channel_access or ["ALL"],
+        },
         ip_address=client_ip,
     )
 
@@ -123,6 +143,7 @@ async def create_team_member(
         full_name=new_user.full_name,
         role=role_str,
         brand_access=new_user.brand_access or [],
+        channel_access=new_user.channel_access or ["ALL"],
         is_active=new_user.is_active,
         created_at=new_user.created_at,
         last_login_at=new_user.last_login_at,
@@ -143,7 +164,7 @@ async def update_team_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Update profile, role, brand access, or active status of a team member."""
+    """Update profile, role, brand access, channel access, or active status of a team member."""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(
@@ -159,18 +180,23 @@ async def update_team_member(
         )
 
     changes = {}
-    if payload.full_name is not None:
+    if payload.full_name is not None and payload.full_name.strip() != user.full_name:
+        changes["full_name"] = {"from": user.full_name, "to": payload.full_name.strip()}
         user.full_name = payload.full_name.strip()
-        changes["full_name"] = user.full_name
-    if payload.role is not None:
+    if payload.role is not None and payload.role != user.role:
+        old_r = user.role.value if hasattr(user.role, "value") else str(user.role)
+        new_r = payload.role.value if hasattr(payload.role, "value") else str(payload.role)
+        changes["role"] = {"from": old_r, "to": new_r}
         user.role = payload.role
-        changes["role"] = payload.role.value if hasattr(payload.role, "value") else str(payload.role)
-    if payload.brand_access is not None:
+    if payload.brand_access is not None and payload.brand_access != user.brand_access:
+        changes["brand_access"] = {"from": user.brand_access or [], "to": payload.brand_access}
         user.brand_access = payload.brand_access
-        changes["brand_access"] = payload.brand_access
-    if payload.is_active is not None:
+    if payload.channel_access is not None and payload.channel_access != user.channel_access:
+        changes["channel_access"] = {"from": user.channel_access or ["ALL"], "to": payload.channel_access}
+        user.channel_access = payload.channel_access
+    if payload.is_active is not None and payload.is_active != user.is_active:
+        changes["is_active"] = {"from": user.is_active, "to": payload.is_active}
         user.is_active = payload.is_active
-        changes["is_active"] = payload.is_active
     if payload.password:
         user.password_hash = get_password_hash(payload.password)
         changes["password_changed"] = True
@@ -178,14 +204,18 @@ async def update_team_member(
     await db.commit()
     await db.refresh(user)
 
+    action_name = "user.updated"
+    if "is_active" in changes and len(changes) == 1:
+        action_name = "user.activated" if user.is_active else "user.deactivated"
+
     client_ip = request.client.host if request.client else None
     await AuditService.log_action(
         session=db,
         user_id=current_user.id,
-        action="user.updated",
+        action=action_name,
         resource_type="user",
         resource_id=str(user.id),
-        payload=changes,
+        payload={"email": user.email, "changes": changes} if changes else {"email": user.email},
         ip_address=client_ip,
     )
 
@@ -196,6 +226,7 @@ async def update_team_member(
         full_name=user.full_name,
         role=role_str,
         brand_access=user.brand_access or [],
+        channel_access=user.channel_access or ["ALL"],
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
@@ -238,7 +269,7 @@ async def deactivate_team_member(
         action="user.deactivated",
         resource_type="user",
         resource_id=str(user.id),
-        payload={"email": user.email},
+        payload={"email": user.email, "full_name": user.full_name},
         ip_address=client_ip,
     )
 
@@ -254,25 +285,40 @@ async def list_audit_logs(
     action: Optional[str] = Query(None, description="Filter by action name"),
     user_id: Optional[uuid.UUID] = Query(None, description="Filter by actor user_id"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    search: Optional[str] = Query(None, description="Search in action, user, or resource ID"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """Retrieve paginated system audit logs with optional filters."""
+    from sqlalchemy import or_
+
     query = select(UserAuditLog, User).outerjoin(User, UserAuditLog.user_id == User.id)
 
-    if action:
-        query = query.where(UserAuditLog.action == action)
+    if action and action.strip() and action.strip().lower() not in ("all", "الكل"):
+        query = query.where(UserAuditLog.action == action.strip())
     if user_id:
         query = query.where(UserAuditLog.user_id == user_id)
-    if resource_type:
-        query = query.where(UserAuditLog.resource_type == resource_type)
+    if resource_type and resource_type.strip() and resource_type.strip().lower() not in ("all", "الكل"):
+        query = query.where(UserAuditLog.resource_type == resource_type.strip())
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                UserAuditLog.action.ilike(term),
+                UserAuditLog.resource_type.ilike(term),
+                UserAuditLog.resource_id.ilike(term),
+                User.full_name.ilike(term),
+                User.email.ilike(term),
+            )
+        )
 
     # Count total matching rows
     count_stmt = select(func.count()).select_from(query.subquery())
     total_res = await db.execute(count_stmt)
     total = total_res.scalar_one()
+    total_pages = math.ceil(total / max(page_size, 1)) if total > 0 else 1
 
     # Paginate and order by created_at desc
     offset = (page - 1) * page_size
@@ -298,7 +344,6 @@ async def list_audit_logs(
             )
         )
 
-    total_pages = math.ceil(total / page_size) if total > 0 else 1
     return AuditLogListResponse(
         items=items,
         total=total,

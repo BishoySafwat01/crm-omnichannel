@@ -1,12 +1,16 @@
 import logging
 import os
 import uuid
-from urllib.parse import urlparse
+from typing import Optional
 import httpx
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_db, get_optional_current_user
 from app.core.config import settings
+from app.api.deps import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/media", tags=["media"])
 logger = logging.getLogger("MediaProxy")
@@ -24,17 +28,22 @@ ALLOWED_MIME_TYPES: dict[str, str] = {
     "image/svg+xml": ".svg",
     # Audio
     "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
     "audio/ogg": ".ogg",
+    "audio/opus": ".opus",
     "audio/mp4": ".m4a",
     "audio/webm": ".webm",
     "audio/aac": ".aac",
     "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
     "audio/x-m4a": ".m4a",
     # Video
     "video/mp4": ".mp4",
     "video/quicktime": ".mov",
     "video/webm": ".webm",
     "video/ogg": ".ogv",
+    "video/x-msvideo": ".avi",
+    "video/x-matroska": ".mkv",
     # Documents & Mocks
     "application/pdf": ".pdf",
     "application/msword": ".doc",
@@ -78,7 +87,10 @@ def is_trusted_meta_url(target_url: str) -> bool:
 
 
 @router.post("/upload", summary="Upload Media Attachment")
-async def upload_media(file: UploadFile = File(...)):
+async def upload_media(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     """Upload media file for attachment relay in chat. Max 25 MB; MIME type allowlisted."""
     if not file or not file.filename:
         raise HTTPException(
@@ -86,8 +98,9 @@ async def upload_media(file: UploadFile = File(...)):
             detail="File is required.",
         )
 
-    # MIME type validation
-    mime_type = file.content_type or "application/octet-stream"
+    # MIME type validation (strip parameters like ;codecs=opus)
+    raw_mime = (file.content_type or "application/octet-stream").strip()
+    mime_type = raw_mime.split(";")[0].strip().lower()
     if mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -136,9 +149,33 @@ async def upload_media(file: UploadFile = File(...)):
         elif mime_type.startswith("video/"):
             media_type = "video"
 
+        media_id = str(uuid.uuid4())
+
+        # Audit media upload if authenticated user
+        if current_user:
+            try:
+                client_ip = request.client.host if request.client else None
+                await AuditService.log_action(
+                    session=db,
+                    user_id=current_user.id,
+                    action="media.uploaded",
+                    resource_type="media",
+                    resource_id=media_id,
+                    payload={
+                        "filename": file.filename,
+                        "mime_type": mime_type,
+                        "media_type": media_type,
+                        "size": len(content),
+                        "url": media_url,
+                    },
+                    ip_address=client_ip,
+                )
+            except Exception:
+                pass
+
         return {
             "status": "success",
-            "media_id": str(uuid.uuid4()),
+            "media_id": media_id,
             "url": media_url,
             "filename": file.filename,
             "mime_type": mime_type,

@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.api.deps import require_admin
 from app.core.database import get_db
+from app.models.user import User
 from app.integrations.meta import MetaAPIError, MetaProvider
 from app.schemas.messaging import MessageResponse
 from app.schemas.migration import MigrationJobResponse
@@ -70,7 +72,10 @@ class TestPingRequest(BaseModel):
 
 
 @router.post("/test-ping", summary="Send Test Ping Message to Integration Channel")
-async def send_integration_test_ping(payload: TestPingRequest):
+async def send_integration_test_ping(
+    payload: TestPingRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Executes a diagnostic test ping on WhatsApp, Instagram, or Messenger."""
     channel = payload.channel.lower()
     if channel not in ["whatsapp", "instagram", "messenger"]:
@@ -134,7 +139,10 @@ async def get_meta_conversations_preview():
 
 
 @router.post("/import", response_model=MigrationJobResponse, summary="Execute Meta Conversation History Import")
-async def import_meta_history(db: AsyncSession = Depends(get_db)):
+async def import_meta_history(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
     """Run historical Messenger conversation import into PostgreSQL."""
     try:
         job = await MetaImportService.run_import(session=db)
@@ -154,6 +162,7 @@ async def import_meta_history(db: AsyncSession = Depends(get_db)):
 async def send_meta_outbound_message(
     conversation_id: uuid.UUID,
     payload: SendMetaMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send an agent reply to a Messenger conversation through the Meta Graph API."""
@@ -193,6 +202,7 @@ class MetaDirectSendMessageRequest(BaseModel):
 )
 async def send_meta_direct_message(
     payload: MetaDirectSendMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send outbound Meta message directly by conversation_id or recipient_psid."""
@@ -215,7 +225,10 @@ class PublishPagePostRequest(BaseModel):
 
 
 @router.post("/posts", summary="Publish Post to Facebook Page Feed with Click-to-Chat CTA")
-async def create_facebook_page_post(payload: PublishPagePostRequest):
+async def create_facebook_page_post(
+    payload: PublishPagePostRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Publish a new post to Facebook Page feed with 'Send Message' CTA button."""
     provider = MetaProvider()
     try:

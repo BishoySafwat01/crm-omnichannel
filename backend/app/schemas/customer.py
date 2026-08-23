@@ -80,10 +80,25 @@ class CustomerResponse(CustomerBase):
 
 class CustomerDetailResponse(CustomerResponse):
     identities: list[CustomerIdentityResponse] = []
+    brand: Optional[str] = None
+    channel: Optional[str] = None
+    conversation_id: Optional[uuid.UUID] = None
+    conversation_status: Optional[str] = None
+    assigned_agent_id: Optional[str] = None
+    assigned_agent_name: Optional[str] = None
+    last_agent_name: Optional[str] = None
+    last_interaction: Optional[str] = None
 
 
 class AdminCustomerItem(CustomerResponse):
-    pass
+    brand: Optional[str] = None
+    channel: Optional[str] = None
+    conversation_id: Optional[uuid.UUID] = None
+    conversation_status: Optional[str] = None
+    assigned_agent_id: Optional[str] = None
+    assigned_agent_name: Optional[str] = None
+    last_agent_name: Optional[str] = None
+    last_interaction: Optional[str] = None
 
 
 class AdminCustomerListResponse(BaseModel):

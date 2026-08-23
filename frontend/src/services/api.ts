@@ -183,9 +183,10 @@ export const apiService = {
     conversationId: string,
     text: string,
     attachments?: any[],
-    meta_tag?: string
+    meta_tag?: string,
+    reply_to_message_id?: string
   ): Promise<Message> {
-    const payload = { text, attachments, meta_tag };
+    const payload = { text, attachments, meta_tag, reply_to_message_id };
     const res = await safeFetch(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -686,6 +687,7 @@ export interface TeamMember {
   full_name: string;
   role: 'admin' | 'supervisor' | 'agent' | string;
   brand_access: string[];
+  channel_access?: string[];
   is_active: boolean;
   created_at: string;
   last_login_at?: string | null;
@@ -715,6 +717,15 @@ export interface AuditLogListResponse {
 }
 
 export const teamApi = {
+  async listSupportedChannels(): Promise<string[]> {
+    const res = await safeFetch('/admin/team/channels', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return ['messenger', 'instagram', 'whatsapp', 'tiktok'];
+  },
+
   async listMembers(): Promise<TeamMember[]> {
     const res = await safeFetch('/admin/team/members', {
       method: 'GET',
@@ -730,6 +741,7 @@ export const teamApi = {
     full_name: string;
     role: string;
     brand_access: string[];
+    channel_access?: string[];
     is_active?: boolean;
   }): Promise<TeamMember> {
     const res = await safeFetch('/admin/team/members', {
@@ -750,6 +762,7 @@ export const teamApi = {
       full_name?: string;
       role?: string;
       brand_access?: string[];
+      channel_access?: string[];
       is_active?: boolean;
       password?: string;
     }
@@ -778,6 +791,7 @@ export const teamApi = {
     action?: string;
     user_id?: string;
     resource_type?: string;
+    search?: string;
     page?: number;
     page_size?: number;
   }): Promise<AuditLogListResponse> {
@@ -785,6 +799,7 @@ export const teamApi = {
     if (filters?.action && filters.action !== 'all') params.append('action', filters.action);
     if (filters?.user_id) params.append('user_id', filters.user_id);
     if (filters?.resource_type) params.append('resource_type', filters.resource_type);
+    if (filters?.search && filters.search.trim()) params.append('search', filters.search.trim());
     if (filters?.page) params.append('page', filters.page.toString());
     if (filters?.page_size) params.append('page_size', filters.page_size.toString());
 
@@ -859,6 +874,160 @@ export const metaApi = {
     throw new Error('فشل نشر المنشور');
   },
 };
+
+export interface SocialCommentItem {
+  id: string;
+  brand: string;
+  platform: 'facebook' | 'instagram';
+  post_id: string;
+  post_title: string;
+  post_thumbnail?: string;
+  author_name: string;
+  author_avatar?: string;
+  comment_text: string;
+  sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
+  sentiment_score: number;
+  moderation_status: 'active' | 'auto_deleted' | 'auto_hidden' | 'replied' | 'flagged';
+  ai_action_reason?: string;
+  auto_replied_text?: string;
+  likes_count: number;
+  replies_count: number;
+  is_direct_message_sent: boolean;
+  created_at: string;
+}
+
+export interface CommentStats {
+  total_comments: number;
+  auto_deleted_or_hidden: number;
+  auto_replied_dms: number;
+  positive_rate: number;
+  active_auto_delete_enabled: boolean;
+}
+
+export interface ModerationSettings {
+  auto_delete_negative: boolean;
+  auto_hide_spam: boolean;
+  auto_reply_inquiries: boolean;
+  strictness_level: 'strict' | 'balanced' | 'relaxed';
+  action_for_negative: 'delete' | 'hide' | 'delete_and_dm';
+  negative_keywords: string[];
+  inquiry_keywords: string[];
+  inquiry_reply_text: string;
+  inquiry_dm_text: string;
+  negative_dm_apology_text: string;
+}
+
+export interface ModerationLog {
+  id: string;
+  comment_id?: string;
+  comment_author: string;
+  action_type: string;
+  performed_by: string;
+  details?: Record<string, any>;
+  created_at: string;
+}
+
+export const socialCommentsApi = {
+  async getComments(params?: {
+    brand?: string;
+    platform?: string;
+    sentiment?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<{ items: SocialCommentItem[]; total: number; total_pages: number }> {
+    const q = new URLSearchParams();
+    if (params?.brand && params.brand !== 'all' && params.brand !== 'الكل') q.append('brand', params.brand);
+    if (params?.platform && params.platform !== 'all') q.append('platform', params.platform);
+    if (params?.sentiment && params.sentiment !== 'all') q.append('sentiment', params.sentiment);
+    if (params?.status && params.status !== 'all') q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', params.page.toString());
+    if (params?.page_size) q.append('page_size', params.page_size.toString());
+
+    const res = await safeFetch(`/comments?${q.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { items: [], total: 0, total_pages: 1 };
+  },
+
+  async getStats(): Promise<CommentStats> {
+    const res = await safeFetch('/comments/stats', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      total_comments: 0,
+      auto_deleted_or_hidden: 0,
+      auto_replied_dms: 0,
+      positive_rate: 50,
+      active_auto_delete_enabled: true,
+    };
+  },
+
+  async updateCommentStatus(commentId: string, status: string, reason?: string): Promise<SocialCommentItem> {
+    const res = await safeFetch(`/comments/${commentId}/status`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ status, reason }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to update comment status');
+  },
+
+  async replyToComment(commentId: string, replyText: string, sendDm: boolean = false, dmText?: string): Promise<SocialCommentItem> {
+    const res = await safeFetch(`/comments/${commentId}/reply`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ reply_text: replyText, send_dm: sendDm, dm_text: dmText }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to post reply to comment');
+  },
+
+  async getSettings(brand: string = 'all'): Promise<ModerationSettings> {
+    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to fetch settings');
+  },
+
+  async updateSettings(settings: ModerationSettings, brand: string = 'all'): Promise<ModerationSettings> {
+    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
+      method: 'PUT',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(settings),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to update settings');
+  },
+
+  async getLogs(): Promise<ModerationLog[]> {
+    const res = await safeFetch('/comments/logs', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return [];
+  },
+
+  async simulateAi(commentText: string, brand: string = 'all'): Promise<any> {
+    const res = await safeFetch('/comments/simulate-ai', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ comment_text: commentText, brand }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to simulate AI check');
+  },
+};
+
 
 
 
