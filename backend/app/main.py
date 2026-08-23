@@ -116,18 +116,11 @@ app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
 app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
 app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
 app.include_router(admin_team_router, prefix="/api/v1")
-app.include_router(admin_team_router)
-
-
-
-
 app.include_router(comments_router, prefix="/api/v1/comments")
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
-app.include_router(comments_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(respond_io_router, prefix="/api/v1")
-app.include_router(ws_router)
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(ws_router)
 app.include_router(webhooks_router)

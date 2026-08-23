@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_optional_current_user, require_admin
+from app.api.deps import (
+    get_current_user,
+    get_optional_current_user,
+    require_admin,
+    require_conversation_access,
+    user_has_conversation_access,
+)
 from app.core.database import get_db
 from app.integrations.meta import MetaAPIError
 from app.models.conversation import Conversation
@@ -405,7 +411,6 @@ async def send_outbound_reply(
 async def update_conversation_metadata(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -447,7 +452,7 @@ async def update_conversation_metadata(
 async def update_conversation_status(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -617,7 +622,7 @@ async def assign_conversation_agent(
 async def update_conversation_priority(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -681,7 +686,6 @@ async def trigger_immediate_sync(
 )
 async def analyze_conversation_ai(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):

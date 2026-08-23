@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.integrations.meta import MetaClient
-from app.models.comment import SocialComment
+from app.models.social_comment import SocialComment
 
 logger = logging.getLogger("MetaCommentSync")
 

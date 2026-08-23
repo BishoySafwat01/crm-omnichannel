@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,13 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.user import User
-from app.integrations.meta.client import MetaClient
-from app.models.comment import SocialComment
-from app.schemas.comment import (
-    SocialCommentHideRequest,
-    SocialCommentReplyRequest,
+from app.models.social_comment import SocialComment, CommentModerationLog, CommentModerationSetting
+from app.schemas.social_comment import (
+    AiSimulationRequest,
+    AiSimulationResponse,
+    CommentStatsResponse,
+    ModerationLogResponse,
+    ModerationSettingsPayload,
+    ReplyCommentRequest,
+    SocialCommentListResponse,
     SocialCommentResponse,
+    UpdateCommentStatusRequest,
 )
+from app.services.comment_moderation_service import CommentModerationService
 
 router = APIRouter()
 
@@ -46,7 +52,6 @@ COMMENT_AUTOMATIONS_STORE = [
 async def get_comment_automations(
     admin_user: User = Depends(require_admin),
 ):
-    """Retrieve all active comment automation rules."""
     return COMMENT_AUTOMATIONS_STORE
 
 
@@ -55,7 +60,6 @@ async def create_comment_automation(
     rule: dict,
     admin_user: User = Depends(require_admin),
 ):
-    """Create a new comment automation rule."""
     rule_id = str(rule.get("id") or f"rule_{uuid.uuid4().hex[:8]}")
     rule["id"] = rule_id
     COMMENT_AUTOMATIONS_STORE.append(rule)
@@ -67,7 +71,6 @@ async def delete_comment_automation(
     rule_id: str,
     admin_user: User = Depends(require_admin),
 ):
-    """Delete a comment automation rule."""
     global COMMENT_AUTOMATIONS_STORE
     COMMENT_AUTOMATIONS_STORE = [r for r in COMMENT_AUTOMATIONS_STORE if r.get("id") != rule_id]
     return {"status": "success", "deleted": rule_id}
@@ -78,106 +81,116 @@ async def sync_meta_comments(
     db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin),
 ):
-    """Triggers live fetch from Meta Graph API for post comments & seeds sample comments if empty."""
     from app.services.meta_comment_sync_service import MetaCommentSyncService
     service = MetaCommentSyncService(db)
     result = await service.sync_page_feed_comments()
     return result
 
 
-@router.get("", response_model=list[SocialCommentResponse])
+@router.get("", response_model=SocialCommentListResponse)
 async def list_comments(
     brand: Optional[str] = Query(None),
-    channel: Optional[str] = Query(None),
+    platform: Optional[str] = Query(None),
     sentiment: Optional[str] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve social media comments filterable by brand, channel, sentiment, and status."""
-    stmt = select(SocialComment).order_by(SocialComment.created_at.desc())
+    comments, total, total_pages = await CommentModerationService.list_comments(
+        session=db,
+        brand=brand,
+        platform=platform,
+        sentiment=sentiment,
+        status=status,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+    return SocialCommentListResponse(
+        items=[SocialCommentResponse.model_validate(c) for c in comments],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
-    if brand and brand.lower() != "all":
-        stmt = stmt.where(SocialComment.brand == brand)
-    if channel and channel.lower() != "all":
-        stmt = stmt.where(SocialComment.channel == channel)
-    if sentiment and sentiment.lower() != "all":
-        stmt = stmt.where(SocialComment.sentiment == sentiment)
-    if status_filter:
-        if status_filter == "hidden":
-            stmt = stmt.where(SocialComment.is_hidden == True)
-        elif status_filter == "visible":
-            stmt = stmt.where(SocialComment.is_hidden == False, SocialComment.is_deleted == False)
 
-    res = await db.execute(stmt)
-    return list(res.scalars().all())
+@router.get("/stats", response_model=CommentStatsResponse)
+async def get_comment_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommentModerationService.get_stats(db)
 
 
-@router.post("/{comment_uuid}/reply", response_model=SocialCommentResponse)
-async def reply_to_social_comment(
-    comment_uuid: uuid.UUID,
-    payload: SocialCommentReplyRequest,
+@router.post("/{comment_id}/status", response_model=SocialCommentResponse)
+async def update_comment_status(
+    comment_id: uuid.UUID,
+    payload: UpdateCommentStatusRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reply publicly or via private DM to a social comment."""
-    stmt = select(SocialComment).where(SocialComment.id == comment_uuid)
-    res = await db.execute(stmt)
-    comment = res.scalar_one_or_none()
-    if not comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
-
-    client = MetaClient()
-    if payload.private_dm:
-        await client.send_private_reply(comment.comment_id, payload.message)
-    else:
-        await client.reply_to_comment(comment.comment_id, payload.message)
-
-    comment.auto_replied = True
-    comment.reply_text = payload.message
-    await db.commit()
-    await db.refresh(comment)
-    return comment
+    comment = await CommentModerationService.update_comment_status(
+        session=db,
+        comment_id=comment_id,
+        new_status=payload.status,
+        performed_by=current_user.full_name or current_user.email,
+        reason=payload.reason,
+    )
+    return SocialCommentResponse.model_validate(comment)
 
 
-@router.patch("/{comment_uuid}/hide", response_model=SocialCommentResponse)
-async def toggle_hide_social_comment(
-    comment_uuid: uuid.UUID,
-    payload: SocialCommentHideRequest,
+@router.post("/{comment_id}/reply", response_model=SocialCommentResponse)
+async def reply_to_comment(
+    comment_id: uuid.UUID,
+    payload: ReplyCommentRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Hide or unhide a social comment."""
-    stmt = select(SocialComment).where(SocialComment.id == comment_uuid)
-    res = await db.execute(stmt)
-    comment = res.scalar_one_or_none()
-    if not comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
-
-    client = MetaClient()
-    await client.hide_comment(comment.comment_id, is_hidden=payload.is_hidden)
-
-    comment.is_hidden = payload.is_hidden
-    await db.commit()
-    await db.refresh(comment)
-    return comment
+    comment = await CommentModerationService.reply_to_comment(
+        session=db,
+        comment_id=comment_id,
+        reply_text=payload.reply_text,
+        send_dm=payload.send_dm,
+        dm_text=payload.dm_text,
+        performed_by=current_user.full_name or current_user.email,
+    )
+    return SocialCommentResponse.model_validate(comment)
 
 
-@router.delete("/{comment_uuid}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_social_comment(
-    comment_uuid: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+@router.get("/settings")
+async def get_moderation_settings(
+    brand: str = Query("all"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a social comment."""
-    stmt = select(SocialComment).where(SocialComment.id == comment_uuid)
-    res = await db.execute(stmt)
-    comment = res.scalar_one_or_none()
-    if not comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
+    return await CommentModerationService.get_or_create_settings(db, brand=brand)
 
-    client = MetaClient()
-    await client.delete_comment(comment.comment_id)
 
-    comment.is_deleted = True
-    await db.commit()
-    return None
+@router.put("/settings")
+async def update_moderation_settings(
+    payload: ModerationSettingsPayload,
+    brand: str = Query("all"),
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommentModerationService.update_settings(db, brand=brand, payload=payload)
+
+
+@router.get("/logs", response_model=list[ModerationLogResponse])
+async def get_moderation_logs(
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommentModerationService.get_logs(db)
+
+
+@router.post("/simulate-ai", response_model=AiSimulationResponse)
+async def simulate_ai(
+    payload: AiSimulationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await CommentModerationService.simulate_ai(
+        session=db,
+        comment_text=payload.comment_text,
+        brand=payload.brand or "all",
+    )
