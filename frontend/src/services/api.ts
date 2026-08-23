@@ -1,7 +1,12 @@
 import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
 
-const API_BASE = '/api/v1';
-const FALLBACK_API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api/v1`
+  : '/api/v1';
+const FALLBACK_API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api/v1`
+  : 'http://localhost:8000/api/v1';
+
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
