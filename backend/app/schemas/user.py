@@ -12,6 +12,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: UserRole
     brand_access: list[Any] = Field(default_factory=list)
+    channel_access: list[Any] = Field(default_factory=lambda: ["ALL"])
     is_active: bool = True
     created_at: datetime
 
@@ -35,3 +36,4 @@ class UserCreateRequest(BaseModel):
     full_name: str
     role: UserRole = UserRole.AGENT
     brand_access: list[str] = Field(default_factory=lambda: ["LAVVA"])
+    channel_access: list[str] = Field(default_factory=lambda: ["ALL"])

@@ -12,6 +12,7 @@ class TeamMemberCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     role: UserRole = UserRole.AGENT
     brand_access: List[str] = Field(default_factory=lambda: ["LAVVA"])
+    channel_access: List[str] = Field(default_factory=lambda: ["ALL"])
     is_active: bool = True
 
 
@@ -19,6 +20,7 @@ class TeamMemberUpdate(BaseModel):
     full_name: Optional[str] = None
     role: Optional[UserRole] = None
     brand_access: Optional[List[str]] = None
+    channel_access: Optional[List[str]] = None
     is_active: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=6)
 
@@ -31,6 +33,7 @@ class TeamMemberResponse(BaseModel):
     full_name: str
     role: str
     brand_access: List[Any]
+    channel_access: List[Any] = Field(default_factory=lambda: ["ALL"])
     is_active: bool
     created_at: datetime
     last_login_at: Optional[datetime] = None

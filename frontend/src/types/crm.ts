@@ -54,12 +54,37 @@ export interface Customer {
   updated_at: string;
   last_activity_at?: string;
   identities?: CustomerIdentity[];
+  brand?: string;
+  channel?: string;
+  conversation_id?: string;
+  conversation_status?: string;
+  assigned_agent_id?: string;
+  assigned_agent_name?: string;
+  last_agent_name?: string;
+  last_interaction?: string;
+}
+
+export interface MessageReaction {
+  emoji: string;
+  user_id: string;
+  user_name?: string;
+  created_at: string;
+}
+
+export interface MessageReplyReference {
+  message_id: string;
+  text?: string;
+  sender_name?: string;
+  sender_type?: string;
+  message_type?: string;
 }
 
 export interface Message {
   id: string;
   conversation_id: string;
   sender_type: 'customer' | 'agent' | 'system';
+  sender_user_id?: string;
+  sender_name?: string;
   message_type: 'text' | 'image' | 'file' | 'audio' | 'video' | 'location' | 'share_reel' | 'share_post' | 'share' | 'unknown';
   text?: string;
   media_url?: string;
@@ -69,6 +94,25 @@ export interface Message {
   delivery_status?: MessageDeliveryStatus;
   meta_tag?: MetaMessageTag;
   error_message?: string;
+  metadata_?: Record<string, any>;
+
+  // Message Actions
+  reply_to?: MessageReplyReference;
+  is_edited?: boolean;
+  edited_at?: string;
+  edited_by_user_id?: string;
+  is_deleted?: boolean;
+  deleted_at?: string;
+  deleted_by_name?: string;
+  reactions?: MessageReaction[];
+  forwarded?: boolean;
+  forwarded_from?: {
+    original_message_id?: string;
+    original_conversation_id?: string;
+  };
+  is_pinned?: boolean;
+  pinned_at?: string;
+  pinned_by_name?: string;
 }
 
 export interface Conversation {
@@ -127,7 +171,21 @@ export interface TagGroup {
 }
 
 export interface WebSocketEvent {
-  type: 'NEW_MESSAGE' | 'MESSAGE_STATUS' | 'TYPING_INDICATOR' | 'PONG' | 'customer_typing' | 'new_message';
+  type:
+    | 'NEW_MESSAGE'
+    | 'MESSAGE_STATUS'
+    | 'TYPING_INDICATOR'
+    | 'PONG'
+    | 'customer_typing'
+    | 'new_message'
+    | 'MESSAGE_UPDATED'
+    | 'MESSAGE_DELETED'
+    | 'MESSAGE_REACTION_UPDATED'
+    | 'MESSAGE_PIN_UPDATED'
+    | 'message_updated'
+    | 'message_deleted'
+    | 'message_reaction_updated'
+    | 'message_pin_updated';
   conversation_id?: string;
   customer_id?: string;
   message?: Message;
