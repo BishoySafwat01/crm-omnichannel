@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check } from 'lucide-react';
-import { useCrmStore } from '../store/useCrmStore';
-import { FilterTab } from '../types/crm';
-import { UserAvatar } from './UserAvatar';
-import { formatCustomerPresence } from '../utils/presence';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store } from 'lucide-react';
+import { useCrmStore } from '../../../store/useCrmStore';
+import { FilterTab } from '../../../types/crm';
+import { MOCK_BRANDS } from '../../../constants/brands';
+import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { formatCustomerPresence } from '../../../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
   low: { label: 'منخفضة', color: 'bg-slate-100 text-slate-600' },
@@ -81,16 +82,21 @@ export const ConversationList: React.FC = () => {
     return 'محادثة نشطة';
   };
 
-  // Compile list of distinct employees available for filtering (combining store availableEmployees with conversation assignees)
+  // Compile list of distinct employees available for filtering with their assigned store/brand (Task 2)
   const employeeOptions = useMemo(() => {
-    const list: { id: string; name: string; role?: string }[] = [];
+    const list: { id: string; name: string; role?: string; brand?: string }[] = [];
     const seen = new Set<string>();
 
     if (availableEmployees && Array.isArray(availableEmployees)) {
       availableEmployees.forEach((emp) => {
         if (emp.id && !seen.has(emp.id)) {
           seen.add(emp.id);
-          list.push({ id: emp.id, name: emp.full_name || emp.email, role: emp.role });
+          const assignedConv = conversations.find((c) => c.assigned_agent_id === emp.id);
+          const memberBrand =
+            Array.isArray(emp.brand_access) && emp.brand_access.length > 0 && emp.brand_access[0] !== 'ALL' && emp.brand_access[0] !== 'الكل'
+              ? emp.brand_access[0]
+              : assignedConv?.brand || 'LUXIRA';
+          list.push({ id: emp.id, name: emp.full_name || emp.email, role: emp.role, brand: memberBrand });
         }
       });
     }
@@ -99,7 +105,7 @@ export const ConversationList: React.FC = () => {
       if (c.assigned_agent_id && !seen.has(c.assigned_agent_id)) {
         seen.add(c.assigned_agent_id);
         const name = c.customer?.assigned_agent_name || c.customer?.last_agent_name || 'موظف';
-        list.push({ id: c.assigned_agent_id, name });
+        list.push({ id: c.assigned_agent_id, name, brand: c.brand || 'LUXIRA' });
       }
     });
 
@@ -242,57 +248,97 @@ export const ConversationList: React.FC = () => {
                     setSelectedEmployeeId(null);
                     setIsEmployeeMenuOpen(false);
                   }}
-                  className={`w-full text-right px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
                     !selectedEmployeeId ? 'bg-blue-50 text-[#1A73E8]' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span>كل الموظفين (All)</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-slate-800 text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs">
+                      ALL
+                    </div>
+                    <span>كل الموظفين (All)</span>
+                  </div>
                   {!selectedEmployeeId && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
                 </button>
 
-                {employeeOptions.map((emp) => (
-                  <button
-                    key={emp.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedEmployeeId(emp.id);
-                      setIsEmployeeMenuOpen(false);
-                    }}
-                    className={`w-full text-right px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center justify-between ${
-                      selectedEmployeeId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="truncate">
-                      <span>{emp.name}</span>
-                      {emp.role && (
-                        <span className="text-[10px] text-slate-400 font-normal mr-1.5">({emp.role})</span>
-                      )}
-                    </div>
-                    {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
-                  </button>
-                ))}
+                {employeeOptions.map((emp) => {
+                  const brandObj =
+                    MOCK_BRANDS.find((b) => b.id.toLowerCase() === (emp.brand || '').toLowerCase()) ||
+                    MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
+                    MOCK_BRANDS[1];
+                  const brandName = emp.brand || brandObj?.name || 'LUXIRA';
+                  const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
+                  const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
+
+                  return (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmployeeId(emp.id);
+                        setIsEmployeeMenuOpen(false);
+                      }}
+                      className={`w-full text-right px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between ${
+                        selectedEmployeeId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Store / Brand Logo Badge (Representing the store/brand the employee is working through) */}
+                        <div
+                          className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
+                          title={`المتجر: ${brandName}`}
+                        >
+                          {brandAvatar}
+                        </div>
+
+                        <div className="truncate">
+                          <span className="font-bold text-slate-800">{emp.name}</span>
+                          {emp.role && (
+                            <span className="text-[10px] text-slate-400 font-normal mr-1.5">({emp.role})</span>
+                          )}
+                        </div>
+                      </div>
+                      {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Active Employee Filter Pill Indicator */}
-        {selectedEmployeeObj && (
-          <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 px-3 py-1 rounded-xl text-xs text-blue-900 font-semibold animate-in fade-in duration-100">
-            <div className="flex items-center gap-1.5 truncate">
-              <User className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
-              <span>الموظف: {selectedEmployeeObj.name}</span>
+        {/* Active Employee Filter Pill Indicator with Store Logo */}
+        {selectedEmployeeObj && (() => {
+          const brandObj =
+            MOCK_BRANDS.find((b) => b.id.toLowerCase() === (selectedEmployeeObj.brand || '').toLowerCase()) ||
+            MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
+            MOCK_BRANDS[1];
+          const brandName = selectedEmployeeObj.brand || brandObj?.name || 'LUXIRA';
+          const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
+          const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
+
+          return (
+            <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 px-3 py-1 rounded-xl text-xs text-blue-900 font-semibold animate-in fade-in duration-100">
+              <div className="flex items-center gap-2 truncate">
+                <div
+                  className={`w-5 h-5 rounded-md bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
+                  title={`المتجر: ${brandName}`}
+                >
+                  {brandAvatar}
+                </div>
+                <span>الموظف: {selectedEmployeeObj.name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeId(null)}
+                className="text-blue-500 hover:text-blue-700 p-0.5 rounded-full cursor-pointer"
+                title="إلغاء تصفية الموظف"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedEmployeeId(null)}
-              className="text-blue-500 hover:text-blue-700 p-0.5 rounded-full"
-              title="إلغاء تصفية الموظف"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Filter Tabs (Task 1 Unread Badge) */}
         <div className="flex items-center gap-1 p-1 bg-slate-100/60 rounded-full border border-slate-200/50 backdrop-blur-md">
@@ -337,7 +383,13 @@ export const ConversationList: React.FC = () => {
             const isActive = activeConversationId === conv.id;
             const storeName = conv.brand || conv.brand_name || 'LUXIRA';
             const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
-            const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
+            const brandObj =
+              MOCK_BRANDS.find((b) => b.id.toLowerCase() === storeName.toLowerCase()) ||
+              MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
+              MOCK_BRANDS[1];
+            const brandAvatar = brandObj?.avatar || storeName.substring(0, 2).toUpperCase();
+            const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
+            const storeAvatarUrl = (conv as any).brand_avatar_url || (conv as any).page_avatar_url || (conv as any).store_logo_url;
             const unreadCount = conv.unread_count || 0;
             const isCustomerTyping = Boolean(isTyping[conv.id]);
             const presence = formatCustomerPresence(
@@ -355,12 +407,25 @@ export const ConversationList: React.FC = () => {
                     : 'bg-transparent hover:bg-white/90'
                 }`}
               >
-                {/* 1. Top Row: Avatar with overlaid Channel Badge + Store Name (Primary) + Time */}
+                {/* 1. Top Row: Store/Brand Avatar with overlaid Channel Badge + Store Name (Primary) + Time */}
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Overlapping Avatar with Channel Badge Overlay (Task 6) */}
+                    {/* Overlapping Brand/Store Avatar with Channel Badge Overlay */}
                     <div className="relative shrink-0">
-                      <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
+                      {storeAvatarUrl ? (
+                        <img
+                          src={storeAvatarUrl}
+                          alt={storeName}
+                          className="w-10 h-10 rounded-full object-cover shadow-xs border border-white/80 shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shadow-xs border border-slate-200/80 shrink-0"
+                          title={`المتجر: ${storeName}`}
+                        >
+                          <Store className="w-5 h-5 text-slate-500" />
+                        </div>
+                      )}
                       <div className="absolute -bottom-1 -right-1 z-10">
                         <ChannelBadgeIcon channel={conv.channel} className="w-4 h-4" />
                       </div>

@@ -1,15 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { TopBar } from './components/TopBar';
-import { ConversationList } from './components/ConversationList';
-import { ChatCanvas } from './components/ChatCanvas';
-import { CustomerProfileSidebar } from './components/CustomerProfileSidebar';
-import { LoginModal } from './components/LoginModal';
-import { IntegrationsModal } from './components/IntegrationsModal';
-import { AutomationsManager } from './components/Admin/AutomationsManager';
-import { ExecutiveDashboard } from './components/Admin/ExecutiveDashboard';
-import { CustomerDataHub } from './components/Admin/CustomerDataHub';
-import { TeamGovernance } from './components/Admin/TeamGovernance';
-import { SocialCommentsManager } from './components/Admin/SocialCommentsManager';
+import { TopBar } from './components/layout/TopBar';
+import { LoginModal } from './components/common/LoginModal';
+import { IntegrationsModal } from './components/common/IntegrationsModal';
+import { ChatPage } from './pages/Chat/ChatPage';
+import { CommentsPage } from './pages/Comments/CommentsPage';
+import { AutomationPage } from './pages/Automation/AutomationPage';
+import { DashboardPage } from './pages/Dashboard/DashboardPage';
+import { CustomersPage } from './pages/Customers/CustomersPage';
+import { TeamPage } from './pages/Team/TeamPage';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
@@ -49,9 +47,6 @@ export const App: React.FC = () => {
     realtimeService.connect();
 
     // Track open/close so polling can be suppressed while WS is active
-    const originalSocket = (realtimeService as any).socket;
-    // We detect open/close via custom subscription events or by monkey-patching below
-    // The simpler approach: subscribe to PONG to detect live connection
     const unsubscribeWs = realtimeService.subscribe((event) => {
       if (event.type === 'PONG' || event.type) {
         if (!wsConnectedRef.current) {
@@ -90,29 +85,19 @@ export const App: React.FC = () => {
       {/* Top Header & Brand Switcher */}
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
 
-      {/* Main View Area */}
+      {/* Main View Area (Feature / Page-Based Routing) */}
       {isUserAdmin && activeMainView === 'comments' ? (
-        <SocialCommentsManager />
+        <CommentsPage />
       ) : isUserAdmin && activeMainView === 'automations' ? (
-        <AutomationsManager />
+        <AutomationPage />
       ) : isUserAdmin && activeMainView === 'dashboard' ? (
-        <ExecutiveDashboard />
+        <DashboardPage />
       ) : isUserAdmin && activeMainView === 'database' ? (
-        <CustomerDataHub />
+        <CustomersPage />
       ) : isUserAdmin && activeMainView === 'team' ? (
-        <TeamGovernance />
+        <TeamPage />
       ) : (
-        /* Main Multi-Pane Chat Workspace */
-        <div className="flex-1 flex min-h-0 w-full overflow-hidden relative gap-3 px-4 pb-3">
-          {/* Right Sidebar: Inbox & Conversations Queue */}
-          <ConversationList />
-
-          {/* Center Pane: Active Chat Canvas */}
-          <ChatCanvas />
-
-          {/* Left Sidebar: Lead Attributes & Customer Hub */}
-          <CustomerProfileSidebar />
-        </div>
+        <ChatPage />
       )}
     </div>
   );

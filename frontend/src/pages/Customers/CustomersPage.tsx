@@ -912,4 +912,6 @@ export const CustomerDataHub: React.FC = () => {
   );
 };
 
+export { CustomerDataHub as CustomersPage };
 export default CustomerDataHub;
+

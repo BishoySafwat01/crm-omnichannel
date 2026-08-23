@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
-import { MOCK_BRANDS } from '../services/api';
-import { useCrmStore, ChannelFilterType } from '../store/useCrmStore';
-import { useAuthStore } from '../store/useAuthStore';
+import { MOCK_BRANDS } from '../../constants/brands';
+import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';

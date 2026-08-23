@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useCrmStore } from '../store/useCrmStore';
+import { useCrmStore } from '../../../store/useCrmStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
   Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink
 } from 'lucide-react';
-import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
-import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
-import { UserAvatar } from './UserAvatar';
-import { useCustomerPresence } from '../hooks/useCustomerPresence';
+import { SALES_SCRIPTS, SalesScript } from '../../../constants/salesScripts';
+import { customerApi, CustomerNote, CustomerTimelineEvent } from '../../../services/api';
+import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
   const { conversations, activeConversationId, updateCustomerProfile, setDraftText, isTyping } = useCrmStore();

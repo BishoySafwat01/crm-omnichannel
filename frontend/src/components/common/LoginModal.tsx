@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Layers, Lock, Mail, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 export const LoginModal: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuthStore();

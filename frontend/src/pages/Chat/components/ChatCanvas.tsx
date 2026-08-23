@@ -34,15 +34,15 @@ import {
   ChevronUp,
   Users,
 } from 'lucide-react';
-import { useCrmStore } from '../store/useCrmStore';
-import { useAuthStore } from '../store/useAuthStore';
-import { MetaMessageTag } from '../types/crm';
-import { UserAvatar } from './UserAvatar';
-import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
-import { aiApi } from '../services/api';
-import { useCustomerPresence } from '../hooks/useCustomerPresence';
-import { MessageActionsMenu } from './MessageActions/MessageActionsMenu';
-import { ForwardMessageModal } from './MessageActions/ForwardMessageModal';
+import { useCrmStore } from '../../../store/useCrmStore';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { MetaMessageTag } from '../../../types/crm';
+import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { formatChatDateDivider, isDifferentDay } from '../../../utils/dateUtils';
+import { aiApi } from '../../../services/api';
+import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
+import { MessageActionsMenu } from './MessageActionsMenu';
+import { ForwardMessageModal } from './ForwardMessageModal';
 
 // Custom Inline Audio Player Component
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {

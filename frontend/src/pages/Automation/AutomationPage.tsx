@@ -761,3 +761,7 @@ export const AutomationsManager: React.FC = () => {
     </div>
   );
 };
+
+export { AutomationsManager as AutomationPage };
+export default AutomationsManager;
+

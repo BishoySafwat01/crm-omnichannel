@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Check, Copy, Plug, MessageSquare, Instagram, Facebook, Globe, ShieldCheck, RefreshCw, Send, Loader2 } from 'lucide-react';
-import { useCrmStore } from '../store/useCrmStore';
-import { metaApi } from '../services/api';
+import { useCrmStore } from '../../store/useCrmStore';
+import { metaApi } from '../../services/api';
 
 export const IntegrationsModal: React.FC = () => {
   const { isIntegrationsModalOpen, setIsIntegrationsModalOpen } = useCrmStore();

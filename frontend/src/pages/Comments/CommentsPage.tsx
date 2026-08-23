@@ -1272,3 +1272,7 @@ export const SocialCommentsManager: React.FC = () => {
     </div>
   );
 };
+
+export { SocialCommentsManager as CommentsPage };
+export default SocialCommentsManager;
+
