@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   MessageSquare,
   Bot,
@@ -30,139 +30,16 @@ import {
   ArrowRight,
   Activity,
   Check,
+  Loader2,
 } from 'lucide-react';
-import { MOCK_BRANDS } from '../../services/api';
-
-export interface SocialComment {
-  id: string;
-  authorName: string;
-  authorAvatar?: string;
-  platform: 'facebook' | 'instagram';
-  postId: string;
-  postTitle: string;
-  postThumbnail?: string;
-  commentText: string;
-  createdAt: string;
-  sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
-  sentimentScore: number; // 0 to 100
-  moderationStatus: 'active' | 'auto_deleted' | 'auto_hidden' | 'replied' | 'flagged';
-  aiActionReason?: string;
-  autoRepliedText?: string;
-  likesCount: number;
-  repliesCount: number;
-  isDirectMessageSent?: boolean;
-}
-
-export interface ModerationRuleSettings {
-  autoDeleteNegative: boolean;
-  autoHideSpam: boolean;
-  autoReplyInquiries: boolean;
-  strictnessLevel: 'strict' | 'balanced' | 'relaxed';
-  actionForNegative: 'delete' | 'hide' | 'delete_and_dm';
-  negativeKeywords: string[];
-  inquiryKeywords: string[];
-  inquiryReplyText: string;
-  inquiryDmText: string;
-  negativeDmApologyText: string;
-}
-
-const INITIAL_COMMENTS: SocialComment[] = [
-  {
-    id: 'comm-101',
-    authorName: 'محمود عبد الرحمن',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'المنتج دا خامته سيئة جداً ومقلب كبير ومحدش يشتري منهم خالص نصابين!',
-    createdAt: 'منذ دقيقتين',
-    sentiment: 'negative',
-    sentimentScore: 98,
-    moderationStatus: 'auto_deleted',
-    aiActionReason: 'تم الحذف تلقائياً بواسطة AI: رصد ألفاظ سلبية واتهام بالنصب (نصابين، مقلب، سيئة جداً)',
-    likesCount: 0,
-    repliesCount: 0,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-102',
-    authorName: 'نورهان سمير',
-    platform: 'instagram',
-    postId: 'post-2',
-    postTitle: 'تشكيلة العطور الملكية الفاخرة لعام 2026 👑🌿',
-    commentText: 'بكام العطر ده وفيه شحن لمحافظة الإسكندرية ولا لأ؟',
-    createdAt: 'منذ 5 دقائق',
-    sentiment: 'neutral_inquiry',
-    sentimentScore: 95,
-    moderationStatus: 'replied',
-    aiActionReason: 'تم الرد التلقائي بواسطة AI: استفسار عن الأسعار والتوصيل',
-    autoRepliedText: 'أهلاً بكِ أستاذة نورهان! تم إرسال تفاصيل الأسعار والعروض الحالية في رسالة خاصة عبر الدايركت 💌',
-    likesCount: 2,
-    repliesCount: 1,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-103',
-    authorName: 'سارة طارق',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'الفستان وصلني تحفة بجد والخامة والمقاس مضبوطين جداً، شكراً ليكم ولدعمكم السريع ❤️',
-    createdAt: 'منذ 12 دقيقة',
-    sentiment: 'positive',
-    sentimentScore: 99,
-    moderationStatus: 'active',
-    likesCount: 8,
-    repliesCount: 1,
-  },
-  {
-    id: 'comm-104',
-    authorName: 'عمر خالد كمال',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'الأسعار عندكم غالية جداً ومبالغ فيها ومفيش فرق يستاهل',
-    createdAt: 'منذ 25 دقيقة',
-    sentiment: 'negative',
-    sentimentScore: 91,
-    moderationStatus: 'auto_hidden',
-    aiActionReason: 'تم الإخفاء تلقائياً بواسطة AI: رصد نقد سلبي للأسعار وتفادي تراجع معدل التحويل',
-    likesCount: 1,
-    repliesCount: 0,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-105',
-    authorName: 'خدمات تسويق وتزويد المتابعين',
-    platform: 'instagram',
-    postId: 'post-2',
-    postTitle: 'تشكيلة العطور الملكية الفاخرة لعام 2026 👑🌿',
-    commentText: 'لزيادة متابعين ولايكات حسابك وتوثيق الحساب تواصل معنا واتساب: 01098765432 أو اضغط الرابط في البايو',
-    createdAt: 'منذ 40 دقيقة',
-    sentiment: 'spam',
-    sentimentScore: 100,
-    moderationStatus: 'auto_deleted',
-    aiActionReason: 'تم الحذف تلقائياً بواسطة AI: سبام وإعلانات مزعجة وروابط وأرقام تواصل غير مصرحة',
-    likesCount: 0,
-    repliesCount: 0,
-  },
-  {
-    id: 'comm-106',
-    authorName: 'مريم عادل',
-    platform: 'instagram',
-    postId: 'post-3',
-    postTitle: 'سيروم الهيالورونيك وفيتامين C لنضارة تدوم طوال اليوم ✨',
-    commentText: 'السيروم مناسب للبشرة الدهنية والمعرضة للحبوب؟ والتفاصيل إيه؟',
-    createdAt: 'منذ ساعة',
-    sentiment: 'neutral_inquiry',
-    sentimentScore: 94,
-    moderationStatus: 'replied',
-    aiActionReason: 'تم الرد التلقائي بواسطة AI: استفسار عن نوع البشرة وطريقة الاستخدام',
-    autoRepliedText: 'أهلاً مريم! نعم مناسب جداً للبشرة الدهنية وخفيف سريع الامتصاص. تم إرسال كافة التفاصيل في الخاص 🌸',
-    likesCount: 3,
-    repliesCount: 1,
-    isDirectMessageSent: true,
-  },
-];
+import {
+  MOCK_BRANDS,
+  socialCommentsApi,
+  SocialCommentItem,
+  CommentStats,
+  ModerationSettings,
+  ModerationLog,
+} from '../../services/api';
 
 const MOCK_POSTS = [
   { id: 'all', title: 'جميع المنشورات والإعلانات' },
@@ -172,36 +49,48 @@ const MOCK_POSTS = [
 ];
 
 export const SocialCommentsManager: React.FC = () => {
-  const [comments, setComments] = useState<SocialComment[]>(INITIAL_COMMENTS);
+  const [comments, setComments] = useState<SocialCommentItem[]>([]);
+  const [stats, setStats] = useState<CommentStats>({
+    total_comments: 0,
+    auto_deleted_or_hidden: 0,
+    auto_replied_dms: 0,
+    positive_rate: 50,
+    active_auto_delete_enabled: true,
+  });
+  const [logs, setLogs] = useState<ModerationLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [platformFilter, setPlatformFilter] = useState<'all' | 'facebook' | 'instagram'>('all');
-  const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral_inquiry' | 'negative' | 'spam'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'auto_deleted' | 'auto_hidden' | 'replied'>('all');
+  const [platformFilter, setPlatformFilter] = useState<string>('all');
+  const [sentimentFilter, setSentimentFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedPostId, setSelectedPostId] = useState<string>('all');
-  const [isAiAutoModerationActive, setIsAiAutoModerationActive] = useState(true);
+  const [selectedBrand, setSelectedBrand] = useState<string>('all');
 
   // Modals state
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSimulatorModalOpen, setIsSimulatorModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
-  const [replyModalComment, setReplyModalComment] = useState<SocialComment | null>(null);
+  const [replyModalComment, setReplyModalComment] = useState<SocialCommentItem | null>(null);
   const [replyText, setReplyText] = useState('');
   const [replyAsDm, setReplyAsDm] = useState(true);
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
   const [actionNotification, setActionNotification] = useState<string | null>(null);
 
   // Settings state
-  const [settings, setSettings] = useState<ModerationRuleSettings>({
-    autoDeleteNegative: true,
-    autoHideSpam: true,
-    autoReplyInquiries: true,
-    strictnessLevel: 'strict',
-    actionForNegative: 'delete',
-    negativeKeywords: ['نصابين', 'سيء', 'زفت', 'سرقة', 'كذابين', 'مقلب', 'غالي جدا', 'خامة رديئة', 'حرامية'],
-    inquiryKeywords: ['بكام', 'السعر', 'التفاصيل', 'شحن', 'توصيل', 'عايز اطلب', 'كم السعر'],
-    inquiryReplyText: 'أهلاً بك! تم إرسال كافة التفاصيل والأسعار في رسالة خاصة 💌',
-    inquiryDmText: 'أهلاً بك يا فندم! يسعدنا تواصلك معنا، إليك كافة التفاصيل والعروض الخاصة المتاحة اليوم...',
-    negativeDmApologyText: 'نعتذر جداً عن أي تجربة غير مرضية واجهتك، هدفنا رضاك التام ويسعدنا حل المشكلة فوراً...',
+  const [settings, setSettings] = useState<ModerationSettings>({
+    auto_delete_negative: true,
+    auto_hide_spam: true,
+    auto_reply_inquiries: true,
+    strictness_level: 'strict',
+    action_for_negative: 'delete_and_dm',
+    negative_keywords: ['نصابين', 'سيء', 'زفت', 'سرقة', 'كذابين', 'مقلب', 'غالي جدا', 'خامة رديئة', 'حرامية'],
+    inquiry_keywords: ['بكام', 'السعر', 'التفاصيل', 'شحن', 'توصيل', 'عايز اطلب', 'كم السعر'],
+    inquiry_reply_text: 'أهلاً بك! تم إرسال كافة التفاصيل والأسعار في رسالة خاصة 💌',
+    inquiry_dm_text: 'أهلاً بك يا فندم! يسعدنا تواصلك معنا، إليك كافة التفاصيل والعروض الخاصة المتاحة اليوم...',
+    negative_dm_apology_text: 'نعتذر جداً عن أي تجربة غير مرضية واجهتك، هدفنا رضاك التام ويسعدنا حل المشكلة فوراً...',
   });
 
   const [newNegativeKeyword, setNewNegativeKeyword] = useState('');
@@ -209,10 +98,10 @@ export const SocialCommentsManager: React.FC = () => {
   // Simulator state
   const [simulatorInput, setSimulatorInput] = useState('');
   const [simulatorResult, setSimulatorResult] = useState<{
-    sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
+    sentiment: string;
     confidence: number;
     decision: string;
-    actionType: 'delete' | 'hide' | 'reply' | 'allow';
+    actionType: string;
   } | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
 
@@ -224,130 +113,174 @@ export const SocialCommentsManager: React.FC = () => {
     }, 3500);
   };
 
-  // Actions on comments
-  const handleDeleteComment = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              moderationStatus: 'auto_deleted',
-              aiActionReason: 'تم الحذف يدوياً بواسطة مدير النظام',
-            }
-          : c
-      )
-    );
-    triggerNotification('تم حذف التعليق بنجاح من الصفحة 🗑️');
+  // Fetch comments from backend API
+  const fetchCommentsData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [resComments, resStats, resSettings] = await Promise.all([
+        socialCommentsApi.getComments({
+          brand: selectedBrand,
+          platform: platformFilter,
+          sentiment: sentimentFilter,
+          status: statusFilter,
+          search: searchQuery,
+        }),
+        socialCommentsApi.getStats(),
+        socialCommentsApi.getSettings(selectedBrand),
+      ]);
+
+      setComments(resComments.items || []);
+      setStats(resStats);
+      if (resSettings) {
+        setSettings(resSettings);
+      }
+    } catch (err) {
+      console.error('Failed to load social comments from API:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedBrand, platformFilter, sentimentFilter, statusFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchCommentsData();
+  }, [fetchCommentsData]);
+
+  // Fetch logs when logs modal is opened
+  const fetchLogs = async () => {
+    try {
+      const res = await socialCommentsApi.getLogs();
+      setLogs(res || []);
+    } catch (e) {
+      console.error('Failed to load moderation logs:', e);
+    }
   };
 
-  const handleToggleHide = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) => {
-        if (c.id !== commentId) return c;
-        const nextStatus = c.moderationStatus === 'auto_hidden' ? 'active' : 'auto_hidden';
-        return {
-          ...c,
-          moderationStatus: nextStatus,
-          aiActionReason: nextStatus === 'auto_hidden' ? 'تم الإخفاء عن الجمهور' : undefined,
-        };
-      })
-    );
-    triggerNotification('تم تحديث حالة إظهار/إخفاء التعليق 🛡️');
+  // Action: Delete comment
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await socialCommentsApi.updateCommentStatus(
+        commentId,
+        'auto_deleted',
+        'تم الحذف يدوياً بواسطة مشرف النظام'
+      );
+      triggerNotification('تم حذف التعليق بنجاح من الصفحة 🗑️');
+      fetchCommentsData();
+    } catch (err) {
+      triggerNotification('حدث خطأ أثناء محاولة حذف التعليق');
+    }
   };
 
-  const handleRestoreComment = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              moderationStatus: 'active',
-              aiActionReason: undefined,
-            }
-          : c
-      )
-    );
-    triggerNotification('تمت استعادة التعليق وإلغاء حظره ✅');
+  // Action: Toggle Hide/Show
+  const handleToggleHide = async (comment: SocialCommentItem) => {
+    const nextStatus = comment.moderation_status === 'auto_hidden' ? 'active' : 'auto_hidden';
+    const reason = nextStatus === 'auto_hidden' ? 'تم الإخفاء عن الجمهور' : 'تمت إعادة إظهار التعليق';
+    try {
+      await socialCommentsApi.updateCommentStatus(comment.id, nextStatus, reason);
+      triggerNotification('تم تحديث حالة إظهار/إخفاء التعليق 🛡️');
+      fetchCommentsData();
+    } catch (err) {
+      triggerNotification('حدث خطأ أثناء تحديث حالة التعليق');
+    }
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
+  // Action: Restore comment
+  const handleRestoreComment = async (commentId: string) => {
+    try {
+      await socialCommentsApi.updateCommentStatus(commentId, 'active', 'تمت استعادة التعليق');
+      triggerNotification('تمت استعادة التعليق وإلغاء حظره ✅');
+      fetchCommentsData();
+    } catch (err) {
+      triggerNotification('حدث خطأ أثناء استعادة التعليق');
+    }
+  };
+
+  // Action: Send reply
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyModalComment || !replyText.trim()) return;
 
     setIsSubmittingReply(true);
-    setTimeout(() => {
-      setComments((prev) =>
-        prev.map((c) =>
-          c.id === replyModalComment.id
-            ? {
-                ...c,
-                moderationStatus: 'replied',
-                autoRepliedText: replyText.trim(),
-                isDirectMessageSent: replyAsDm ? true : c.isDirectMessageSent,
-              }
-            : c
-        )
+    try {
+      await socialCommentsApi.replyToComment(
+        replyModalComment.id,
+        replyText.trim(),
+        replyAsDm,
+        replyText.trim()
       );
       setIsSubmittingReply(false);
       setReplyModalComment(null);
       setReplyText('');
-      triggerNotification('تم إرسال الرد بنجاح على المنشور والخاص 💬');
-    }, 600);
+      triggerNotification('تم إرسال الرد بنجاح وحفظه في النظام 💬');
+      fetchCommentsData();
+    } catch (err) {
+      setIsSubmittingReply(false);
+      triggerNotification('حدث خطأ أثناء إرسال الرد');
+    }
   };
 
-  // Run AI Simulation
-  const handleRunSimulation = () => {
+  // Action: Save Settings
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const updated = await socialCommentsApi.updateSettings(settings, selectedBrand);
+      setSettings(updated);
+      setIsSavingSettings(false);
+      setIsSettingsModalOpen(false);
+      triggerNotification('تم حفظ وتطبيق إعدادات الذكاء الاصطناعي بنجاح ⚙️');
+      fetchCommentsData();
+    } catch (err) {
+      setIsSavingSettings(false);
+      triggerNotification('حدث خطأ أثناء حفظ الإعدادات');
+    }
+  };
+
+  // Action: Toggle AI Auto Moderation
+  const handleToggleAiModeration = async () => {
+    const nextState = !settings.auto_delete_negative;
+    const newSettings = { ...settings, auto_delete_negative: nextState };
+    setSettings(newSettings);
+    try {
+      await socialCommentsApi.updateSettings(newSettings, selectedBrand);
+      triggerNotification(
+        nextState ? 'تم تفعيل الحماية التلقائية بالـ AI 🛡️' : 'تم إيقاف الحماية التلقائية مؤقتاً ⏸️'
+      );
+      fetchCommentsData();
+    } catch (e) {
+      triggerNotification('فشل تحديث حالة الحماية التلقائية');
+    }
+  };
+
+  // Action: Run AI Simulation
+  const handleRunSimulation = async () => {
     if (!simulatorInput.trim()) return;
     setIsSimulating(true);
 
-    setTimeout(() => {
-      const lower = simulatorInput.toLowerCase();
-      const hasNegative = settings.negativeKeywords.some((k) => lower.includes(k.toLowerCase())) ||
-        lower.includes('زفت') || lower.includes('نصاب') || lower.includes('سيء') || lower.includes('غالي') || lower.includes('وحش');
-      const hasSpam = lower.includes('واتساب') || lower.includes('01') || lower.includes('رابط') || lower.includes('متابعين');
-      const hasInquiry = settings.inquiryKeywords.some((k) => lower.includes(k.toLowerCase())) ||
-        lower.includes('بكام') || lower.includes('سعر') || lower.includes('تفاصيل') || lower.includes('شحن');
+    try {
+      const res = await socialCommentsApi.simulateAi(simulatorInput.trim(), selectedBrand);
+      let actionType = 'allow';
+      if (res.sentiment === 'negative' || res.sentiment === 'spam') actionType = 'delete';
+      if (res.sentiment === 'neutral_inquiry') actionType = 'reply';
 
-      if (hasSpam) {
-        setSimulatorResult({
-          sentiment: 'spam',
-          confidence: 99.4,
-          decision: '🚫 تم تصنيف التعليق كـ (سبام/إعلانات). سيتم حذفه وحظر المعرف تلقائياً.',
-          actionType: 'delete',
-        });
-      } else if (hasNegative) {
-        setSimulatorResult({
-          sentiment: 'negative',
-          confidence: 97.8,
-          decision: '🤖❌ تم رصد نبرة سلبية ومسيئة! سيتم حذف التعليق فوراً من فيسبوك وإنستغرام وإرسال اعتذار خاص للعميل.',
-          actionType: 'delete',
-        });
-      } else if (hasInquiry) {
-        setSimulatorResult({
-          sentiment: 'neutral_inquiry',
-          confidence: 96.2,
-          decision: '⚡💬 تم تصنيف التعليق كـ (استفسار شراء). سيتم نشر رد عام وإرسال رسالة تفاصيل في المسنجر/الدايركت تلقائياً.',
-          actionType: 'reply',
-        });
-      } else {
-        setSimulatorResult({
-          sentiment: 'positive',
-          confidence: 98.1,
-          decision: '🟢 تعليق إيجابي وداعم. سيتم إبقاؤه منشورا على الصفحة لتعزيز التفاعل والمصداقية.',
-          actionType: 'allow',
-        });
-      }
+      setSimulatorResult({
+        sentiment: res.sentiment,
+        confidence: res.sentiment_score,
+        decision: `${res.matched_action}: ${res.decision_reason}`,
+        actionType: actionType,
+      });
+    } catch (e) {
+      triggerNotification('حدث خطأ في محاكاة الفحص');
+    } finally {
       setIsSimulating(false);
-    }, 450);
+    }
   };
 
   // Add Negative Keyword
   const handleAddNegativeKeyword = () => {
     const trimmed = newNegativeKeyword.trim();
-    if (trimmed && !settings.negativeKeywords.includes(trimmed)) {
+    if (trimmed && !settings.negative_keywords.includes(trimmed)) {
       setSettings({
         ...settings,
-        negativeKeywords: [...settings.negativeKeywords, trimmed],
+        negative_keywords: [...settings.negative_keywords, trimmed],
       });
       setNewNegativeKeyword('');
     }
@@ -356,35 +289,18 @@ export const SocialCommentsManager: React.FC = () => {
   const handleRemoveNegativeKeyword = (kw: string) => {
     setSettings({
       ...settings,
-      negativeKeywords: settings.negativeKeywords.filter((k) => k !== kw),
+      negative_keywords: settings.negative_keywords.filter((k) => k !== kw),
     });
   };
 
-  // Filtered comments
-  const filteredComments = comments.filter((c) => {
-    if (platformFilter !== 'all' && c.platform !== platformFilter) return false;
-    if (sentimentFilter !== 'all' && c.sentiment !== sentimentFilter) return false;
-    if (statusFilter !== 'all' && c.moderationStatus !== statusFilter) return false;
-    if (selectedPostId !== 'all' && c.postId !== selectedPostId) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        c.commentText.toLowerCase().includes(q) ||
-        c.authorName.toLowerCase().includes(q) ||
-        c.postTitle.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
-
-  // Dynamic KPI Stats
-  const totalCommentsCount = comments.length;
-  const autoDeletedCount = comments.filter(
-    (c) => c.moderationStatus === 'auto_deleted' || c.moderationStatus === 'auto_hidden'
-  ).length;
-  const autoRepliedCount = comments.filter((c) => c.moderationStatus === 'replied').length;
-  const positiveCount = comments.filter((c) => c.sentiment === 'positive').length;
-  const sentimentScore = Math.round(((positiveCount + autoRepliedCount) / totalCommentsCount) * 100) || 94;
+  const formatRelativeTime = (isoString?: string) => {
+    if (!isoString) return 'الآن';
+    const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+    if (diff < 60) return 'منذ لحظات';
+    if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
+    if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`;
+    return `منذ ${Math.floor(diff / 86400)} يوم`;
+  };
 
   return (
     <div className="flex-1 bg-slate-50/50 p-6 overflow-y-auto" dir="rtl">
@@ -409,7 +325,7 @@ export const SocialCommentsManager: React.FC = () => {
                   إدارة التعليقات والأتمتة الذكية (AI Auto-Moderation)
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]/20">
-                  Meta Graph v20.0
+                  Meta Graph v20.0 (Live API)
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
@@ -419,6 +335,16 @@ export const SocialCommentsManager: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Refresh Button */}
+            <button
+              onClick={fetchCommentsData}
+              disabled={isLoading}
+              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition"
+              title="تحديث البيانات"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#1A73E8]' : ''}`} />
+            </button>
+
             {/* AI Sandbox Simulator Trigger */}
             <button
               onClick={() => setIsSimulatorModalOpen(true)}
@@ -430,11 +356,14 @@ export const SocialCommentsManager: React.FC = () => {
 
             {/* AI Audit Logs Modal Trigger */}
             <button
-              onClick={() => setIsLogsModalOpen(true)}
+              onClick={() => {
+                fetchLogs();
+                setIsLogsModalOpen(true);
+              }}
               className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60"
             >
               <Activity className="w-4 h-4 text-slate-600" />
-              <span>سجل العمليات ({autoDeletedCount + autoRepliedCount})</span>
+              <span>سجل العمليات ({stats.auto_deleted_or_hidden + stats.auto_replied_dms})</span>
             </button>
 
             {/* AI Moderation Settings Modal Trigger */}
@@ -448,63 +377,52 @@ export const SocialCommentsManager: React.FC = () => {
           </div>
         </div>
 
-        {/* AI Auto-Protection Engine Status Banner */}
+        {/* Global Protection Banner Switch */}
         <div
-          className={`p-4 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-            isAiAutoModerationActive
-              ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent border-emerald-300/80'
-              : 'bg-amber-50 border-amber-200'
+          className={`p-5 rounded-3xl border transition flex flex-col sm:flex-row items-center justify-between gap-4 ${
+            settings.auto_delete_negative
+              ? 'bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/50 border-emerald-200/80 text-emerald-950'
+              : 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200 text-amber-950'
           }`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3.5">
             <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                isAiAutoModerationActive
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
-                  : 'bg-amber-500 text-white'
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                settings.auto_delete_negative ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
               }`}
             >
-              {isAiAutoModerationActive ? <ShieldCheck className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
+              {settings.auto_delete_negative ? (
+                <ShieldCheck className="w-6 h-6" />
+              ) : (
+                <ShieldAlert className="w-6 h-6" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="text-xs font-bold text-slate-900">
-                  {isAiAutoModerationActive
-                    ? 'الحذف التلقائي للتعليقات السلبية بالـ AI: مـفـعّـل ونشط 🛡️'
-                    : 'الحذف التلقائي بالـ AI: متوقف مؤقتاً ⚠️'}
-                </h4>
-                {isAiAutoModerationActive && (
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                  </span>
-                )}
+                <h3 className="text-sm font-black">
+                  {settings.auto_delete_negative
+                    ? 'الحذف التلقائي للتعليقات السلبية بالـ AI: مُفعّل ونشط 🛡️'
+                    : 'الحذف التلقائي متوقف مؤقتاً (وضع المراقبة فقط) ⚠️'}
+                </h3>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                {isAiAutoModerationActive
-                  ? 'يتم فحص التعليقات فور وصولها من فيسبوك وإنستغرام؛ تُحذف الشتائم والتعليقات السلبية فورياً، وتُرسل تفاصيل الأسعار في الخاص تلقائياً.'
-                  : 'تنبيه: تم تعطيل الحذف التلقائي، ستبقى كافة التعليقات السلبية معروضة للجمهور حتى يتم حذفها يدوياً.'}
+              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                {settings.auto_delete_negative
+                  ? 'يتم فحص التعليقات فور وصولها من فيسبوك وإنستغرام، حذف الشتائم والتعليقات السلبية فورياً، وإرسال تفاصيل الأسعار في الخاص تلقائياً.'
+                  : 'لن يتم حذف أي تعليق تلقائياً حتى تعيد تفعيل الحماية الفورية.'}
               </p>
             </div>
           </div>
 
           <button
-            onClick={() => {
-              const nextState = !isAiAutoModerationActive;
-              setIsAiAutoModerationActive(nextState);
-              triggerNotification(
-                nextState
-                  ? 'تم تفعيل الحذف التلقائي للتعليقات السلبية بالـ AI بنجاح 🛡️'
-                  : 'تم إيقاف الأتمتة مؤقتاً ⚠️'
-              );
-            }}
+            onClick={handleToggleAiModeration}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
-              isAiAutoModerationActive
+              settings.auto_delete_negative
                 ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
             }`}
           >
-            {isAiAutoModerationActive ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
+            {settings.auto_delete_negative ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
           </button>
         </div>
 
@@ -514,7 +432,7 @@ export const SocialCommentsManager: React.FC = () => {
             <div>
               <p className="text-xs font-semibold text-slate-500">إجمالي التعليقات الواردة</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black text-slate-900">{totalCommentsCount}</h3>
+                <h3 className="text-2xl font-black text-slate-900">{stats.total_comments}</h3>
                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
                   +18% اليوم
                 </span>
@@ -529,7 +447,7 @@ export const SocialCommentsManager: React.FC = () => {
             <div>
               <p className="text-xs font-semibold text-slate-500">حُذفت / أُخفيت بالـ AI</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black text-rose-600">{autoDeletedCount}</h3>
+                <h3 className="text-2xl font-black text-rose-600">{stats.auto_deleted_or_hidden}</h3>
                 <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">
                   حماية السمعة 🛡️
                 </span>
@@ -544,7 +462,7 @@ export const SocialCommentsManager: React.FC = () => {
             <div>
               <p className="text-xs font-semibold text-slate-500">ردود تلقائية بالخاص</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black text-indigo-600">{autoRepliedCount}</h3>
+                <h3 className="text-2xl font-black text-indigo-600">{stats.auto_replied_dms}</h3>
                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md">
                   استفسار سعر ⚡
                 </span>
@@ -559,7 +477,7 @@ export const SocialCommentsManager: React.FC = () => {
             <div>
               <p className="text-xs font-semibold text-slate-500">مؤشر الرضا الإيجابي</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black text-emerald-600">{sentimentScore}%</h3>
+                <h3 className="text-2xl font-black text-emerald-600">{stats.positive_rate}%</h3>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md">
                   ممتاز ✨
                 </span>
@@ -594,12 +512,27 @@ export const SocialCommentsManager: React.FC = () => {
               )}
             </div>
 
+            {/* Brand Dropdown */}
+            <div className="w-full md:w-48 shrink-0">
+              <select
+                value={selectedBrand}
+                onChange={(e) => setSelectedBrand(e.target.value)}
+                className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+              >
+                {MOCK_BRANDS.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Post Selector Dropdown */}
             <div className="w-full md:w-64 shrink-0">
               <select
                 value={selectedPostId}
                 onChange={(e) => setSelectedPostId(e.target.value)}
-                className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 cursor-pointer"
+                className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 truncate"
               >
                 {MOCK_POSTS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -610,25 +543,25 @@ export const SocialCommentsManager: React.FC = () => {
             </div>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
-            <span className="text-[11px] font-bold text-slate-400 ml-1">تصفية سريعة:</span>
+          {/* Quick Filter Badges */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+            <span className="text-[11px] font-bold text-slate-400 ml-2">تصفية سريعة:</span>
 
-            {/* Platform Filter */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl">
+            {/* Platform Filters */}
+            <div className="flex items-center gap-1 bg-slate-100/80 p-0.5 rounded-xl">
               <button
                 onClick={() => setPlatformFilter('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
-                  platformFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                  platformFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
                 }`}
               >
                 الكل
               </button>
               <button
                 onClick={() => setPlatformFilter('facebook')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
                   platformFilter === 'facebook'
-                    ? 'bg-blue-600 text-white shadow-2xs'
+                    ? 'bg-[#1877F2] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -636,9 +569,9 @@ export const SocialCommentsManager: React.FC = () => {
               </button>
               <button
                 onClick={() => setPlatformFilter('instagram')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
                   platformFilter === 'instagram'
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-2xs'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -646,214 +579,218 @@ export const SocialCommentsManager: React.FC = () => {
               </button>
             </div>
 
-            {/* Sentiment Filter */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl">
-              <button
-                onClick={() => setSentimentFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  sentimentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                كل المشاعر
-              </button>
-              <button
-                onClick={() => setSentimentFilter('positive')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  sentimentFilter === 'positive' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                🟢 إيجابي
-              </button>
-              <button
-                onClick={() => setSentimentFilter('neutral_inquiry')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  sentimentFilter === 'neutral_inquiry' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                💬 استفسار/سعر
-              </button>
-              <button
-                onClick={() => setSentimentFilter('negative')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  sentimentFilter === 'negative' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                ❌ سلبي (محذوف)
-              </button>
-              <button
-                onClick={() => setSentimentFilter('spam')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  sentimentFilter === 'spam' ? 'bg-purple-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                🚫 سبام/مخالف
-              </button>
-            </div>
+            <div className="h-4 w-px bg-slate-200 mx-1" />
 
-            {/* Status Filter */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                الحالة: الكل
-              </button>
-              <button
-                onClick={() => setStatusFilter('auto_deleted')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  statusFilter === 'auto_deleted' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                محذوف بالـ AI 🤖
-              </button>
-              <button
-                onClick={() => setStatusFilter('replied')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                  statusFilter === 'replied' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600'
-                }`}
-              >
-                تم الرد
-              </button>
-            </div>
+            {/* Sentiment Filters */}
+            <button
+              onClick={() => setSentimentFilter('all')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                sentimentFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              كل المشاعر
+            </button>
+            <button
+              onClick={() => setSentimentFilter('positive')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                sentimentFilter === 'positive'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              <span>🟢 إيجابي</span>
+            </button>
+            <button
+              onClick={() => setSentimentFilter('neutral_inquiry')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                sentimentFilter === 'neutral_inquiry'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              <span>💬 استفسار/سعر</span>
+            </button>
+            <button
+              onClick={() => setSentimentFilter('negative')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                sentimentFilter === 'negative'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+              }`}
+            >
+              <span>❌ سلبي (محذوف)</span>
+            </button>
+            <button
+              onClick={() => setSentimentFilter('spam')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                sentimentFilter === 'spam'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+              }`}
+            >
+              <span>🚫 سبام/مخالف</span>
+            </button>
+
+            <div className="h-4 w-px bg-slate-200 mx-1" />
+
+            {/* Moderation Status Filters */}
+            <span className="text-[11px] font-bold text-slate-400">الحالة:</span>
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                statusFilter === 'all' ? 'text-slate-900 underline' : 'text-slate-500'
+              }`}
+            >
+              الكل
+            </button>
+            <button
+              onClick={() => setStatusFilter('auto_deleted')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                statusFilter === 'auto_deleted' ? 'text-rose-600 underline' : 'text-slate-500'
+              }`}
+            >
+              محذوف بالـ AI 🤖
+            </button>
+            <button
+              onClick={() => setStatusFilter('replied')}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                statusFilter === 'replied' ? 'text-indigo-600 underline' : 'text-slate-500'
+              }`}
+            >
+              تم الرد
+            </button>
           </div>
         </div>
 
-        {/* Comments Feed List */}
+        {/* Comments Stream Feed List */}
         <div className="space-y-3.5">
-          {filteredComments.length === 0 ? (
-            <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                <MessageSquare className="w-6 h-6" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-800">لا توجد تعليقات تطابق الفلاتر المحددة</h3>
-              <p className="text-xs text-slate-500">جرب تغيير الفلاتر أو مسح كلمة البحث لرؤية التعليقات</p>
+          {isLoading ? (
+            <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-3">
+              <Loader2 className="w-8 h-8 text-[#1A73E8] animate-spin mx-auto" />
+              <p className="text-xs font-bold text-slate-600">جاري تحميل التعليقات الحية من قاعدة البيانات...</p>
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-3">
+              <MessageSquare className="w-12 h-12 text-slate-300 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-700">لا توجد تعليقات تطابق الفلاتر المحددة</h3>
+              <p className="text-xs text-slate-400">جرب تغيير معايير البحث أو اختيار منصة أخرى</p>
             </div>
           ) : (
-            filteredComments.map((comment) => {
-              const isNegative = comment.sentiment === 'negative';
-              const isSpam = comment.sentiment === 'spam';
-              const isDeleted = comment.moderationStatus === 'auto_deleted';
-              const isHidden = comment.moderationStatus === 'auto_hidden';
+            comments.map((comment) => {
+              const isNegativeOrSpam =
+                comment.sentiment === 'negative' || comment.sentiment === 'spam';
+              const isAutoDeletedOrHidden =
+                comment.moderation_status === 'auto_deleted' ||
+                comment.moderation_status === 'auto_hidden';
 
               return (
                 <div
                   key={comment.id}
-                  className={`bg-white rounded-2xl border p-5 shadow-xs transition duration-150 space-y-3.5 ${
-                    isDeleted
+                  className={`bg-white rounded-3xl border p-5 transition hover:shadow-md relative overflow-hidden ${
+                    comment.moderation_status === 'auto_deleted'
                       ? 'border-rose-200 bg-rose-50/20'
-                      : isHidden
-                      ? 'border-amber-200 bg-amber-50/20'
-                      : 'border-slate-200 hover:border-blue-300'
+                      : comment.moderation_status === 'auto_hidden'
+                      ? 'border-purple-200 bg-purple-50/20'
+                      : comment.moderation_status === 'replied'
+                      ? 'border-blue-200'
+                      : 'border-slate-200/80'
                   }`}
                 >
-                  {/* Top Bar: Author, Platform, Post Title & Date */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  {/* Top Bar: Author & Post Metadata */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-3">
-                      {/* Author Avatar */}
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-200 to-slate-300 text-slate-700 flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
-                        {comment.authorName.substring(0, 2)}
+                      <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-300 flex items-center justify-center font-black text-slate-700 text-xs shadow-2xs">
+                        {comment.author_name.slice(0, 2)}
                       </div>
-
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold text-slate-900">{comment.authorName}</h4>
-
-                          {/* Platform Badge */}
-                          {comment.platform === 'facebook' ? (
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 flex items-center gap-1">
-                              <span>فيسبوك</span>
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 text-[10px] font-bold rounded-md border border-pink-200 flex items-center gap-1">
-                              <span>إنستغرام</span>
-                            </span>
-                          )}
-
-                          <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                          <h4 className="text-xs font-black text-slate-900">{comment.author_name}</h4>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1 ${
+                              comment.platform === 'facebook'
+                                ? 'bg-blue-100 text-[#1877F2]'
+                                : 'bg-pink-100 text-pink-700'
+                            }`}
+                          >
+                            {comment.platform === 'facebook' ? 'فيسبوك' : 'إنستغرام'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {comment.createdAt}
+                            {formatRelativeTime(comment.created_at)}
                           </span>
                         </div>
-
-                        {/* Post Link Snippet */}
-                        <p className="text-[11px] text-slate-500 font-medium truncate max-w-md mt-0.5">
-                          📌 {comment.postTitle}
+                        <p className="text-[11px] text-slate-500 font-medium mt-0.5 truncate max-w-md flex items-center gap-1">
+                          <span className="text-slate-400 font-bold">📌</span> {comment.post_title}
                         </p>
                       </div>
                     </div>
 
-                    {/* AI Sentiment & Status Badges */}
-                    <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-                      {/* Sentiment Badge */}
-                      {comment.sentiment === 'positive' && (
-                        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center gap-1">
-                          <span>🟢 إيجابي ({comment.sentimentScore}%)</span>
-                        </span>
-                      )}
-                      {comment.sentiment === 'neutral_inquiry' && (
-                        <span className="px-2.5 py-1 bg-blue-50 text-[#1A73E8] text-[11px] font-bold rounded-xl border border-blue-200 flex items-center gap-1">
-                          <span>💬 استفسار سعر ({comment.sentimentScore}%)</span>
-                        </span>
-                      )}
+                    {/* Sentiment & Status Badges */}
+                    <div className="flex items-center gap-2">
                       {comment.sentiment === 'negative' && (
-                        <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-[11px] font-bold rounded-xl border border-rose-200 flex items-center gap-1">
-                          <span>❌ سلبي / هجوم ({comment.sentimentScore}%)</span>
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1">
+                          <span>❌ سلبي / هجوم ({comment.sentiment_score}%)</span>
                         </span>
                       )}
                       {comment.sentiment === 'spam' && (
-                        <span className="px-2.5 py-1 bg-purple-50 text-purple-700 text-[11px] font-bold rounded-xl border border-purple-200 flex items-center gap-1">
-                          <span>🚫 سبام/مخالف ({comment.sentimentScore}%)</span>
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-purple-100 text-purple-700 border border-purple-200">
+                          🚫 سبام / روابط مشبوهة
+                        </span>
+                      )}
+                      {comment.sentiment === 'neutral_inquiry' && (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-blue-100 text-blue-700 border border-blue-200">
+                          💬 استفسار سعر ({comment.sentiment_score}%)
+                        </span>
+                      )}
+                      {comment.sentiment === 'positive' && (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          🟢 إيجابي ({comment.sentiment_score}%)
                         </span>
                       )}
 
-                      {/* Moderation Status */}
-                      {isDeleted && (
-                        <span className="px-2.5 py-1 bg-rose-600 text-white text-[10px] font-black rounded-xl shadow-2xs flex items-center gap-1">
-                          <Bot className="w-3 h-3" />
+                      {/* Moderation Status Pill */}
+                      {comment.moderation_status === 'auto_deleted' && (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-rose-600 text-white shadow-2xs flex items-center gap-1">
+                          <Trash2 className="w-3 h-3" />
                           <span>تم الحذف بالـ AI</span>
                         </span>
                       )}
-                      {isHidden && (
-                        <span className="px-2.5 py-1 bg-amber-500 text-white text-[10px] font-black rounded-xl shadow-2xs flex items-center gap-1">
+                      {comment.moderation_status === 'auto_hidden' && (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-purple-600 text-white shadow-2xs flex items-center gap-1">
                           <EyeOff className="w-3 h-3" />
-                          <span>مخفي عن الجمهور</span>
+                          <span>مُخفى عن الجمهور</span>
                         </span>
                       )}
-                      {comment.moderationStatus === 'replied' && (
-                        <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-xl border border-indigo-200 flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          <span>تم الرد</span>
+                      {comment.moderation_status === 'replied' && (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          تم الرد
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Comment Body */}
-                  <div
-                    className={`p-3.5 rounded-xl border text-xs font-semibold leading-relaxed ${
-                      isDeleted
-                        ? 'bg-rose-50/60 border-rose-200 text-slate-800 line-through opacity-80'
-                        : isHidden
-                        ? 'bg-amber-50/50 border-amber-200 text-slate-800'
-                        : 'bg-slate-50 border-slate-100 text-slate-800'
-                    }`}
-                  >
-                    "{comment.commentText}"
+                  {/* Comment Body Text */}
+                  <div className="py-3">
+                    <p
+                      className={`text-xs font-semibold leading-relaxed ${
+                        isAutoDeletedOrHidden ? 'text-slate-600 italic line-through' : 'text-slate-900'
+                      }`}
+                    >
+                      "{comment.comment_text}"
+                    </p>
                   </div>
 
-                  {/* AI Action Explanation Notice */}
-                  {comment.aiActionReason && (
-                    <div className="p-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-medium flex items-center justify-between gap-2 shadow-xs">
+                  {/* AI Auto-Action Banner or Reply Message */}
+                  {comment.ai_action_reason && (
+                    <div className="mb-3 p-3 bg-slate-900 text-white rounded-2xl text-[11px] font-bold flex items-center justify-between border border-slate-800">
                       <div className="flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>{comment.aiActionReason}</span>
+                        <Bot className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span className="text-slate-200">{comment.ai_action_reason}</span>
                       </div>
-                      {isDeleted && (
+                      {isAutoDeletedOrHidden && (
                         <button
                           onClick={() => handleRestoreComment(comment.id)}
-                          className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold underline shrink-0"
+                          className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-extrabold transition"
                         >
                           استعادة التعليق وإظهاره
                         </button>
@@ -861,68 +798,83 @@ export const SocialCommentsManager: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Auto-Replied Message Preview */}
-                  {comment.autoRepliedText && (
-                    <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl text-xs text-indigo-900 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold text-indigo-700 flex items-center gap-1">
-                          <Bot className="w-3 h-3" />
-                          رد الصفحة التلقائي المنشور:
-                        </span>
-                        {comment.isDirectMessageSent && (
-                          <span className="text-[10px] bg-indigo-200/60 text-indigo-800 px-2 py-0.2 rounded-md font-bold">
-                            تم إرسال رسالة مسنجر خاصة ✉️
-                          </span>
-                        )}
+                  {comment.auto_replied_text && (
+                    <div className="mb-3 p-3 bg-[#E8F0FE] rounded-2xl border border-[#1A73E8]/20 space-y-1 text-xs text-slate-800">
+                      <div className="flex items-center gap-1.5 font-bold text-[#1A73E8] text-[11px]">
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>رد النظام المنشور تلقائياً:</span>
                       </div>
-                      <p className="font-medium">{comment.autoRepliedText}</p>
+                      <p className="font-medium pr-5">{comment.auto_replied_text}</p>
                     </div>
                   )}
 
-                  {/* Actions Footer */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  {/* Action Buttons Footer */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <div className="flex items-center gap-4 text-xs font-semibold text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                        {comment.likes_count} إعجاب
+                      </span>
+                      {comment.is_direct_message_sent && (
+                        <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md font-bold text-[10px] flex items-center gap-1">
+                          <Send className="w-3 h-3" />
+                          أُرسلت رسالة بالخاص (DM)
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-2">
-                      {/* Public Reply Button */}
                       <button
                         onClick={() => {
                           setReplyModalComment(comment);
-                          setReplyText('');
+                          setReplyText(
+                            settings.inquiry_reply_text.replace('أهلاً بك', `أهلاً ${comment.author_name}`)
+                          );
                         }}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
                       >
-                        <MessageSquare className="w-3.5 h-3.5 text-[#1A73E8]" />
+                        <MessageSquare className="w-3.5 h-3.5" />
                         <span>رد على التعليق</span>
                       </button>
 
-                      {/* Direct Message (DM) */}
                       <button
                         onClick={() => {
                           setReplyModalComment(comment);
-                          setReplyText(settings.inquiryDmText);
                           setReplyAsDm(true);
+                          setReplyText(
+                            settings.inquiry_dm_text.replace('يا فندم', comment.author_name)
+                          );
                         }}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1A73E8] text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-blue-200/60"
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#1A73E8] text-xs font-bold transition flex items-center gap-1.5 border border-blue-200/60"
                       >
                         <Send className="w-3.5 h-3.5" />
                         <span>رسالة خاصة (DM)</span>
                       </button>
-                    </div>
 
-                    <div className="flex items-center gap-1.5">
-                      {/* Hide/Unhide */}
                       <button
-                        onClick={() => handleToggleHide(comment.id)}
-                        className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
-                        title={isHidden ? 'إظهار التعليق للجمهور' : 'إخفاء التعليق عن الجمهور'}
+                        onClick={() => handleToggleHide(comment)}
+                        className={`p-1.5 rounded-xl text-xs font-bold transition ${
+                          comment.moderation_status === 'auto_hidden'
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={
+                          comment.moderation_status === 'auto_hidden'
+                            ? 'إظهار التعليق للعامة'
+                            : 'إخفاء التعليق عن الجمهور'
+                        }
                       >
-                        {isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        {comment.moderation_status === 'auto_hidden' ? (
+                          <Eye className="w-4 h-4" />
+                        ) : (
+                          <EyeOff className="w-4 h-4" />
+                        )}
                       </button>
 
-                      {/* Delete */}
-                      {!isDeleted && (
+                      {comment.moderation_status !== 'auto_deleted' && (
                         <button
                           onClick={() => handleDeleteComment(comment.id)}
-                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition text-xs"
                           title="حذف التعليق نهائياً"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -942,45 +894,38 @@ export const SocialCommentsManager: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-[#1A73E8] text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
-                  <Bot className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    إعدادات أتمتة وحذف التعليقات السلبية بالـ AI
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    تخصيص قواعد الحذف التلقائي، الكلمات المحظورة، والردود الذكية الفورية
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-[#1A73E8]" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  إعدادات أتمتة التعليقات وقواعد الذكاء الاصطناعي
+                </h3>
               </div>
               <button
                 onClick={() => setIsSettingsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-4">
-              {/* Toggles Group */}
-              <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+              {/* Switches Container */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-slate-900">
-                      الحذف التلقائي للتعليقات السلبية والشتائم بالـ AI
+                      الحذف التلقائي الفوري للتعليقات المسيئة والسامة (Auto-Delete)
                     </h4>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      فحص فوري باستخدام الذكاء الاصطناعي لحذف التعليقات المسيئة فور كتابتها
+                      حذف أي تعليق يتضمن شتائم، اتهامات بالنصب، أو إساءة فور نشره
                     </p>
                   </div>
                   <button
                     onClick={() =>
-                      setSettings({ ...settings, autoDeleteNegative: !settings.autoDeleteNegative })
+                      setSettings({ ...settings, auto_delete_negative: !settings.auto_delete_negative })
                     }
                     className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      settings.autoDeleteNegative ? 'bg-rose-600 justify-end' : 'bg-slate-300 justify-start'
+                      settings.auto_delete_negative ? 'bg-rose-600 justify-end' : 'bg-slate-300 justify-start'
                     }`}
                   >
                     <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
@@ -997,9 +942,9 @@ export const SocialCommentsManager: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => setSettings({ ...settings, autoHideSpam: !settings.autoHideSpam })}
+                    onClick={() => setSettings({ ...settings, auto_hide_spam: !settings.auto_hide_spam })}
                     className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      settings.autoHideSpam ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
+                      settings.auto_hide_spam ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
                     }`}
                   >
                     <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
@@ -1017,10 +962,10 @@ export const SocialCommentsManager: React.FC = () => {
                   </div>
                   <button
                     onClick={() =>
-                      setSettings({ ...settings, autoReplyInquiries: !settings.autoReplyInquiries })
+                      setSettings({ ...settings, auto_reply_inquiries: !settings.auto_reply_inquiries })
                     }
                     className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      settings.autoReplyInquiries ? 'bg-[#1A73E8] justify-end' : 'bg-slate-300 justify-start'
+                      settings.auto_reply_inquiries ? 'bg-[#1A73E8] justify-end' : 'bg-slate-300 justify-start'
                     }`}
                   >
                     <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
@@ -1035,8 +980,8 @@ export const SocialCommentsManager: React.FC = () => {
                     درجة حساسية فحص المشاعر (AI Strictness):
                   </label>
                   <select
-                    value={settings.strictnessLevel}
-                    onChange={(e) => setSettings({ ...settings, strictnessLevel: e.target.value as any })}
+                    value={settings.strictness_level}
+                    onChange={(e) => setSettings({ ...settings, strictness_level: e.target.value as any })}
                     className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                   >
                     <option value="strict">صارم جداً (حذف فوري لأي نبرة استياء أو إساءة)</option>
@@ -1050,8 +995,8 @@ export const SocialCommentsManager: React.FC = () => {
                     الإجراء التلقائي للتعليق السلبي:
                   </label>
                   <select
-                    value={settings.actionForNegative}
-                    onChange={(e) => setSettings({ ...settings, actionForNegative: e.target.value as any })}
+                    value={settings.action_for_negative}
+                    onChange={(e) => setSettings({ ...settings, action_for_negative: e.target.value as any })}
                     className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                   >
                     <option value="delete">حذف فوري نهائي من فيسبوك وإنستغرام</option>
@@ -1090,7 +1035,7 @@ export const SocialCommentsManager: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  {settings.negativeKeywords.map((kw, i) => (
+                  {settings.negative_keywords.map((kw, i) => (
                     <span
                       key={i}
                       className="px-2.5 py-1 bg-rose-50 text-rose-800 text-xs font-bold rounded-lg border border-rose-200 flex items-center gap-1.5"
@@ -1115,8 +1060,8 @@ export const SocialCommentsManager: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={settings.inquiryReplyText}
-                  onChange={(e) => setSettings({ ...settings, inquiryReplyText: e.target.value })}
+                  value={settings.inquiry_reply_text}
+                  onChange={(e) => setSettings({ ...settings, inquiry_reply_text: e.target.value })}
                   className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                 />
               </div>
@@ -1127,8 +1072,20 @@ export const SocialCommentsManager: React.FC = () => {
                 </label>
                 <textarea
                   rows={2}
-                  value={settings.inquiryDmText}
-                  onChange={(e) => setSettings({ ...settings, inquiryDmText: e.target.value })}
+                  value={settings.inquiry_dm_text}
+                  onChange={(e) => setSettings({ ...settings, inquiry_dm_text: e.target.value })}
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  نص رسالة الاعتذار بالخاص عند رصد تعليق سلبي:
+                </label>
+                <textarea
+                  rows={2}
+                  value={settings.negative_dm_apology_text}
+                  onChange={(e) => setSettings({ ...settings, negative_dm_apology_text: e.target.value })}
                   className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
                 />
               </div>
@@ -1138,9 +1095,24 @@ export const SocialCommentsManager: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsSettingsModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold transition shadow-xs"
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
               >
-                حفظ الإعدادات والتطبيق
+                إلغاء
+              </button>
+              <button
+                type="button"
+                disabled={isSavingSettings}
+                onClick={handleSaveSettings}
+                className="px-5 py-2.5 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSavingSettings ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>جاري الحفظ...</span>
+                  </>
+                ) : (
+                  <span>حفظ الإعدادات والتطبيق على السيرفر</span>
+                )}
               </button>
             </div>
           </div>
@@ -1157,8 +1129,8 @@ export const SocialCommentsManager: React.FC = () => {
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">محاكي فحص الذكاء الاصطناعي</h3>
-                  <p className="text-[11px] text-slate-500">جرب كتابة أي تعليق لمعرفة كيف سيتعامل معه الـ AI فورياً</p>
+                  <h3 className="text-sm font-bold text-slate-900">محاكي فحص الذكاء الاصطناعي الحي</h3>
+                  <p className="text-[11px] text-slate-500">اختبر كيف يتعامل محرك AI مع أي تعليق قبل نشره</p>
                 </div>
               </div>
               <button
@@ -1171,50 +1143,39 @@ export const SocialCommentsManager: React.FC = () => {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اكتب نص التعليق للتجربة:</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  اكتب نص التعليق التجريبي:
+                </label>
                 <textarea
                   rows={3}
                   value={simulatorInput}
                   onChange={(e) => setSimulatorInput(e.target.value)}
-                  placeholder="مثال 1: المنتج بتاعكم زفت ونصابين ومحدش يشتري منكم&#10;مثال 2: بكام الفستان ده وفيه مقاس لارج؟"
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                  placeholder="مثال: المنتج خاماته سيئة جداً ومحدش يشتري منهم..."
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <span>أمثلة سريعة:</span>
-                  <button
-                    type="button"
-                    onClick={() => setSimulatorInput('الخامة وحشة جداً ونصابين')}
-                    className="text-rose-600 hover:underline font-bold"
-                  >
-                    [سلبي]
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSimulatorInput('بكام السعر وفيه شحن إسكندرية؟')}
-                    className="text-blue-600 hover:underline font-bold"
-                  >
-                    [استفسار]
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSimulatorInput('تحفة ما شاء الله شكراً ليكم')}
-                    className="text-emerald-600 hover:underline font-bold"
-                  >
-                    [إيجابي]
-                  </button>
-                </div>
-
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 font-semibold">
+                  يتم الفحص وفقاً للقواعد وقائمة الكلمات المحظورة
+                </span>
                 <button
                   type="button"
                   disabled={isSimulating || !simulatorInput.trim()}
                   onClick={handleRunSimulation}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>{isSimulating ? 'جاري الفحص...' : 'فحص بالذكاء الاصطناعي'}</span>
+                  {isSimulating ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>جاري الفحص بالـ AI...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>بدء الفحص</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -1256,9 +1217,11 @@ export const SocialCommentsManager: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    الرد على تعليق ({replyModalComment.authorName})
+                    الرد على تعليق ({replyModalComment.author_name})
                   </h3>
-                  <p className="text-[11px] text-slate-500">عبر {replyModalComment.platform === 'facebook' ? 'صفحة الفيسبوك' : 'إنستغرام'}</p>
+                  <p className="text-[11px] text-slate-500">
+                    عبر {replyModalComment.platform === 'facebook' ? 'صفحة الفيسبوك' : 'إنستغرام'}
+                  </p>
                 </div>
               </div>
               <button
@@ -1271,7 +1234,7 @@ export const SocialCommentsManager: React.FC = () => {
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700">
               <span className="text-[10px] font-bold text-slate-400 block mb-1">التعليق الأصلي:</span>
-              "{replyModalComment.commentText}"
+              "{replyModalComment.comment_text}"
             </div>
 
             <form onSubmit={handleSendReply} className="space-y-3">
@@ -1326,7 +1289,7 @@ export const SocialCommentsManager: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-900">سجل إجراءات الذكاء الاصطناعي على التعليقات</h3>
+                <h3 className="text-sm font-bold text-slate-900">سجل إجراءات الذكاء الاصطناعي على التعليقات (Audit Logs)</h3>
               </div>
               <button
                 onClick={() => setIsLogsModalOpen(false)}
@@ -1337,27 +1300,39 @@ export const SocialCommentsManager: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
-              {comments
-                .filter((c) => c.aiActionReason || c.moderationStatus === 'replied')
-                .map((c) => (
+              {logs.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p>لا توجد سجلات عمليات مسجلة بعد</p>
+                </div>
+              ) : (
+                logs.map((log) => (
                   <div
-                    key={c.id}
+                    key={log.id}
                     className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5"
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900">
-                        {c.authorName} ({c.platform.toUpperCase()})
+                        {log.comment_author || 'عميل'} — {log.performed_by}
                       </span>
                       <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded-md border">
-                        {c.createdAt}
+                        {formatRelativeTime(log.created_at)}
                       </span>
                     </div>
-                    <p className="text-slate-700 font-medium italic">"{c.commentText}"</p>
-                    <div className="pt-1 text-[11px] font-bold text-[#1A73E8]">
-                      ⚡ {c.aiActionReason || 'تم الرد التلقائي بنجاح'}
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 font-bold text-[10px]">
+                        {log.action_type}
+                      </span>
+                      {log.details?.reason && (
+                        <span className="text-slate-600 font-medium">السبب: {log.details.reason}</span>
+                      )}
+                      {log.details?.reply_text && (
+                        <span className="text-slate-600 font-medium">نص الرد: "{log.details.reply_text}"</span>
+                      )}
                     </div>
                   </div>
-                ))}
+                ))
+              )}
             </div>
           </div>
         </div>
