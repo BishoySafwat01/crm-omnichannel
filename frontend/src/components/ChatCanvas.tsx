@@ -26,6 +26,14 @@ import {
   ChevronUp,
   Ban,
   ShieldCheck,
+  Pin,
+  CornerUpLeft,
+  Video,
+  Edit2,
+  Check,
+  Loader2,
+  Image as ImageIcon,
+  Forward as ForwardIcon,
 } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -403,6 +411,7 @@ export const ChatCanvas: React.FC = () => {
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeMessages = activeConversationId ? messages[activeConversationId] || [] : [];
+  const latestPinned = React.useMemo(() => activeMessages.filter((m) => m.is_pinned && !m.is_deleted).slice(-1)[0] || null, [activeMessages]);
   const isCustomerTyping = activeConversationId ? isTyping[activeConversationId] : false;
   const presence = useCustomerPresence(
     activeConv?.last_activity_at || activeConv?.customer?.last_activity_at || activeConv?.last_customer_message_at || activeConv?.last_message_at,

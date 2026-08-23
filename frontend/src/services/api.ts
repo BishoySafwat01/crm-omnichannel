@@ -1028,6 +1028,56 @@ export const socialCommentsApi = {
   },
 };
 
+export const messageActionsApi = {
+  async editMessage(conversationId: string, messageId: string, text: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({ text }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to edit message');
+  },
 
+  async deleteMessage(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to delete message');
+  },
 
+  async toggleReaction(conversationId: string, messageId: string, emoji: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({ emoji }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to toggle reaction');
+  },
 
+  async togglePin(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/pin`, {
+      method: 'POST',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to toggle pin');
+  },
+
+  async forwardMessage(
+    sourceConversationId: string,
+    messageId: string,
+    targetConversationId: string
+  ): Promise<any> {
+    const res = await safeFetch(`/conversations/${sourceConversationId}/messages/${messageId}/forward`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({ target_conversation_id: targetConversationId }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to forward message');
+  },
+};
