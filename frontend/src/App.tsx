@@ -15,7 +15,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
 
 export const App: React.FC = () => {
-  const { fetchConversations, fetchUnreadSummary, fetchAvailableCountries, handleRealtimeEvent } = useCrmStore();
+  const { fetchConversations, fetchUnreadSummary, fetchAvailableCountries, fetchTeamMembers, handleRealtimeEvent } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
   const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
@@ -34,6 +34,7 @@ export const App: React.FC = () => {
     fetchConversations();
     fetchUnreadSummary();
     fetchAvailableCountries();
+    fetchTeamMembers();
 
     // P2-8: Fallback polling — only runs when WebSocket is NOT connected.
     // Interval is set conservatively (30s) to reduce server load.

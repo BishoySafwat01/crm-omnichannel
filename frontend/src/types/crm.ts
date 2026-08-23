@@ -190,3 +190,36 @@ export interface WebSocketEvent {
   is_typing?: boolean;
   sender_psid?: string;
 }
+
+export interface SocialComment {
+  id: string;
+  post_id: string;
+  post_title?: string | null;
+  post_url?: string | null;
+  post_thumbnail?: string | null;
+  comment_id: string;
+  author_name: string;
+  author_id: string;
+  text: string;
+  channel: string;
+  brand?: string | null;
+  sentiment: string;
+  is_hidden: boolean;
+  is_deleted: boolean;
+  auto_replied: boolean;
+  reply_text?: string | null;
+  dm_thread_id?: string | null;
+  created_at: string;
+}
+
+export interface CommentAutomationRule {
+  id: string;
+  name: string;
+  channel: string;
+  trigger_keywords: string[];
+  public_reply_text?: string | null;
+  private_dm_text?: string | null;
+  is_active: boolean;
+  auto_hide_toxic?: boolean;
+}
+

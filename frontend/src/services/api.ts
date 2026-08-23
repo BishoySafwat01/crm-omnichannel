@@ -1,4 +1,4 @@
-import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
+import { CommentAutomationRule, Conversation, Customer, Message, PaginatedResponse, SocialComment } from '../types/crm';
 
 const API_BASE = '/api/v1';
 const FALLBACK_API_BASE = 'http://localhost:8000/api/v1';
@@ -902,6 +902,101 @@ export const messageActionsApi = {
   },
 };
 
+export const commentsApi = {
+  async listComments(filters?: {
+    brand?: string;
+    channel?: string;
+    sentiment?: string;
+    status?: string;
+  }): Promise<SocialComment[]> {
+    const params = new URLSearchParams();
+    if (filters?.brand && filters.brand !== 'all') params.append('brand', filters.brand);
+    if (filters?.channel && filters.channel !== 'all') params.append('channel', filters.channel);
+    if (filters?.sentiment && filters.sentiment !== 'all') params.append('sentiment', filters.sentiment);
+    if (filters?.status && filters.status !== 'all') params.append('status', filters.status);
 
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await safeFetch(`/comments${query}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return [];
+  },
 
+  async replyToComment(
+    commentUuid: string,
+    payload: { message: string; private_dm?: boolean }
+  ): Promise<SocialComment> {
+    const res = await safeFetch(`/comments/${commentUuid}/reply`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message: payload.message, private_dm: Boolean(payload.private_dm) }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إرسال الرد على التعليق' }));
+      throw new Error(err?.detail || 'فشل إرسال الرد على التعليق');
+    }
+    return await res.json();
+  },
 
+  async toggleHideComment(commentUuid: string, is_hidden: boolean): Promise<SocialComment> {
+    const res = await safeFetch(`/comments/${commentUuid}/hide`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ is_hidden }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تعديل حالة إخفاء التعليق' }));
+      throw new Error(err?.detail || 'فشل تعديل حالة إخفاء التعليق');
+    }
+    return await res.json();
+  },
+
+  async syncComments(): Promise<any> {
+    const res = await safeFetch('/comments/sync', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return null;
+  },
+};
+
+export const commentAutomationApi = {
+  async listCommentAutomations(): Promise<CommentAutomationRule[]> {
+    const res = await safeFetch('/comments/automations', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return [];
+  },
+
+  async createCommentAutomation(rule: Partial<CommentAutomationRule>): Promise<CommentAutomationRule> {
+    const res = await safeFetch('/comments/automations', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(rule),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في حفظ قاعدة أتمتة التعليق' }));
+      throw new Error(err?.detail || 'فشل في حفظ قاعدة أتمتة التعليق');
+    }
+    return await res.json();
+  },
+
+  async deleteCommentAutomation(ruleId: string): Promise<boolean> {
+    const res = await safeFetch(`/comments/automations/${ruleId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return res ? res.ok : false;
+  },
+};

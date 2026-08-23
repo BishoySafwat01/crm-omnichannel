@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
   Bot,
@@ -30,28 +30,11 @@ import {
   ArrowRight,
   Activity,
   Check,
+  Loader2,
+  Image as ImageIcon,
 } from 'lucide-react';
-import { MOCK_BRANDS } from '../../services/api';
-
-export interface SocialComment {
-  id: string;
-  authorName: string;
-  authorAvatar?: string;
-  platform: 'facebook' | 'instagram';
-  postId: string;
-  postTitle: string;
-  postThumbnail?: string;
-  commentText: string;
-  createdAt: string;
-  sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
-  sentimentScore: number; // 0 to 100
-  moderationStatus: 'active' | 'auto_deleted' | 'auto_hidden' | 'replied' | 'flagged';
-  aiActionReason?: string;
-  autoRepliedText?: string;
-  likesCount: number;
-  repliesCount: number;
-  isDirectMessageSent?: boolean;
-}
+import { commentsApi, MOCK_BRANDS } from '../../services/api';
+import { SocialComment } from '../../types/crm';
 
 export interface ModerationRuleSettings {
   autoDeleteNegative: boolean;
@@ -66,113 +49,10 @@ export interface ModerationRuleSettings {
   negativeDmApologyText: string;
 }
 
-const INITIAL_COMMENTS: SocialComment[] = [
-  {
-    id: 'comm-101',
-    authorName: 'محمود عبد الرحمن',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'المنتج دا خامته سيئة جداً ومقلب كبير ومحدش يشتري منهم خالص نصابين!',
-    createdAt: 'منذ دقيقتين',
-    sentiment: 'negative',
-    sentimentScore: 98,
-    moderationStatus: 'auto_deleted',
-    aiActionReason: 'تم الحذف تلقائياً بواسطة AI: رصد ألفاظ سلبية واتهام بالنصب (نصابين، مقلب، سيئة جداً)',
-    likesCount: 0,
-    repliesCount: 0,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-102',
-    authorName: 'نورهان سمير',
-    platform: 'instagram',
-    postId: 'post-2',
-    postTitle: 'تشكيلة العطور الملكية الفاخرة لعام 2026 👑🌿',
-    commentText: 'بكام العطر ده وفيه شحن لمحافظة الإسكندرية ولا لأ؟',
-    createdAt: 'منذ 5 دقائق',
-    sentiment: 'neutral_inquiry',
-    sentimentScore: 95,
-    moderationStatus: 'replied',
-    aiActionReason: 'تم الرد التلقائي بواسطة AI: استفسار عن الأسعار والتوصيل',
-    autoRepliedText: 'أهلاً بكِ أستاذة نورهان! تم إرسال تفاصيل الأسعار والعروض الحالية في رسالة خاصة عبر الدايركت 💌',
-    likesCount: 2,
-    repliesCount: 1,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-103',
-    authorName: 'سارة طارق',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'الفستان وصلني تحفة بجد والخامة والمقاس مضبوطين جداً، شكراً ليكم ولدعمكم السريع ❤️',
-    createdAt: 'منذ 12 دقيقة',
-    sentiment: 'positive',
-    sentimentScore: 99,
-    moderationStatus: 'active',
-    likesCount: 8,
-    repliesCount: 1,
-  },
-  {
-    id: 'comm-104',
-    authorName: 'عمر خالد كمال',
-    platform: 'facebook',
-    postId: 'post-1',
-    postTitle: 'عرض الصيف الحصري: خصم 40% على جميع الفساتين والأزياء 👗✨',
-    commentText: 'الأسعار عندكم غالية جداً ومبالغ فيها ومفيش فرق يستاهل',
-    createdAt: 'منذ 25 دقيقة',
-    sentiment: 'negative',
-    sentimentScore: 91,
-    moderationStatus: 'auto_hidden',
-    aiActionReason: 'تم الإخفاء تلقائياً بواسطة AI: رصد نقد سلبي للأسعار وتفادي تراجع معدل التحويل',
-    likesCount: 1,
-    repliesCount: 0,
-    isDirectMessageSent: true,
-  },
-  {
-    id: 'comm-105',
-    authorName: 'خدمات تسويق وتزويد المتابعين',
-    platform: 'instagram',
-    postId: 'post-2',
-    postTitle: 'تشكيلة العطور الملكية الفاخرة لعام 2026 👑🌿',
-    commentText: 'لزيادة متابعين ولايكات حسابك وتوثيق الحساب تواصل معنا واتساب: 01098765432 أو اضغط الرابط في البايو',
-    createdAt: 'منذ 40 دقيقة',
-    sentiment: 'spam',
-    sentimentScore: 100,
-    moderationStatus: 'auto_deleted',
-    aiActionReason: 'تم الحذف تلقائياً بواسطة AI: سبام وإعلانات مزعجة وروابط وأرقام تواصل غير مصرحة',
-    likesCount: 0,
-    repliesCount: 0,
-  },
-  {
-    id: 'comm-106',
-    authorName: 'مريم عادل',
-    platform: 'instagram',
-    postId: 'post-3',
-    postTitle: 'سيروم الهيالورونيك وفيتامين C لنضارة تدوم طوال اليوم ✨',
-    commentText: 'السيروم مناسب للبشرة الدهنية والمعرضة للحبوب؟ والتفاصيل إيه؟',
-    createdAt: 'منذ ساعة',
-    sentiment: 'neutral_inquiry',
-    sentimentScore: 94,
-    moderationStatus: 'replied',
-    aiActionReason: 'تم الرد التلقائي بواسطة AI: استفسار عن نوع البشرة وطريقة الاستخدام',
-    autoRepliedText: 'أهلاً مريم! نعم مناسب جداً للبشرة الدهنية وخفيف سريع الامتصاص. تم إرسال كافة التفاصيل في الخاص 🌸',
-    likesCount: 3,
-    repliesCount: 1,
-    isDirectMessageSent: true,
-  },
-];
-
-const MOCK_POSTS = [
-  { id: 'all', title: 'جميع المنشورات والإعلانات' },
-  { id: 'post-1', title: '👗 عرض الصيف الحصري: خصم 40% على الفساتين' },
-  { id: 'post-2', title: '👑 تشكيلة العطور الملكية الفاخرة لعام 2026' },
-  { id: 'post-3', title: '✨ سيروم الهيالورونيك وفيتامين C لنضارة البشرة' },
-];
-
 export const SocialCommentsManager: React.FC = () => {
-  const [comments, setComments] = useState<SocialComment[]>(INITIAL_COMMENTS);
+  const [comments, setComments] = useState<SocialComment[]>([]);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<'all' | 'facebook' | 'instagram'>('all');
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral_inquiry' | 'negative' | 'spam'>('all');
@@ -224,75 +104,69 @@ export const SocialCommentsManager: React.FC = () => {
     }, 3500);
   };
 
+  const loadComments = async () => {
+    setIsLoadingComments(true);
+    setApiError(null);
+    try {
+      const data = await commentsApi.listComments({
+        channel: platformFilter !== 'all' ? platformFilter : undefined,
+        sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+      });
+      setComments(data || []);
+    } catch (err: any) {
+      console.warn('[SocialComments] loadComments error:', err);
+      setApiError(err?.message || 'تعذر تحميل التعليقات من الخادم');
+    } finally {
+      setIsLoadingComments(false);
+    }
+  };
+
+  useEffect(() => {
+    loadComments();
+  }, [platformFilter, sentimentFilter, statusFilter]);
+
   // Actions on comments
-  const handleDeleteComment = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              moderationStatus: 'auto_deleted',
-              aiActionReason: 'تم الحذف يدوياً بواسطة مدير النظام',
-            }
-          : c
-      )
-    );
-    triggerNotification('تم حذف التعليق بنجاح من الصفحة 🗑️');
+  const handleToggleHide = async (comment: SocialComment) => {
+    try {
+      await commentsApi.toggleHideComment(comment.id, !comment.is_hidden);
+      triggerNotification(comment.is_hidden ? 'تم إظهار التعليق للجمهور 👁️' : 'تم إخفاء التعليق عن الجمهور 🛡️');
+      loadComments();
+    } catch (err: any) {
+      triggerNotification(`فشل تعديل حالة الإخفاء: ${err?.message || 'خطأ'}`);
+    }
   };
 
-  const handleToggleHide = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) => {
-        if (c.id !== commentId) return c;
-        const nextStatus = c.moderationStatus === 'auto_hidden' ? 'active' : 'auto_hidden';
-        return {
-          ...c,
-          moderationStatus: nextStatus,
-          aiActionReason: nextStatus === 'auto_hidden' ? 'تم الإخفاء عن الجمهور' : undefined,
-        };
-      })
-    );
-    triggerNotification('تم تحديث حالة إظهار/إخفاء التعليق 🛡️');
+  const handleSyncComments = async () => {
+    try {
+      triggerNotification('جاري مزامنة التعليقات من فيسبوك وإنستغرام...');
+      await commentsApi.syncComments();
+      await loadComments();
+      triggerNotification('تمت مزامنة التعليقات بنجاح ✅');
+    } catch (err: any) {
+      triggerNotification(`فشل المزامنة: ${err?.message || 'خطأ'}`);
+    }
   };
 
-  const handleRestoreComment = (commentId: string) => {
-    setComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              moderationStatus: 'active',
-              aiActionReason: undefined,
-            }
-          : c
-      )
-    );
-    triggerNotification('تمت استعادة التعليق وإلغاء حظره ✅');
-  };
-
-  const handleSendReply = (e: React.FormEvent) => {
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyModalComment || !replyText.trim()) return;
 
     setIsSubmittingReply(true);
-    setTimeout(() => {
-      setComments((prev) =>
-        prev.map((c) =>
-          c.id === replyModalComment.id
-            ? {
-                ...c,
-                moderationStatus: 'replied',
-                autoRepliedText: replyText.trim(),
-                isDirectMessageSent: replyAsDm ? true : c.isDirectMessageSent,
-              }
-            : c
-        )
-      );
-      setIsSubmittingReply(false);
+    try {
+      await commentsApi.replyToComment(replyModalComment.id, {
+        message: replyText.trim(),
+        private_dm: replyAsDm,
+      });
+      triggerNotification('تم إرسال الرد بنجاح على المنشور 💬');
       setReplyModalComment(null);
       setReplyText('');
-      triggerNotification('تم إرسال الرد بنجاح على المنشور والخاص 💬');
-    }, 600);
+      loadComments();
+    } catch (err: any) {
+      triggerNotification(`فشل إرسال الرد: ${err?.message || 'خطأ'}`);
+    } finally {
+      setIsSubmittingReply(false);
+    }
   };
 
   // Run AI Simulation
@@ -360,31 +234,33 @@ export const SocialCommentsManager: React.FC = () => {
     });
   };
 
-  // Filtered comments
+  // Filtered comments from real data
   const filteredComments = comments.filter((c) => {
-    if (platformFilter !== 'all' && c.platform !== platformFilter) return false;
+    const channel = (c.channel || (c as any).platform || 'facebook').toLowerCase();
+    if (platformFilter !== 'all' && channel !== platformFilter.toLowerCase()) return false;
     if (sentimentFilter !== 'all' && c.sentiment !== sentimentFilter) return false;
-    if (statusFilter !== 'all' && c.moderationStatus !== statusFilter) return false;
-    if (selectedPostId !== 'all' && c.postId !== selectedPostId) return false;
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'auto_deleted' && !c.is_deleted && !c.is_hidden) return false;
+      if (statusFilter === 'replied' && !c.auto_replied && !c.reply_text) return false;
+      if (statusFilter === 'active' && (c.is_deleted || c.is_hidden)) return false;
+    }
+    if (selectedPostId !== 'all' && c.post_id !== selectedPostId && (c as any).postId !== selectedPostId) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return (
-        c.commentText.toLowerCase().includes(q) ||
-        c.authorName.toLowerCase().includes(q) ||
-        c.postTitle.toLowerCase().includes(q)
-      );
+      const text = (c.text || (c as any).commentText || '').toLowerCase();
+      const author = (c.author_name || (c as any).authorName || '').toLowerCase();
+      const postTitle = (c.post_title || (c as any).postTitle || '').toLowerCase();
+      return text.includes(q) || author.includes(q) || postTitle.includes(q);
     }
     return true;
   });
 
   // Dynamic KPI Stats
   const totalCommentsCount = comments.length;
-  const autoDeletedCount = comments.filter(
-    (c) => c.moderationStatus === 'auto_deleted' || c.moderationStatus === 'auto_hidden'
-  ).length;
-  const autoRepliedCount = comments.filter((c) => c.moderationStatus === 'replied').length;
+  const autoDeletedCount = comments.filter((c) => c.is_deleted || c.is_hidden).length;
+  const autoRepliedCount = comments.filter((c) => c.auto_replied || Boolean(c.reply_text)).length;
   const positiveCount = comments.filter((c) => c.sentiment === 'positive').length;
-  const sentimentScore = Math.round(((positiveCount + autoRepliedCount) / totalCommentsCount) * 100) || 94;
+  const sentimentScore = totalCommentsCount > 0 ? Math.round(((positiveCount + autoRepliedCount) / totalCommentsCount) * 100) : 100;
 
   return (
     <div className="flex-1 bg-slate-50/50 p-6 overflow-y-auto" dir="rtl">
@@ -601,11 +477,16 @@ export const SocialCommentsManager: React.FC = () => {
                 onChange={(e) => setSelectedPostId(e.target.value)}
                 className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 cursor-pointer"
               >
-                {MOCK_POSTS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
+                <option value="all">جميع المنشورات (All Posts)</option>
+                {Array.from(new Set(comments.map((c) => c.post_id).filter(Boolean))).map((pid) => {
+                  const comm = comments.find((c) => c.post_id === pid);
+                  const title = comm?.post_title || pid;
+                  return (
+                    <option key={pid} value={pid}>
+                      {title.length > 35 ? `${title.substring(0, 35)}...` : title}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -720,22 +601,45 @@ export const SocialCommentsManager: React.FC = () => {
           </div>
         </div>
 
-        {/* Comments Feed List */}
+        {/* Comments Feed List (Task 5) */}
         <div className="space-y-3.5">
-          {filteredComments.length === 0 ? (
+          {isLoadingComments ? (
+            <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
+              <Loader2 className="w-8 h-8 text-[#1A73E8] animate-spin mx-auto" />
+              <h3 className="text-sm font-bold text-slate-800">جاري تحميل التعليقات من الخادم...</h3>
+            </div>
+          ) : apiError ? (
+            <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl flex items-center justify-between text-rose-900 text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>{apiError}</span>
+              </div>
+              <button
+                onClick={loadComments}
+                className="px-3 py-1 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          ) : filteredComments.length === 0 ? (
             <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
                 <MessageSquare className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-bold text-slate-800">لا توجد تعليقات تطابق الفلاتر المحددة</h3>
-              <p className="text-xs text-slate-500">جرب تغيير الفلاتر أو مسح كلمة البحث لرؤية التعليقات</p>
+              <h3 className="text-sm font-bold text-slate-800">لا توجد تعليقات واردة من قنوات التواصل الاجتماعي</h3>
+              <p className="text-xs text-slate-500">انقر زر مزامنة Meta لجلب أحدث التعليقات</p>
             </div>
           ) : (
             filteredComments.map((comment) => {
-              const isNegative = comment.sentiment === 'negative';
-              const isSpam = comment.sentiment === 'spam';
-              const isDeleted = comment.moderationStatus === 'auto_deleted';
-              const isHidden = comment.moderationStatus === 'auto_hidden';
+              const author = comment.author_name || (comment as any).authorName || 'مستخدم';
+              const text = comment.text || (comment as any).commentText || '';
+              const platform = (comment.channel || (comment as any).platform || 'facebook').toLowerCase();
+              const isHidden = Boolean(comment.is_hidden || (comment as any).moderationStatus === 'auto_hidden');
+              const isDeleted = Boolean(comment.is_deleted || (comment as any).moderationStatus === 'auto_deleted');
+              const isReplied = Boolean(comment.auto_replied || comment.reply_text || (comment as any).moderationStatus === 'replied');
+              const postTitle = comment.post_title || (comment as any).postTitle || 'منشور على وسائل التواصل الاجتماعي';
+              const postUrl = comment.post_url || (comment as any).postUrl;
+              const postThumbnail = comment.post_thumbnail || (comment as any).postThumbnail;
 
               return (
                 <div
@@ -748,20 +652,20 @@ export const SocialCommentsManager: React.FC = () => {
                       : 'border-slate-200 hover:border-blue-300'
                   }`}
                 >
-                  {/* Top Bar: Author, Platform, Post Title & Date */}
+                  {/* Top Bar: Author, Platform, Sentiment & Status */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                       {/* Author Avatar */}
                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-200 to-slate-300 text-slate-700 flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
-                        {comment.authorName.substring(0, 2)}
+                        {author.substring(0, 2)}
                       </div>
 
                       <div>
                         <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold text-slate-900">{comment.authorName}</h4>
+                          <h4 className="text-xs font-bold text-slate-900">{author}</h4>
 
                           {/* Platform Badge */}
-                          {comment.platform === 'facebook' ? (
+                          {platform === 'facebook' ? (
                             <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 flex items-center gap-1">
                               <span>فيسبوك</span>
                             </span>
@@ -773,38 +677,32 @@ export const SocialCommentsManager: React.FC = () => {
 
                           <span className="text-[11px] text-slate-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {comment.createdAt}
+                            <span>{new Date(comment.created_at || Date.now()).toLocaleDateString('ar-EG')}</span>
                           </span>
                         </div>
-
-                        {/* Post Link Snippet */}
-                        <p className="text-[11px] text-slate-500 font-medium truncate max-w-md mt-0.5">
-                          📌 {comment.postTitle}
-                        </p>
                       </div>
                     </div>
 
                     {/* AI Sentiment & Status Badges */}
                     <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-                      {/* Sentiment Badge */}
                       {comment.sentiment === 'positive' && (
                         <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center gap-1">
-                          <span>🟢 إيجابي ({comment.sentimentScore}%)</span>
+                          <span>🟢 إيجابي</span>
                         </span>
                       )}
                       {comment.sentiment === 'neutral_inquiry' && (
                         <span className="px-2.5 py-1 bg-blue-50 text-[#1A73E8] text-[11px] font-bold rounded-xl border border-blue-200 flex items-center gap-1">
-                          <span>💬 استفسار سعر ({comment.sentimentScore}%)</span>
+                          <span>💬 استفسار/سعر</span>
                         </span>
                       )}
                       {comment.sentiment === 'negative' && (
                         <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-[11px] font-bold rounded-xl border border-rose-200 flex items-center gap-1">
-                          <span>❌ سلبي / هجوم ({comment.sentimentScore}%)</span>
+                          <span>❌ سلبي</span>
                         </span>
                       )}
                       {comment.sentiment === 'spam' && (
                         <span className="px-2.5 py-1 bg-purple-50 text-purple-700 text-[11px] font-bold rounded-xl border border-purple-200 flex items-center gap-1">
-                          <span>🚫 سبام/مخالف ({comment.sentimentScore}%)</span>
+                          <span>🚫 سبام</span>
                         </span>
                       )}
 
@@ -812,16 +710,16 @@ export const SocialCommentsManager: React.FC = () => {
                       {isDeleted && (
                         <span className="px-2.5 py-1 bg-rose-600 text-white text-[10px] font-black rounded-xl shadow-2xs flex items-center gap-1">
                           <Bot className="w-3 h-3" />
-                          <span>تم الحذف بالـ AI</span>
+                          <span>محذوف</span>
                         </span>
                       )}
                       {isHidden && (
                         <span className="px-2.5 py-1 bg-amber-500 text-white text-[10px] font-black rounded-xl shadow-2xs flex items-center gap-1">
                           <EyeOff className="w-3 h-3" />
-                          <span>مخفي عن الجمهور</span>
+                          <span>مخفي</span>
                         </span>
                       )}
-                      {comment.moderationStatus === 'replied' && (
+                      {isReplied && (
                         <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-xl border border-indigo-200 flex items-center gap-1">
                           <Check className="w-3 h-3" />
                           <span>تم الرد</span>
@@ -840,42 +738,62 @@ export const SocialCommentsManager: React.FC = () => {
                         : 'bg-slate-50 border-slate-100 text-slate-800'
                     }`}
                   >
-                    "{comment.commentText}"
+                    "{text}"
                   </div>
 
-                  {/* AI Action Explanation Notice */}
-                  {comment.aiActionReason && (
-                    <div className="p-2.5 bg-slate-900 text-white rounded-xl text-[11px] font-medium flex items-center justify-between gap-2 shadow-xs">
-                      <div className="flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>{comment.aiActionReason}</span>
-                      </div>
-                      {isDeleted && (
-                        <button
-                          onClick={() => handleRestoreComment(comment.id)}
-                          className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold underline shrink-0"
-                        >
-                          استعادة التعليق وإظهاره
-                        </button>
+                  {/* Original Social Media Post Reference Card (Task 5) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/90 border border-slate-200/80 p-3 rounded-xl text-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {postThumbnail ? (
+                        <img
+                          src={postThumbnail}
+                          alt="Post thumbnail"
+                          className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-blue-50 text-[#1A73E8] border border-blue-200/60 flex items-center justify-center font-bold text-xs shrink-0">
+                          <ImageIcon className="w-5 h-5 text-blue-500" />
+                        </div>
                       )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold mb-0.5">
+                          <span>المنشور الأصلي:</span>
+                          <span className="font-mono text-slate-500">ID: {comment.post_id || (comment as any).postId}</span>
+                        </div>
+                        <p className="font-bold text-slate-800 text-xs truncate max-w-sm sm:max-w-md">
+                          {postTitle}
+                        </p>
+                      </div>
                     </div>
-                  )}
+
+                    {postUrl ? (
+                      <a
+                        href={postUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl transition shrink-0 shadow-2xs"
+                        title="فتح المنشور الأصلي في نافذة جديدة"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>رابط المنشور الأصلي ↗</span>
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 font-medium px-2 py-1 bg-slate-100 rounded-lg shrink-0">
+                        رابط المنشور غير متوفر
+                      </span>
+                    )}
+                  </div>
 
                   {/* Auto-Replied Message Preview */}
-                  {comment.autoRepliedText && (
+                  {(comment.reply_text || (comment as any).autoRepliedText) && (
                     <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl text-xs text-indigo-900 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-extrabold text-indigo-700 flex items-center gap-1">
                           <Bot className="w-3 h-3" />
-                          رد الصفحة التلقائي المنشور:
+                          رد الصفحة المنشور:
                         </span>
-                        {comment.isDirectMessageSent && (
-                          <span className="text-[10px] bg-indigo-200/60 text-indigo-800 px-2 py-0.2 rounded-md font-bold">
-                            تم إرسال رسالة مسنجر خاصة ✉️
-                          </span>
-                        )}
                       </div>
-                      <p className="font-medium">{comment.autoRepliedText}</p>
+                      <p className="font-medium">{comment.reply_text || (comment as any).autoRepliedText}</p>
                     </div>
                   )}
 
@@ -894,40 +812,27 @@ export const SocialCommentsManager: React.FC = () => {
                         <span>رد على التعليق</span>
                       </button>
 
-                      {/* Direct Message (DM) */}
+                      {/* Hide/Show Toggle */}
                       <button
-                        onClick={() => {
-                          setReplyModalComment(comment);
-                          setReplyText(settings.inquiryDmText);
-                          setReplyAsDm(true);
-                        }}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1A73E8] text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-blue-200/60"
+                        onClick={() => handleToggleHide(comment)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${
+                          isHidden
+                            ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                            : 'bg-slate-100 hover:bg-slate-200/80 text-slate-700'
+                        }`}
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>رسالة خاصة (DM)</span>
+                        {isHidden ? (
+                          <>
+                            <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>إظهار للجمهور</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                            <span>إخفاء عن الجمهور</span>
+                          </>
+                        )}
                       </button>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {/* Hide/Unhide */}
-                      <button
-                        onClick={() => handleToggleHide(comment.id)}
-                        className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
-                        title={isHidden ? 'إظهار التعليق للجمهور' : 'إخفاء التعليق عن الجمهور'}
-                      >
-                        {isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </button>
-
-                      {/* Delete */}
-                      {!isDeleted && (
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
-                          title="حذف التعليق نهائياً"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1256,9 +1161,11 @@ export const SocialCommentsManager: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    الرد على تعليق ({replyModalComment.authorName})
+                    الرد على تعليق ({replyModalComment.author_name || (replyModalComment as any).authorName || 'مستخدم'})
                   </h3>
-                  <p className="text-[11px] text-slate-500">عبر {replyModalComment.platform === 'facebook' ? 'صفحة الفيسبوك' : 'إنستغرام'}</p>
+                  <p className="text-[11px] text-slate-500">
+                    عبر {((replyModalComment.channel || (replyModalComment as any).platform) === 'facebook') ? 'صفحة الفيسبوك' : 'إنستغرام'}
+                  </p>
                 </div>
               </div>
               <button
@@ -1271,7 +1178,7 @@ export const SocialCommentsManager: React.FC = () => {
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700">
               <span className="text-[10px] font-bold text-slate-400 block mb-1">التعليق الأصلي:</span>
-              "{replyModalComment.commentText}"
+              "{replyModalComment.text || (replyModalComment as any).commentText}"
             </div>
 
             <form onSubmit={handleSendReply} className="space-y-3">
@@ -1338,7 +1245,7 @@ export const SocialCommentsManager: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
               {comments
-                .filter((c) => c.aiActionReason || c.moderationStatus === 'replied')
+                .filter((c) => c.reply_text || c.auto_replied || c.is_hidden || c.is_deleted)
                 .map((c) => (
                   <div
                     key={c.id}
@@ -1346,15 +1253,15 @@ export const SocialCommentsManager: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900">
-                        {c.authorName} ({c.platform.toUpperCase()})
+                        {c.author_name || (c as any).authorName || 'مستخدم'} ({((c.channel || (c as any).platform || 'facebook') as string).toUpperCase()})
                       </span>
                       <span className="text-[10px] text-slate-500 font-semibold bg-white px-2 py-0.5 rounded-md border">
-                        {c.createdAt}
+                        {new Date(c.created_at || Date.now()).toLocaleDateString('ar-EG')}
                       </span>
                     </div>
-                    <p className="text-slate-700 font-medium italic">"{c.commentText}"</p>
+                    <p className="text-slate-700 font-medium italic">"{c.text || (c as any).commentText}"</p>
                     <div className="pt-1 text-[11px] font-bold text-[#1A73E8]">
-                      ⚡ {c.aiActionReason || 'تم الرد التلقائي بنجاح'}
+                      ⚡ {c.reply_text ? `تم الرد: ${c.reply_text}` : c.is_hidden ? 'تم إخفاء التعليق' : 'تمت المعالجة'}
                     </div>
                   </div>
                 ))}

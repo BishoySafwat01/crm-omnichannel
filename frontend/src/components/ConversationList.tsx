@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
@@ -12,23 +12,6 @@ const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
   urgent: { label: 'عاجلة', color: 'bg-rose-50 text-rose-700 font-bold' },
 };
 
-const LOCATION_FILTERS = [
-  { id: 'ALL', label: 'الكل' },
-  { id: 'مصر', label: 'مصر 🇪🇬' },
-  { id: 'العراق', label: 'العراق 🇮🇶' },
-  { id: 'السعودية', label: 'السعودية 🇸🇦' },
-  { id: 'الإمارات', label: 'الإمارات 🇦🇪' },
-  { id: 'غير ذلك', label: 'غير ذلك' },
-];
-
-const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(str));
-
-const getAgentDisplayName = (agentId?: string) => {
-  if (!agentId) return null;
-  if (isUuid(agentId)) return 'موظف الدعم';
-  return agentId;
-};
-
 const formatRelativeTime = (isoStr: string) => {
   if (!isoStr) return '';
   const date = new Date(isoStr);
@@ -39,19 +22,37 @@ const formatRelativeTime = (isoStr: string) => {
   return date.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' });
 };
 
-const getChannelBadgeDot = (channel: string = 'messenger') => {
-  switch (channel?.toLowerCase()) {
-    case 'whatsapp':
-      return <span className="w-2.5 h-2.5 bg-emerald-500 border border-white rounded-full absolute bottom-0 right-0" title="واتساب" />;
-    case 'instagram':
-      return <span className="w-2.5 h-2.5 bg-gradient-to-tr from-fuchsia-500 to-pink-500 border border-white rounded-full absolute bottom-0 right-0" title="إنستغرام" />;
-    default:
-      return <span className="w-2.5 h-2.5 bg-blue-500 border border-white rounded-full absolute bottom-0 right-0" title="ماسنجر" />;
+export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }> = ({ channel, className = 'w-4 h-4' }) => {
+  const ch = (channel || 'messenger').toLowerCase();
+  if (ch === 'whatsapp') {
+    return (
+      <span className={`${className} bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-2xs border border-white shrink-0`} title="واتساب (WhatsApp)">
+        <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
+          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z" />
+        </svg>
+      </span>
+    );
   }
+  if (ch === 'instagram') {
+    return (
+      <span className={`${className} bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white rounded-full flex items-center justify-center shadow-2xs border border-white shrink-0`} title="إنستغرام (Instagram)">
+        <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
+          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className={`${className} bg-[#1877F2] text-white rounded-full flex items-center justify-center shadow-2xs border border-white shrink-0`} title="فيسبوك ماسنجر (Messenger)">
+      <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
+        <path d="M12 2C6.477 2 2 6.145 2 11.258C2 14.17 3.447 16.745 5.717 18.39V22L9.18 20.096C10.082 20.354 11.026 20.516 12 20.516C17.523 20.516 22 16.371 22 11.258C22 6.145 17.523 2 12 2M13.208 14.475L10.74 11.838L5.923 14.475L11.22 8.847L13.722 11.484L18.498 8.847L13.208 14.475Z" />
+      </svg>
+    </span>
+  );
 };
 
 export const ConversationList: React.FC = () => {
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
 
   const {
     conversations,
@@ -59,10 +60,16 @@ export const ConversationList: React.FC = () => {
     setActiveConversationId,
     selectedBrandId,
     selectedChannel,
+    selectedCountry,
+    selectedEmployeeId,
+    setSelectedEmployeeId,
+    availableEmployees,
+    messages,
     searchQuery,
     setSearchQuery,
     activeFilterTab,
     setActiveFilterTab,
+    unreadSummary,
     isTyping,
     isLoadingConversations,
   } = useCrmStore();
@@ -74,51 +81,32 @@ export const ConversationList: React.FC = () => {
     return 'محادثة نشطة';
   };
 
-  const renderSlaBadge = (conv: any) => {
-    if (!conv.sla_status || conv.sla_status === 'none') return null;
+  // Compile list of distinct employees available for filtering (combining store availableEmployees with conversation assignees)
+  const employeeOptions = useMemo(() => {
+    const list: { id: string; name: string; role?: string }[] = [];
+    const seen = new Set<string>();
 
-    if (conv.sla_status === 'met') {
-      return (
-        <span className="text-[9px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5">
-          <CheckCheck className="w-2.5 h-2.5 text-emerald-600" />
-          <span>SLA</span>
-        </span>
-      );
+    if (availableEmployees && Array.isArray(availableEmployees)) {
+      availableEmployees.forEach((emp) => {
+        if (emp.id && !seen.has(emp.id)) {
+          seen.add(emp.id);
+          list.push({ id: emp.id, name: emp.full_name || emp.email, role: emp.role });
+        }
+      });
     }
 
-    if (conv.sla_status === 'breached') {
-      return (
-        <span className="text-[9px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 shadow-2xs">
-          <AlertTriangle className="w-2.5 h-2.5" />
-          <span>متأخر</span>
-        </span>
-      );
-    }
-
-    if (conv.sla_status === 'pending' && conv.sla_due_at) {
-      const now = new Date().getTime();
-      const due = new Date(conv.sla_due_at).getTime();
-      const diffMins = Math.max(0, Math.ceil((due - now) / 60000));
-
-      if (diffMins <= 0) {
-        return (
-          <span className="text-[9px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 shadow-2xs">
-            <AlertTriangle className="w-2.5 h-2.5" />
-            <span>متأخر</span>
-          </span>
-        );
+    conversations.forEach((c) => {
+      if (c.assigned_agent_id && !seen.has(c.assigned_agent_id)) {
+        seen.add(c.assigned_agent_id);
+        const name = c.customer?.assigned_agent_name || c.customer?.last_agent_name || 'موظف';
+        list.push({ id: c.assigned_agent_id, name });
       }
+    });
 
-      return (
-        <span className="text-[9px] bg-amber-50 text-amber-800 px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5">
-          <Clock className="w-2.5 h-2.5 text-amber-600" />
-          <span>{diffMins} د</span>
-        </span>
-      );
-    }
+    return list;
+  }, [availableEmployees, conversations]);
 
-    return null;
-  };
+  const selectedEmployeeObj = employeeOptions.find((e) => e.id === selectedEmployeeId);
 
   const filteredConversations = useMemo(() => {
     if (!conversations || !Array.isArray(conversations)) return [];
@@ -127,10 +115,13 @@ export const ConversationList: React.FC = () => {
       // 1. Search Query Filter
       if (searchQuery && searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const name = (conv.customer_display_name || conv.customer?.display_name || '').toLowerCase();
+        const storeName = (conv.brand || conv.brand_name || '').toLowerCase();
+        const custName = (conv.customer_display_name || conv.customer?.display_name || '').toLowerCase();
         const lastMsg = (conv.last_message_text || '').toLowerCase();
         const extId = (conv.external_conversation_id || '').toLowerCase();
-        if (!name.includes(q) && !lastMsg.includes(q) && !extId.includes(q)) return false;
+        if (!storeName.includes(q) && !custName.includes(q) && !lastMsg.includes(q) && !extId.includes(q)) {
+          return false;
+        }
       }
 
       // 2. Channel Filter
@@ -139,36 +130,59 @@ export const ConversationList: React.FC = () => {
         if (convChan !== selectedChannel.toLowerCase()) return false;
       }
 
-      // 3. Status Filter
+      // 3. Status Tab Filter
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
       if (activeFilterTab === 'completed' && conv.status !== 'closed' && conv.status !== 'completed') return false;
       if (activeFilterTab === 'sla_breached' && conv.sla_status !== 'breached') return false;
 
-      // 4. Location Filter
-      if (selectedLocation && selectedLocation !== 'ALL') {
-        const loc = conv.customer?.location || 'غير ذلك';
-        if (selectedLocation === 'غير ذلك') {
-          if (loc !== 'غير ذلك' && conv.customer?.location) return false;
-        } else {
-          if (!loc.includes(selectedLocation)) return false;
+      // 4. Country / Location Filter
+      if (selectedCountry && selectedCountry !== 'all' && selectedCountry !== 'الكل') {
+        const custLoc = (conv.customer?.location || conv.customer?.country || '').toLowerCase();
+        const target = selectedCountry.toLowerCase();
+        if (target === 'غير ذلك') {
+          if (custLoc && !custLoc.includes('غير ذلك')) return false;
+        } else if (!custLoc.includes(target)) {
+          return false;
         }
       }
 
       // 5. Brand Filter
-      if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all' || selectedBrandId === 'الكل') {
-        return true;
+      if (selectedBrandId && selectedBrandId.toLowerCase() !== 'all' && selectedBrandId !== 'الكل') {
+        const convBrand = ((conv as any).brand || (conv as any).brand_name || (conv as any).brand_id || '').toLowerCase();
+        const filterBrand = selectedBrandId.toLowerCase();
+        if (convBrand && convBrand !== filterBrand && !convBrand.includes(filterBrand)) {
+          return false;
+        }
       }
 
-      const convBrand = ((conv as any).brand || (conv as any).brand_id || (conv as any).business_unit || '').toLowerCase();
-      const filterBrand = selectedBrandId.toLowerCase();
-      if (!convBrand) return true;
-      return convBrand === filterBrand || convBrand.includes(filterBrand);
-    });
-  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedLocation]);
+      // 6. Employee Filter (Task 2)
+      if (selectedEmployeeId) {
+        const convAssignedId = conv.assigned_agent_id || conv.customer?.assigned_agent_id;
+        const isAssigned = convAssignedId === selectedEmployeeId;
 
-  const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode }[] = [
+        // Check if any message in this conversation was answered by the selected employee
+        const convMsgs = messages[conv.id] || [];
+        const hasEmployeeReply = convMsgs.some(
+          (m) => m.sender_type === 'agent' && m.sender_user_id === selectedEmployeeId
+        );
+
+        if (!isAssigned && !hasEmployeeReply) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, messages]);
+
+  const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
-    { id: 'unread', label: 'غير مقروءة', icon: <Clock className="w-3.5 h-3.5" /> },
+    {
+      id: 'unread',
+      label: 'غير مقروءة',
+      icon: <Clock className="w-3.5 h-3.5" />,
+      badgeCount: unreadSummary?.total_unread > 0 ? unreadSummary.total_unread : undefined,
+    },
     { id: 'completed', label: 'المغلقة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
     { id: 'sla_breached', label: 'متأخرة', icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> },
   ];
@@ -177,19 +191,110 @@ export const ConversationList: React.FC = () => {
     <aside className="w-80 md:w-96 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-[calc(100vh-80px)] relative z-10 overflow-hidden">
       {/* Header Search & Filter Toolbar */}
       <div className="p-3 border-b border-slate-100/70 space-y-2.5">
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث في المحادثات..."
-            className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-800 text-xs rounded-full pr-9 pl-8 py-2 border border-transparent focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 transition-all font-medium placeholder-slate-400"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-          <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 cursor-pointer hover:text-[#1A73E8]" />
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1 flex items-center">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="بحث في المحادثات..."
+              className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-800 text-xs rounded-full pr-9 pl-4 py-2 border border-transparent focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 transition-all font-medium placeholder-slate-400"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 top-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Employee Filter Trigger (Task 2) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsEmployeeMenuOpen(!isEmployeeMenuOpen)}
+              className={`p-2 rounded-full border transition flex items-center gap-1 text-xs font-bold ${
+                selectedEmployeeId
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                  : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600 border-slate-200/60'
+              }`}
+              title="تصفية حسب الموظف"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {/* Employee Filter Popover Menu */}
+            {isEmployeeMenuOpen && (
+              <div className="absolute top-full left-0 mt-2 w-56 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-100 text-right">
+                <div className="px-2 py-1.5 text-[11px] font-bold text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                  <span>تصفية المحادثات بالموظف</span>
+                  <Users className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmployeeId(null);
+                    setIsEmployeeMenuOpen(false);
+                  }}
+                  className={`w-full text-right px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                    !selectedEmployeeId ? 'bg-blue-50 text-[#1A73E8]' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>كل الموظفين (All)</span>
+                  {!selectedEmployeeId && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
+                </button>
+
+                {employeeOptions.map((emp) => (
+                  <button
+                    key={emp.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedEmployeeId(emp.id);
+                      setIsEmployeeMenuOpen(false);
+                    }}
+                    className={`w-full text-right px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center justify-between ${
+                      selectedEmployeeId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="truncate">
+                      <span>{emp.name}</span>
+                      {emp.role && (
+                        <span className="text-[10px] text-slate-400 font-normal mr-1.5">({emp.role})</span>
+                      )}
+                    </div>
+                    {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Filter Tabs */}
+        {/* Active Employee Filter Pill Indicator */}
+        {selectedEmployeeObj && (
+          <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 px-3 py-1 rounded-xl text-xs text-blue-900 font-semibold animate-in fade-in duration-100">
+            <div className="flex items-center gap-1.5 truncate">
+              <User className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <span>الموظف: {selectedEmployeeObj.name}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedEmployeeId(null)}
+              className="text-blue-500 hover:text-blue-700 p-0.5 rounded-full"
+              title="إلغاء تصفية الموظف"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Filter Tabs (Task 1 Unread Badge) */}
         <div className="flex items-center gap-1 p-1 bg-slate-100/60 rounded-full border border-slate-200/50 backdrop-blur-md">
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
@@ -197,7 +302,7 @@ export const ConversationList: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveFilterTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1 px-2 text-[11px] font-medium rounded-full transition ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] font-medium rounded-full transition relative ${
                   isActive
                     ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -205,13 +310,18 @@ export const ConversationList: React.FC = () => {
               >
                 {tab.icon}
                 <span>{tab.label}</span>
+                {tab.badgeCount !== undefined && tab.badgeCount > 0 && (
+                  <span className="bg-[#1A73E8] text-white text-[9px] font-extrabold px-1.5 py-0.2 rounded-full min-w-[16px] text-center leading-none">
+                    {tab.badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Clean Minimalist Glass Conversation Cards */}
+      {/* Clean Minimalist Glass Conversation Cards (Task 6 Channel & Store UI) */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-none">
         {isLoadingConversations ? (
           <div className="p-8 text-center text-xs text-slate-400 animate-pulse font-medium">
@@ -225,6 +335,7 @@ export const ConversationList: React.FC = () => {
         ) : (
           filteredConversations.map((conv) => {
             const isActive = activeConversationId === conv.id;
+            const storeName = conv.brand || conv.brand_name || 'LUXIRA';
             const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
             const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
             const unreadCount = conv.unread_count || 0;
@@ -238,23 +349,39 @@ export const ConversationList: React.FC = () => {
               <div
                 key={conv.id}
                 onClick={() => setActiveConversationId(conv.id)}
-                className={`p-3 cursor-pointer transition-all duration-150 rounded-xl ${
+                className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
                   isActive
                     ? 'bg-[#E8F0FE] border-r-4 border-r-[#1A73E8] shadow-2xs font-medium'
                     : 'bg-transparent hover:bg-white/90'
                 }`}
               >
-                {/* 1. Top Row: Avatar with Channel Badge + Customer Name + Relative Time */}
+                {/* 1. Top Row: Avatar with overlaid Channel Badge + Store Name (Primary) + Time */}
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2.5 min-w-0">
+                    {/* Overlapping Avatar with Channel Badge Overlay (Task 6) */}
                     <div className="relative shrink-0">
                       <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-                      {getChannelBadgeDot(conv.channel)}
-                      <span className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
+                      <div className="absolute -bottom-1 -right-1 z-10">
+                        <ChannelBadgeIcon channel={conv.channel} className="w-4 h-4" />
+                      </div>
+                      <span
+                        className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`}
+                        title={presence.statusText}
+                      />
                     </div>
-                    <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-extrabold text-slate-900' : 'font-bold text-slate-800'}`}>
-                      {customerName}
-                    </h3>
+
+                    <div className="min-w-0">
+                      {/* Store Name is Primary (Task 6) */}
+                      <div className="flex items-center gap-1.5">
+                        <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'}`}>
+                          {storeName}
+                        </h3>
+                      </div>
+                      {/* Customer Name */}
+                      <p className="text-[11px] font-medium text-slate-500 truncate">
+                        {customerName}
+                      </p>
+                    </div>
                   </div>
 
                   <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0">
@@ -263,13 +390,13 @@ export const ConversationList: React.FC = () => {
                 </div>
 
                 {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
-                <div className="flex items-center justify-between gap-2 pr-11">
+                <div className="flex items-center justify-between gap-2 pr-12">
                   <p className={`text-xs truncate ${unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'}`}>
                     {getMessagePreview(conv)}
                   </p>
 
                   {unreadCount > 0 && (
-                    <span className="bg-[#1A73E8] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shrink-0 shadow-2xs">
+                    <span className="bg-[#1A73E8] text-white text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-2xs leading-none">
                       {unreadCount}
                     </span>
                   )}
@@ -298,3 +425,4 @@ export const ConversationList: React.FC = () => {
     </aside>
   );
 };
+
