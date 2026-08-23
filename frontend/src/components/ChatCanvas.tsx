@@ -40,7 +40,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
-import { aiApi } from '../services/api';
+import { aiApi, API_BASE } from '../services/api';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
 import { MessageActionsMenu } from './MessageActions/MessageActionsMenu';
 import { ForwardMessageModal } from './MessageActions/ForwardMessageModal';
@@ -181,11 +181,24 @@ interface ResolvedMedia {
 
 const getProxiedMediaUrl = (url: string | null | undefined): string => {
   if (!url) return '';
-  if (url.startsWith('/uploads/') || url.startsWith('/api') || url.startsWith('blob:') || url.startsWith('data:')) {
+  if (url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
   }
-  if (url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('cdninstagram.com')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(url)}`;
+  const rootBase = (API_BASE || '').replace(/\/api\/v1\/?$/, '');
+  if (url.startsWith('/uploads/')) {
+    return `${rootBase}${url}`;
+  }
+  if (url.startsWith('/api/')) {
+    return `${rootBase}${url}`;
+  }
+  if (
+    url.includes('fbcdn.net') ||
+    url.includes('fbsbx.com') ||
+    url.includes('facebook.com') ||
+    url.includes('cdninstagram.com') ||
+    url.includes('instagram.com')
+  ) {
+    return `${API_BASE}/media/proxy?url=${encodeURIComponent(url)}`;
   }
   return url;
 };
@@ -1170,22 +1183,12 @@ export const ChatCanvas: React.FC = () => {
                             !msg.text.startsWith('vid_') &&
                             !msg.text.startsWith('image-') &&
                             !msg.text.includes('📍') && (
-                              <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                              <p className="whitespace-pre-wrap break-words">
+                                {renderHighlightedText(msg.text, inChatSearchQuery)}
+                              </p>
                             )}
                         </>
                       )}
-
-                      {/* Regular Text Content */}
-                      {msg.text &&
-                        !msg.text.startsWith('voice_') &&
-                        !msg.text.startsWith('img_') &&
-                        !msg.text.startsWith('vid_') &&
-                        !msg.text.startsWith('image-') &&
-                        !msg.text.includes('📍') && (
-                          <p className="whitespace-pre-wrap break-words">
-                            {renderHighlightedText(msg.text, inChatSearchQuery)}
-                          </p>
-                        )}
 
                       {/* Timestamp & Double Checkmarks (✓✓) */}
                       <div
