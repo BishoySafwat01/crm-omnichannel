@@ -1017,9 +1017,17 @@ export const ChatCanvas: React.FC = () => {
           </div>
         ) : (
           (() => {
-            const sortedMessages = [...activeMessages].sort(
-              (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-            );
+            const seenMsgIds = new Set<string>();
+            const sortedMessages = [...activeMessages]
+              .filter((m) => {
+                if (!m || !m.id) return false;
+                if (seenMsgIds.has(m.id)) return false;
+                seenMsgIds.add(m.id);
+                return true;
+              })
+              .sort(
+                (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+              );
 
             return sortedMessages.map((msg, index) => {
               const media = resolveMedia(msg);
