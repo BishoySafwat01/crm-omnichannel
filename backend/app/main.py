@@ -37,6 +37,20 @@ async def lifespan(app: FastAPI):
     # Startup: ensure upload directory exists (side-effect moved from config.py)
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
+    # Security: warn loudly at startup if webhook signature secret is missing,
+    # because /api/v1/meta/webhook runs fail-closed and will reject all payloads.
+    if not (settings.META_APP_SECRET and settings.META_APP_SECRET.strip()):
+        logger.warning(
+            "[SECURITY] META_APP_SECRET is not configured — the Meta webhook endpoint "
+            "(/api/v1/meta/webhook) will REJECT all inbound payloads until it is set."
+        )
+
+    if not (settings.RESPOND_IO_WEBHOOK_SECRET and settings.RESPOND_IO_WEBHOOK_SECRET.strip()):
+        logger.warning(
+            "[SECURITY] RESPOND_IO_WEBHOOK_SECRET is not configured — the Respond.io webhook endpoint "
+            "(/api/v1/respond-io/webhook) will REJECT all inbound payloads until it is set."
+        )
+
     async def meta_sync_loop():
         await asyncio.sleep(5)
         while True:
@@ -107,6 +121,7 @@ app.include_router(admin_team_router)
 
 
 
+app.include_router(comments_router, prefix="/api/v1/comments")
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(comments_router, prefix="/api/v1")

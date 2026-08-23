@@ -122,6 +122,7 @@ class CustomerTagsRequest(BaseModel if "BaseModel" in globals() else object):
 async def update_customer_tags(
     customer_id: uuid.UUID,
     payload: dict,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update customer classification tags and attributes."""
@@ -156,7 +157,7 @@ async def update_customer_tags(
 async def update_customer(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
-    request: Request = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -290,6 +291,7 @@ async def add_customer_note(
     customer_id: uuid.UUID,
     payload: dict,
     request: Request = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Add an internal agent note for a customer."""
@@ -300,16 +302,7 @@ async def add_customer_note(
             detail="Note text is required."
         )
 
-    user_id = None
-    if request:
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            try:
-                from app.api.deps import get_current_user
-                user = await get_current_user(request=request, db=db)
-                user_id = user.id
-            except Exception:
-                pass
+    user_id = current_user.id
 
     from app.services.customer_timeline_service import CustomerTimelineService
     note = await CustomerTimelineService.add_note(
@@ -349,18 +342,11 @@ async def delete_customer_note(
     customer_id: uuid.UUID,
     note_id: uuid.UUID,
     request: Request = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an internal note."""
-    user = None
-    if request:
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            try:
-                from app.api.deps import get_current_user
-                user = await get_current_user(request=request, db=db)
-            except Exception:
-                pass
+    user = current_user
 
     from app.services.customer_timeline_service import CustomerTimelineService
     try:

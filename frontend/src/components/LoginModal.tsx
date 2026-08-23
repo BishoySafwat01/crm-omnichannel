@@ -5,8 +5,8 @@ import { useAuthStore } from '../store/useAuthStore';
 export const LoginModal: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuthStore();
 
-  const [email, setEmail] = useState('admin@luxira.com');
-  const [password, setPassword] = useState('admin123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +48,7 @@ export const LoginModal: React.FC = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@luxira.com"
+                placeholder="you@company.com"
                 className="w-full bg-slate-50 text-xs font-medium text-slate-900 pr-10 pl-4 py-3 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition"
               />
               <Mail className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
@@ -88,11 +88,6 @@ export const LoginModal: React.FC = () => {
             </button>
           </div>
         </form>
-
-        {/* Superadmin Credentials Helper Note */}
-        <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] text-slate-500 text-center">
-          بيانات المشرف الافتراضية: <span className="font-bold text-slate-700">admin@luxira.com</span> / <span className="font-bold text-slate-700">admin123456</span>
-        </div>
       </div>
     </div>
   );
