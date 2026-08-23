@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_optional_current_user
+from app.api.deps import get_current_user, get_optional_current_user, require_admin
 from app.core.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
