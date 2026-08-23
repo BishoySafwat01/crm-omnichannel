@@ -101,6 +101,7 @@ app.include_router(customers_router, prefix="/api/v1")
 app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
 app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
 app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
+app.include_router(admin_team_router, prefix="/api/v1")
 app.include_router(admin_team_router)
 
 
