@@ -1,9 +1,6 @@
 import asyncio
 import logging
-import os
-
 from sqlalchemy import select
-
 from app.core.database import AsyncSessionLocal
 from app.core.security import get_password_hash
 from app.models.enums import UserRole
@@ -12,27 +9,11 @@ from app.models.user import User
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("seed_superadmin")
 
-SEED_SUPERADMIN_EMAIL_ENV = "SEED_SUPERADMIN_EMAIL"
-SEED_SUPERADMIN_PASSWORD_ENV = "SEED_SUPERADMIN_PASSWORD"
 
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise RuntimeError(
-            f"Refusing to seed superadmin: environment variable '{name}' is not set. "
-            f"Provide credentials explicitly, e.g.:\n"
-            f"  export {name}='<value>'\n"
-            "Hardcoded default credentials are no longer supported."
-        )
-    return value
-
-
-async def seed_superadmin() -> None:
-    email = _required_env(SEED_SUPERADMIN_EMAIL_ENV)
-    password = _required_env(SEED_SUPERADMIN_PASSWORD_ENV)
-
+async def seed_superadmin():
     async with AsyncSessionLocal() as session:
+        email = "admin@luxira.com"
+        password = "admin123456"
         stmt = select(User).where(User.email == email)
         res = await session.execute(stmt)
         user = res.scalar_one_or_none()

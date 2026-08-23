@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../store/useCrmStore';
-import { useAuthStore } from '../store/useAuthStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
-  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink,
-  Ban, ShieldAlert, ShieldCheck, AlertCircle
+  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
@@ -12,13 +10,7 @@ import { UserAvatar } from './UserAvatar';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, setDraftText, isTyping, blockCustomer, unblockCustomer } = useCrmStore();
-  const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
-
-  const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
-  const [blockReason, setBlockReason] = useState('');
-  const [isBlockActionLoading, setIsBlockActionLoading] = useState(false);
+  const { conversations, activeConversationId, updateCustomerProfile, setDraftText, isTyping } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -147,39 +139,6 @@ export const CustomerProfileSidebar: React.FC = () => {
       });
     }
     setIsEditing(false);
-  };
-
-  const handleBlockCustomer = async () => {
-    if (!customer?.id) return;
-    try {
-      setIsBlockActionLoading(true);
-      await blockCustomer(customer.id, blockReason.trim() || undefined);
-      setIsBlockModalOpen(false);
-      setBlockReason('');
-      if (customer.id) {
-        await loadTimeline(customer.id);
-      }
-    } catch (err: any) {
-      alert(err?.message || 'فشل حظر العميل');
-    } finally {
-      setIsBlockActionLoading(false);
-    }
-  };
-
-  const handleUnblockCustomer = async () => {
-    if (!customer?.id) return;
-    if (!window.confirm('هل أنت متأكد من رغبتك في إلغاء حظر هذا العميل؟')) return;
-    try {
-      setIsBlockActionLoading(true);
-      await unblockCustomer(customer.id);
-      if (customer.id) {
-        await loadTimeline(customer.id);
-      }
-    } catch (err: any) {
-      alert(err?.message || 'فشل إلغاء حظر العميل');
-    } finally {
-      setIsBlockActionLoading(false);
-    }
   };
 
   const handleSelectAttribute = (key: 'skin_type' | 'tier' | 'stage', value: string) => {
@@ -345,103 +304,10 @@ export const CustomerProfileSidebar: React.FC = () => {
             </div>
           </div>
 
-          {/* Blocked Status Banner & Actions */}
-          {customer.is_blocked ? (
-            <div className="mt-2 bg-rose-50/90 border border-rose-200 rounded-xl p-2.5 space-y-2 text-xs">
-              <div className="flex items-center gap-1.5 font-extrabold text-rose-700">
-                <Ban className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>⛔ العميل محظور حالياً</span>
-              </div>
-              {customer.blocked_reason && (
-                <div className="text-[11px] text-rose-800 bg-white/80 p-2 rounded-lg border border-rose-100/80 leading-relaxed">
-                  <span className="font-bold text-rose-900 block mb-0.5">سبب الحظر:</span>
-                  {customer.blocked_reason}
-                </div>
-              )}
-              {isAdmin ? (
-                <button
-                  onClick={handleUnblockCustomer}
-                  disabled={isBlockActionLoading}
-                  className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition text-xs flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>إلغاء حظر العميل (مشرف)</span>
-                </button>
-              ) : (
-                <p className="text-[10px] text-rose-500 text-center font-medium">
-                  تم الحظر من قِبل الإدارة. للمشرفين فقط صلاحية فك الحظر.
-                </p>
-              )}
-            </div>
-          ) : (
-            isAdmin && (
-              <button
-                onClick={() => setIsBlockModalOpen(true)}
-                className="w-full mt-2 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-xs font-bold rounded-xl transition text-center flex items-center justify-center gap-1.5"
-              >
-                <Ban className="w-3.5 h-3.5 text-rose-600" />
-                <span>حظر العميل (مشرف)</span>
-              </button>
-            )
-          )}
-
-          <button className="w-full mt-1.5 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition text-center">
+          <button className="w-full mt-2 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition text-center">
             عرض الملف الشخصي الكامل
           </button>
         </div>
-
-        {/* Modal: حظر العميل (Admin Block Confirmation) */}
-        {isBlockModalOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl border border-slate-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center gap-2.5 text-rose-600 border-b border-slate-100 pb-3">
-                <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-5 h-5 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-slate-900">تأكيد حظر العميل</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">{customer.display_name}</p>
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                عند حظر هذا العميل، سيتم إيقاف إرسال واستقبال الرسائل معه وإشعار فريق العمل. لن يتمكن الموظفون من مراسلته حتى يتم فك الحظر بواسطة مشرف.
-              </p>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-700 block">سبب الحظر (اختياري):</label>
-                <textarea
-                  value={blockReason}
-                  onChange={(e) => setBlockReason(e.target.value)}
-                  placeholder="مثال: إساءة متكررة / عميل احتيالي / بناءً على طلب الإدارة..."
-                  rows={2}
-                  className="w-full text-xs rounded-xl border border-slate-200 p-2 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none resize-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => {
-                    setIsBlockModalOpen(false);
-                    setBlockReason('');
-                  }}
-                  disabled={isBlockActionLoading}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={handleBlockCustomer}
-                  disabled={isBlockActionLoading}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                  <span>{isBlockActionLoading ? 'جاري الحظر...' : 'تأكيد الحظر'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* CARD 2: تفاصيل الطلب (Order Info Glass Card) */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">

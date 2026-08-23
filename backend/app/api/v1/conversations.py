@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_optional_current_user, require_admin
+from app.api.deps import (
+    get_current_user,
+    get_optional_current_user,
+    require_conversation_access,
+    user_has_conversation_access,
+)
 from app.core.database import get_db
 from app.integrations.meta import MetaAPIError
 from app.models.conversation import Conversation
@@ -89,7 +94,6 @@ async def get_unread_summary(
 )
 async def mark_conversation_read(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Reset unread count to 0 and set last_read_at timestamp to now."""
@@ -314,7 +318,7 @@ async def send_outbound_reply(
     conversation_id: uuid.UUID,
     payload: SendMessageRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Send an outbound agent reply message to a conversation.
     Determines provider automatically from conversation metadata."""
@@ -405,7 +409,7 @@ async def send_outbound_reply(
 async def update_conversation_metadata(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -447,7 +451,7 @@ async def update_conversation_metadata(
 async def update_conversation_status(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -518,7 +522,7 @@ async def assign_conversation_agent(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Assign or unassign an agent to a conversation."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -617,7 +621,7 @@ async def assign_conversation_agent(
 async def update_conversation_priority(
     conversation_id: uuid.UUID,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -666,9 +670,7 @@ async def update_conversation_priority(
 
 
 @router.post("/sync-now", summary="Trigger Immediate Meta Graph API Sync")
-async def trigger_immediate_sync(
-    admin_user: User = Depends(require_admin),
-):
+async def trigger_immediate_sync():
     """Trigger an immediate, on-demand sync with Meta Graph API."""
     from app.services.meta_import_service import meta_import_service
     await meta_import_service.sync_live_conversations()
@@ -681,7 +683,6 @@ async def trigger_immediate_sync(
 )
 async def analyze_conversation_ai(
     conversation_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):

@@ -152,8 +152,6 @@ interface CrmState {
   setConversationPriority: (conversationId: string, priority: 'low' | 'normal' | 'high' | 'urgent') => Promise<void>;
   updateConversationBrand: (conversationId: string, brand: string) => Promise<void>;
   updateCustomerProfile: (customerId: string, payload: Partial<Customer>) => Promise<void>;
-  blockCustomer: (customerId: string, reason?: string) => Promise<void>;
-  unblockCustomer: (customerId: string) => Promise<void>;
   handleRealtimeEvent: (event: WebSocketEvent) => void;
 
   // Message Actions Handlers
@@ -1054,66 +1052,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     }
   },
 
-  blockCustomer: async (customerId, reason) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.customer_id === customerId || c.customer?.id === customerId
-          ? {
-              ...c,
-              customer: c.customer ? { ...c.customer, is_blocked: true, blocked_reason: reason } : c.customer,
-            }
-          : c
-      ),
-    }));
-
-    try {
-      await customerApi.blockCustomer(customerId, reason);
-    } catch (err: any) {
-      console.error('[Store] Block customer error:', err);
-      get().fetchConversations();
-      throw err;
-    }
-  },
-
-  unblockCustomer: async (customerId) => {
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.customer_id === customerId || c.customer?.id === customerId
-          ? {
-              ...c,
-              customer: c.customer ? { ...c.customer, is_blocked: false, blocked_reason: undefined } : c.customer,
-            }
-          : c
-      ),
-    }));
-
-    try {
-      await customerApi.unblockCustomer(customerId);
-    } catch (err: any) {
-      console.error('[Store] Unblock customer error:', err);
-      get().fetchConversations();
-      throw err;
-    }
-  },
-
   handleRealtimeEvent: (event) => {
-    if ((event as any).type === 'CUSTOMER_BLOCKED' || (event as any).type === 'CUSTOMER_UNBLOCKED') {
-      const custId = (event as any).customer_id;
-      const isBlocked = (event as any).is_blocked;
-      const reason = (event as any).blocked_reason;
-      set((state) => ({
-        conversations: state.conversations.map((c) =>
-          c.customer_id === custId || c.customer?.id === custId
-            ? {
-                ...c,
-                customer: c.customer ? { ...c.customer, is_blocked: isBlocked, blocked_reason: reason } : c.customer,
-              }
-            : c
-        ),
-      }));
-      return;
-    }
-
     if ((event as any).type === 'CONVERSATION_READ') {
       get().fetchUnreadSummary();
       return;

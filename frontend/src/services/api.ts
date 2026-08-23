@@ -1,9 +1,7 @@
 import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
 
-const metaEnv = (import.meta as any).env || {};
-const API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : '/api/v1';
-const FALLBACK_API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
-
+const API_BASE = '/api/v1';
+const FALLBACK_API_BASE = 'http://localhost:8000/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -653,32 +651,6 @@ export const customerApi = {
     });
     return res !== null && res.ok;
   },
-
-  async blockCustomer(customerId: string, reason?: string): Promise<Customer> {
-    const res = await safeFetch(`/customers/${customerId}/block`, {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ reason }),
-    });
-    if (!res || !res.ok) {
-      const err = await res?.json().catch(() => ({ detail: 'فشل حظر العميل' }));
-      throw new Error(err?.detail || 'فشل حظر العميل (يتطلب صلاحيات المشرف)');
-    }
-    return await res.json();
-  },
-
-  async unblockCustomer(customerId: string): Promise<Customer> {
-    const res = await safeFetch(`/customers/${customerId}/unblock`, {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({}),
-    });
-    if (!res || !res.ok) {
-      const err = await res?.json().catch(() => ({ detail: 'فشل إلغاء حظر العميل' }));
-      throw new Error(err?.detail || 'فشل إلغاء حظر العميل (يتطلب صلاحيات المشرف)');
-    }
-    return await res.json();
-  },
 };
 
 export interface TeamMember {
@@ -863,168 +835,70 @@ export const metaApi = {
     if (res && res.ok) return await res.json();
     throw new Error('Test ping failed');
   },
-
-  async publishPost(message: string, link?: string) {
-    const res = await safeFetch('/meta/posts', {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
-      body: JSON.stringify({ message, link }),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('فشل نشر المنشور');
-  },
 };
 
-export interface SocialCommentItem {
-  id: string;
-  brand: string;
-  platform: 'facebook' | 'instagram';
-  post_id: string;
-  post_title: string;
-  post_thumbnail?: string;
-  author_name: string;
-  author_avatar?: string;
-  comment_text: string;
-  sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
-  sentiment_score: number;
-  moderation_status: 'active' | 'auto_deleted' | 'auto_hidden' | 'replied' | 'flagged';
-  ai_action_reason?: string;
-  auto_replied_text?: string;
-  likes_count: number;
-  replies_count: number;
-  is_direct_message_sent: boolean;
-  created_at: string;
-}
-
-export interface CommentStats {
-  total_comments: number;
-  auto_deleted_or_hidden: number;
-  auto_replied_dms: number;
-  positive_rate: number;
-  active_auto_delete_enabled: boolean;
-}
-
-export interface ModerationSettings {
-  auto_delete_negative: boolean;
-  auto_hide_spam: boolean;
-  auto_reply_inquiries: boolean;
-  strictness_level: 'strict' | 'balanced' | 'relaxed';
-  action_for_negative: 'delete' | 'hide' | 'delete_and_dm';
-  negative_keywords: string[];
-  inquiry_keywords: string[];
-  inquiry_reply_text: string;
-  inquiry_dm_text: string;
-  negative_dm_apology_text: string;
-}
-
-export interface ModerationLog {
-  id: string;
-  comment_id?: string;
-  comment_author: string;
-  action_type: string;
-  performed_by: string;
-  details?: Record<string, any>;
-  created_at: string;
-}
-
-export const socialCommentsApi = {
-  async getComments(params?: {
-    brand?: string;
-    platform?: string;
-    sentiment?: string;
-    status?: string;
-    search?: string;
-    page?: number;
-    page_size?: number;
-  }): Promise<{ items: SocialCommentItem[]; total: number; total_pages: number }> {
-    const q = new URLSearchParams();
-    if (params?.brand && params.brand !== 'all' && params.brand !== 'الكل') q.append('brand', params.brand);
-    if (params?.platform && params.platform !== 'all') q.append('platform', params.platform);
-    if (params?.sentiment && params.sentiment !== 'all') q.append('sentiment', params.sentiment);
-    if (params?.status && params.status !== 'all') q.append('status', params.status);
-    if (params?.search) q.append('search', params.search);
-    if (params?.page) q.append('page', params.page.toString());
-    if (params?.page_size) q.append('page_size', params.page_size.toString());
-
-    const res = await safeFetch(`/comments?${q.toString()}`, {
-      method: 'GET',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
+export const messageActionsApi = {
+  async editMessage(conversationId: string, messageId: string, text: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text }),
     });
-    if (res && res.ok) return await res.json();
-    return { items: [], total: 0, total_pages: 1 };
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تعديل الرسالة' }));
+      throw new Error(err?.detail || 'فشل تعديل الرسالة');
+    }
+    return await res.json();
   },
 
-  async getStats(): Promise<CommentStats> {
-    const res = await safeFetch('/comments/stats', {
-      method: 'GET',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
+  async deleteMessage(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     });
-    if (res && res.ok) return await res.json();
-    return {
-      total_comments: 0,
-      auto_deleted_or_hidden: 0,
-      auto_replied_dms: 0,
-      positive_rate: 50,
-      active_auto_delete_enabled: true,
-    };
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل حذف الرسالة' }));
+      throw new Error(err?.detail || 'فشل حذف الرسالة');
+    }
+    return await res.json();
   },
 
-  async updateCommentStatus(commentId: string, status: string, reason?: string): Promise<SocialCommentItem> {
-    const res = await safeFetch(`/comments/${commentId}/status`, {
+  async toggleReaction(conversationId: string, messageId: string, emoji: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ status, reason }),
+      body: JSON.stringify({ emoji }),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to update comment status');
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إضافة التفاعل' }));
+      throw new Error(err?.detail || 'فشل إضافة التفاعل');
+    }
+    return await res.json();
   },
 
-  async replyToComment(commentId: string, replyText: string, sendDm: boolean = false, dmText?: string): Promise<SocialCommentItem> {
-    const res = await safeFetch(`/comments/${commentId}/reply`, {
+  async togglePin(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/pin`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ reply_text: replyText, send_dm: sendDm, dm_text: dmText }),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to post reply to comment');
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تثبيت/إلغاء تثبيت الرسالة' }));
+      throw new Error(err?.detail || 'فشل تثبيت/إلغاء تثبيت الرسالة');
+    }
+    return await res.json();
   },
 
-  async getSettings(brand: string = 'all'): Promise<ModerationSettings> {
-    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
-      method: 'GET',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to fetch settings');
-  },
-
-  async updateSettings(settings: ModerationSettings, brand: string = 'all'): Promise<ModerationSettings> {
-    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
-      method: 'PUT',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(settings),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to update settings');
-  },
-
-  async getLogs(): Promise<ModerationLog[]> {
-    const res = await safeFetch('/comments/logs', {
-      method: 'GET',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
-    });
-    if (res && res.ok) return await res.json();
-    return [];
-  },
-
-  async simulateAi(commentText: string, brand: string = 'all'): Promise<any> {
-    const res = await safeFetch('/comments/simulate-ai', {
+  async forwardMessage(conversationId: string, messageId: string, targetConversationId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/forward`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ comment_text: commentText, brand }),
+      body: JSON.stringify({ target_conversation_id: targetConversationId }),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to simulate AI check');
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إعادة توجيه الرسالة' }));
+      throw new Error(err?.detail || 'فشل إعادة توجيه الرسالة');
+    }
+    return await res.json();
   },
 };
 

@@ -17,7 +17,6 @@ from app.models.enums import (
 from app.models.message import Message
 from app.models.migration import MigrationJob
 from app.models.raw_event import RawEvent
-from app.models.social_comment import CommentModerationLog, CommentModerationSetting, SocialComment
 from app.models.user import User
 
 __all__ = [
@@ -34,9 +33,6 @@ __all__ = [
     "AutomationExecutionLog",
     "ConversationAssignmentLog",
     "UserAuditLog",
-    "SocialComment",
-    "CommentModerationLog",
-    "CommentModerationSetting",
     "ProviderEnum",
     "ChannelEnum",
     "SenderTypeEnum",
