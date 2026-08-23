@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
-import { MOCK_BRANDS } from '../services/api';
+import { MOCK_BRANDS, metaApi } from '../services/api';
 import { useCrmStore, ChannelFilterType } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -54,30 +54,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     setPublishError(null);
 
     try {
-      const res = await fetch('/api/v1/meta/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: postMessage.trim(),
-          link: postLink.trim() || undefined,
-        }),
-      });
+      const data = await metaApi.publishPost(postMessage.trim(), postLink.trim() || undefined);
 
-      if (res.ok) {
-        const data = await res.json();
-        setPublishSuccess(`تم نشر المنشور بنجاح (ID: ${data.post_id || 'تم'})`);
-        setPostMessage('');
-        setPostLink('');
-        setTimeout(() => {
-          setIsPostModalOpen(false);
-          setPublishSuccess(null);
-        }, 2500);
-      } else {
-        const errData = await res.json().catch(() => ({ detail: 'فشل نشر المنشور' }));
-        setPublishError(errData.detail || 'تعذر التواصل مع الخادم لنشر المنشور.');
-      }
+      setPublishSuccess(`تم نشر المنشور بنجاح (ID: ${data.post_id || 'تم'})`);
+      setPostMessage('');
+      setPostLink('');
+      setTimeout(() => {
+        setIsPostModalOpen(false);
+        setPublishSuccess(null);
+      }, 2500);
     } catch (err: any) {
-      setPublishError('تعذر نشر المنشور. يرجى التحقق من الاتصال بالخادم.');
+      setPublishError(err?.message || 'تعذر نشر المنشور. يرجى التحقق من الاتصال بالخادم.');
     } finally {
       setIsPublishing(false);
     }
@@ -89,7 +76,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   return (
     <header className="h-13 my-2 mx-4 px-5 bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex items-center justify-between shrink-0 relative z-30 transition-all">
-      {/* Right Section (RTL Start): Logo & 5-Way Main View Switcher */}
+      {/* Right Section (RTL Start): Logo & 6-Way Main View Switcher */}
       <div className="flex items-center gap-5">
         {/* Brand Identity Mark */}
         <div className="flex items-center gap-2 shrink-0">
@@ -99,7 +86,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           <span className="text-sm font-extrabold text-slate-900 tracking-tight hidden sm:inline">LUXIRA</span>
         </div>
 
-        {/* 5-Way View Navigation Tabs */}
+        {/* 6-Way View Navigation Tabs */}
         {isUserAdmin && setActiveMainView && (
           <nav className="flex items-center gap-1 bg-slate-100/60 p-1 rounded-full border border-slate-200/50 backdrop-blur-md">
             <button
@@ -235,14 +222,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         </div>
       )}
 
-      {/* Left Section (RTL End): WebSocket Status, Integrations Modal, Profile & Quick Post Action */}
+      {/* Left Section (RTL End): Integrations Modal, Profile & Quick Post Action */}
       <div className="flex items-center gap-2">
-        {/* Live WebSocket Status Dot */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/70 text-xs font-semibold text-emerald-700">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>مباشر</span>
-        </div>
-
         {/* Omnichannel Integrations Hub Trigger Button */}
         <button
           onClick={() => setIsIntegrationsModalOpen(true)}

@@ -1,11 +1,8 @@
 import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
 
-const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api/v1`
-  : '/api/v1';
-const FALLBACK_API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api/v1`
-  : 'http://localhost:8000/api/v1';
+const metaEnv = (import.meta as any).env || {};
+const API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : '/api/v1';
+const FALLBACK_API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
 
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
@@ -850,6 +847,16 @@ export const metaApi = {
     });
     if (res && res.ok) return await res.json();
     throw new Error('Test ping failed');
+  },
+
+  async publishPost(message: string, link?: string) {
+    const res = await safeFetch('/meta/posts', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify({ message, link }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('فشل نشر المنشور');
   },
 };
 
