@@ -1,9 +1,10 @@
 import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
 
 const metaEnv = (import.meta as any).env || {};
-const API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : '/api/v1';
-const FALLBACK_API_BASE = metaEnv.VITE_API_URL ? `${metaEnv.VITE_API_URL}/api/v1` : 'http://localhost:8000/api/v1';
-
+const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
+export const API_BASE = rawApiUrl
+  ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
+  : '/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -12,6 +13,54 @@ export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Reco
     headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+};
+
+export async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = getAuthHeaders((init?.headers as Record<string, string>) || {});
+  const reqInit = { ...init, headers };
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const targetUrl = `${API_BASE}${cleanPath}`;
+
+  try {
+    return await fetch(targetUrl, reqInit);
+  } catch (err) {
+    console.warn(`Primary fetch ${targetUrl} network error:`, err);
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      const fallbackUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      return await fetch(fallbackUrl, reqInit);
+    }
+    throw err;
+  }
+}
+
+export const authApi = {
+  async login(email: string, password: string): Promise<any> {
+    const res = await safeFetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ detail: 'فشل في تسجيل الدخول' }));
+      throw new Error(errData.detail || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    }
+    return await res.json();
+  },
+
+  async getMe(token?: string): Promise<any> {
+    const customHeaders: Record<string, string> = { Accept: 'application/json' };
+    if (token) {
+      customHeaders['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await safeFetch('/auth/me', {
+      method: 'GET',
+      headers: getAuthHeaders(customHeaders),
+    });
+    if (!res.ok) {
+      throw new Error('Unauthorized');
+    }
+    return await res.json();
+  },
 };
 
 export const getConversationsDirect = async (brand_id?: string, channel?: string, country?: string): Promise<any> => {
@@ -27,70 +76,26 @@ export const getConversationsDirect = async (brand_id?: string, channel?: string
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const urls = [
-    `${API_BASE}/conversations${query}`,
-    `${FALLBACK_API_BASE}/conversations${query}`,
-    `http://127.0.0.1:8000/api/v1/conversations${query}`
-  ];
-
-  const headers = getAuthHeaders({ 'Accept': 'application/json' });
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        console.log(`[API] Successfully fetched conversations from ${url}:`, data);
-        return data;
-      }
-    } catch (e) {
-      console.warn(`[API] Failed to fetch conversations from ${url}, trying next...`, e);
-    }
+  const res = await safeFetch(`/conversations${query}`, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (res && res.ok) {
+    return await res.json();
   }
-  throw new Error('All conversation API endpoints failed');
+  throw new Error('Failed to fetch conversations');
 };
 
 export const getMessagesDirect = async (conversationId: string): Promise<any> => {
-  const urls = [
-    `${API_BASE}/conversations/${conversationId}/messages?page_size=200&order=asc`,
-    `${FALLBACK_API_BASE}/conversations/${conversationId}/messages?page_size=200&order=asc`,
-    `http://127.0.0.1:8000/api/v1/conversations/${conversationId}/messages?page_size=200&order=asc`
-  ];
-
-  const headers = getAuthHeaders({ 'Accept': 'application/json' });
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (e) {
-      // try next
-    }
+  const res = await safeFetch(`/conversations/${conversationId}/messages?page_size=200&order=asc`, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (res && res.ok) {
+    return await res.json();
   }
   return { items: [], total: 0 };
 };
-
-async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers = getAuthHeaders((init?.headers as Record<string, string>) || {});
-  const reqInit = { ...init, headers };
-
-  try {
-    const res = await fetch(`${API_BASE}${path}`, reqInit);
-    if (res.ok) return res;
-    console.warn(`Primary fetch ${API_BASE}${path} returned HTTP ${res.status}, trying fallback...`);
-  } catch (err) {
-    console.warn(`Primary fetch ${API_BASE}${path} failed, trying fallback:`, err);
-  }
-  return await fetch(`${FALLBACK_API_BASE}${path}`, reqInit);
-}
 
 export const getUnreadSummaryDirect = async (): Promise<any> => {
   try {

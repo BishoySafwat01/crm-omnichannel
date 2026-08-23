@@ -90,13 +90,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware — use explicitly configured origins only (OWASP A05 fix)
-_cors_origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["http://localhost:3000", "http://127.0.0.1:3000"]
-_allow_credentials = "*" not in _cors_origins  # credentials require scoped origins
+# CORS middleware — support localhost, Vercel deployments, and production domains
+_cors_origins = list(settings.CORS_ORIGINS) if settings.CORS_ORIGINS else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=_allow_credentials,
+    allow_origins=_cors_origins if _cors_origins else ["*"],
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
