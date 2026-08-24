@@ -159,7 +159,9 @@ class MetaCommentSyncService:
                     platform=sc["platform"],
                     post_id=sc["post_id"],
                     post_title=sc["post_title"],
+                    post_content=sc.get("post_content"),
                     post_thumbnail=sc["post_thumbnail"],
+                    post_url=sc.get("post_url"),
                     author_name=sc["author_name"],
                     comment_text=sc["comment_text"],
                 )

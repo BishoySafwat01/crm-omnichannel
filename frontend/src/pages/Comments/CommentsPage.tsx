@@ -113,7 +113,8 @@ export const SocialCommentsManager: React.FC = () => {
         sentiment: sentimentFilter !== 'all' ? sentimentFilter : undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
       });
-      setComments(data || []);
+      const safeArray = Array.isArray(data) ? data : (data as any)?.items || [];
+      setComments(safeArray);
     } catch (err: any) {
       console.warn('[SocialComments] loadComments error:', err);
       setApiError(err?.message || 'تعذر تحميل التعليقات من الخادم');
@@ -235,7 +236,8 @@ export const SocialCommentsManager: React.FC = () => {
   };
 
   // Filtered comments from real data
-  const filteredComments = comments.filter((c) => {
+  const safeComments = Array.isArray(comments) ? comments : [];
+  const filteredComments = safeComments.filter((c) => {
     const channel = (c.channel || (c as any).platform || 'facebook').toLowerCase();
     if (platformFilter !== 'all' && channel !== platformFilter.toLowerCase()) return false;
     if (sentimentFilter !== 'all' && c.sentiment !== sentimentFilter) return false;
@@ -256,10 +258,10 @@ export const SocialCommentsManager: React.FC = () => {
   });
 
   // Dynamic KPI Stats
-  const totalCommentsCount = comments.length;
-  const autoDeletedCount = comments.filter((c) => c.is_deleted || c.is_hidden).length;
-  const autoRepliedCount = comments.filter((c) => c.auto_replied || Boolean(c.reply_text)).length;
-  const positiveCount = comments.filter((c) => c.sentiment === 'positive').length;
+  const totalCommentsCount = safeComments.length;
+  const autoDeletedCount = safeComments.filter((c) => c.is_deleted || c.is_hidden).length;
+  const autoRepliedCount = safeComments.filter((c) => c.auto_replied || Boolean(c.reply_text)).length;
+  const positiveCount = safeComments.filter((c) => c.sentiment === 'positive').length;
   const sentimentScore = totalCommentsCount > 0 ? Math.round(((positiveCount + autoRepliedCount) / totalCommentsCount) * 100) : 100;
 
   return (
@@ -479,8 +481,8 @@ export const SocialCommentsManager: React.FC = () => {
                 className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 cursor-pointer"
               >
                 <option value="all">جميع المنشورات (All Posts)</option>
-                {Array.from(new Set(comments.map((c) => c.post_id).filter(Boolean))).map((pid) => {
-                  const comm = comments.find((c) => c.post_id === pid);
+                {Array.from(new Set(safeComments.map((c) => c.post_id).filter(Boolean))).map((pid) => {
+                  const comm = safeComments.find((c) => c.post_id === pid);
                   const title = comm?.post_title || pid;
                   return (
                     <option key={pid} value={pid}>
@@ -1245,7 +1247,7 @@ export const SocialCommentsManager: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
-              {comments
+              {safeComments
                 .filter((c) => c.reply_text || c.auto_replied || c.is_hidden || c.is_deleted)
                 .map((c) => (
                   <div

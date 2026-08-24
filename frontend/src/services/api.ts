@@ -933,7 +933,10 @@ export const commentsApi = {
       headers: getAuthHeaders({ Accept: 'application/json' }),
     });
     if (res && res.ok) {
-      return await res.json();
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.items)) return data.items;
+      return [];
     }
     return [];
   },
