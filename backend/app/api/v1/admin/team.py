@@ -20,7 +20,7 @@ from app.schemas.team import (
 )
 from app.services.audit_service import AuditService
 
-router = APIRouter(prefix="/api/v1/admin/team", tags=["admin-team"])
+router = APIRouter(tags=["admin-team"])
 
 
 @router.get(
