@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
-import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect, messageActionsApi } from '../services/api';
+import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect, messageActionsApi, teamApi, TeamMember } from '../services/api';
 import { realtimeService } from '../services/websocket';
 import { useAuthStore } from './useAuthStore';
 
@@ -122,6 +122,9 @@ interface CrmState {
   selectedChannel: ChannelFilterType;
   selectedCountry: string;
   availableCountries: string[];
+  selectedAgentId: string;
+  teamMembers: TeamMember[];
+  isFetchingTeamMembers: boolean;
   isIntegrationsModalOpen: boolean;
   searchQuery: string;
   activeFilterTab: FilterTab;
@@ -147,7 +150,9 @@ interface CrmState {
   setSelectedBrandId: (brandId: string) => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
   setSelectedCountry: (country: string) => void;
+  setSelectedAgentId: (agentId: string) => void;
   fetchAvailableCountries: () => Promise<void>;
+  fetchTeamMembers: () => Promise<void>;
   setIsIntegrationsModalOpen: (open: boolean) => void;
   setSearchQuery: (query: string) => void;
   setActiveFilterTab: (tab: FilterTab) => void;
@@ -188,6 +193,9 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   selectedChannel: 'all',
   selectedCountry: 'all',
   availableCountries: [],
+  selectedAgentId: 'all',
+  teamMembers: [],
+  isFetchingTeamMembers: false,
   isIntegrationsModalOpen: false,
   searchQuery: '',
   activeFilterTab: 'all',
@@ -232,12 +240,28 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     get().fetchConversations();
   },
 
+  setSelectedAgentId: (agentId) => {
+    set({ selectedAgentId: agentId });
+    get().fetchConversations();
+  },
+
   fetchAvailableCountries: async () => {
     try {
       const locations = await customerApi.getLocations();
       set({ availableCountries: locations });
     } catch (err) {
       console.warn('[Store] fetchAvailableCountries error:', err);
+    }
+  },
+
+  fetchTeamMembers: async () => {
+    try {
+      set({ isFetchingTeamMembers: true });
+      const members = await teamApi.listMembers();
+      set({ teamMembers: Array.isArray(members) ? members : [], isFetchingTeamMembers: false });
+    } catch (err) {
+      console.warn('[Store] fetchTeamMembers error:', err);
+      set({ isFetchingTeamMembers: false });
     }
   },
 
@@ -303,7 +327,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const selectedBrand = get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
-      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry);
+      const selectedAgent = get().selectedAgentId;
+      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, selectedAgent);
 
       let items: Conversation[] = [];
       if (Array.isArray(raw)) {

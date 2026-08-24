@@ -85,6 +85,7 @@ class ConversationService:
         location: Optional[str] = None,
         country: Optional[str] = None,
         sla_status: Optional[str] = None,
+        assigned_agent_id: Optional[str] = None,
         allowed_brands: Optional[list[str]] = None,
         allowed_channels: Optional[list[str]] = None,
     ) -> tuple[list[dict], int]:
@@ -136,6 +137,15 @@ class ConversationService:
         if sla_status and sla_status.strip():
             stmt = stmt.where(Conversation.sla_status == sla_status.strip())
             count_stmt = count_stmt.where(Conversation.sla_status == sla_status.strip())
+
+        if assigned_agent_id and assigned_agent_id.strip() and assigned_agent_id.lower() not in ["all", "الكل", "none", ""]:
+            clean_agent = assigned_agent_id.strip()
+            agent_filter = (
+                (Conversation.assigned_agent_id == clean_agent) |
+                Conversation.assigned_agent_id.ilike(f"%{clean_agent}%")
+            )
+            stmt = stmt.where(agent_filter)
+            count_stmt = count_stmt.where(agent_filter)
 
         if customer_id:
             stmt = stmt.where(Conversation.customer_id == customer_id)

@@ -353,6 +353,9 @@ export const ChatCanvas: React.FC = () => {
     loadMoreMessages,
     selectedMetaTag,
     setSelectedMetaTag,
+    selectedAgentId,
+    setSelectedAgentId,
+    teamMembers,
     draftText,
     setDraftText,
     replyingToMessage,
@@ -1012,6 +1015,25 @@ export const ChatCanvas: React.FC = () => {
         </div>
       )}
 
+      {/* Active Agent Filter Banner */}
+      {selectedAgentId !== 'all' && (
+        <div className="bg-indigo-50/95 border-b border-indigo-200/80 px-6 py-2 flex items-center justify-between text-xs backdrop-blur-xs shrink-0 z-10 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+            <span className="text-indigo-950 font-medium">
+              تصفية رسائل الموظف: <strong className="font-bold text-indigo-900">{teamMembers.find((m) => m.id === selectedAgentId)?.full_name || selectedAgentId}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedAgentId('all')}
+            className="text-[11px] font-bold text-indigo-700 hover:text-indigo-950 underline cursor-pointer"
+          >
+            إلغاء الفلترة وعرض المحادثة كاملة
+          </button>
+        </div>
+      )}
+
       {/* Message Timeline Stream */}
       <div
         ref={scrollContainerRef}
@@ -1030,8 +1052,22 @@ export const ChatCanvas: React.FC = () => {
           </div>
         ) : (
           (() => {
+            const activeMember = teamMembers.find((m) => m.id === selectedAgentId);
+            const isMsgFromAgent = (m: any) => {
+              if (!activeMember || selectedAgentId === 'all') return true;
+              if (m.sender_type !== 'agent') return false;
+              const mName = activeMember.full_name?.toLowerCase().trim();
+              const mEmail = activeMember.email?.toLowerCase().trim();
+              return (
+                m.sender_user_id === selectedAgentId ||
+                (mName && m.sender_name?.toLowerCase() === mName) ||
+                (mName && m.sender_external_id?.toLowerCase() === mName) ||
+                (mEmail && m.sender_external_id?.toLowerCase() === mEmail)
+              );
+            };
+
             const seenMsgIds = new Set<string>();
-            const sortedMessages = [...activeMessages]
+            const rawSorted = [...activeMessages]
               .filter((m) => {
                 if (!m || !m.id) return false;
                 if (seenMsgIds.has(m.id)) return false;
@@ -1041,6 +1077,35 @@ export const ChatCanvas: React.FC = () => {
               .sort(
                 (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
               );
+
+            const sortedMessages = selectedAgentId !== 'all'
+              ? rawSorted.filter(isMsgFromAgent)
+              : rawSorted;
+
+            if (selectedAgentId !== 'all' && sortedMessages.length === 0) {
+              return (
+                <div className="text-center py-16 px-4 space-y-3 bg-white/50 rounded-2xl border border-dashed border-indigo-200 m-4 animate-in fade-in">
+                  <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">
+                      لا توجد ردود مسجلة للموظف ({activeMember?.full_name || 'المحدد'}) في هذه المحادثة
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      إجمالي رسائل هذه المحادثة: {rawSorted.length} رسالة
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAgentId('all')}
+                    className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-full transition shadow-2xs cursor-pointer"
+                  >
+                    عرض كل رسائل المحادثة
+                  </button>
+                </div>
+              );
+            }
 
             return sortedMessages.map((msg, index) => {
               const media = resolveMedia(msg);
@@ -1197,6 +1262,12 @@ export const ChatCanvas: React.FC = () => {
                         }`}
                       >
                         <span>{formatMessageTime(msg.created_at)}</span>
+                        {isAgent && (msg.sender_name || (msg.sender_user_id && teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
+                          <span className="text-[10px] text-[#137333] font-semibold flex items-center gap-0.5">
+                            <span>•</span>
+                            <span>{msg.sender_name || teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name}</span>
+                          </span>
+                        )}
                         {msg.is_edited && !isDeleted && (
                           <span className="text-[10px] opacity-75 font-medium">(معدلة)</span>
                         )}
