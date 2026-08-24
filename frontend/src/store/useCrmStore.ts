@@ -244,12 +244,19 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   setSelectedEmployeeId: (employeeId) => {
-    set({ selectedEmployeeId: employeeId, selectedAgentId: employeeId || 'all' });
+    const cleanId = !employeeId || employeeId === 'all' || employeeId === 'الكل' ? null : employeeId;
+    set({
+      selectedEmployeeId: cleanId,
+      selectedAgentId: cleanId || 'all',
+    });
   },
 
   setSelectedAgentId: (agentId) => {
-    set({ selectedAgentId: agentId, selectedEmployeeId: agentId === 'all' ? null : agentId });
-    get().fetchConversations();
+    const cleanId = !agentId || agentId === 'all' || agentId === 'الكل' ? null : agentId;
+    set({
+      selectedAgentId: cleanId || 'all',
+      selectedEmployeeId: cleanId,
+    });
   },
 
   fetchAvailableCountries: async () => {
@@ -283,12 +290,10 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   setSearchQuery: (query) => {
     set({ searchQuery: query });
-    get().fetchConversations();
   },
 
   setActiveFilterTab: (tab) => {
     set({ activeFilterTab: tab });
-    get().fetchConversations();
   },
 
   setSelectedMetaTag: (tag) => {
@@ -302,10 +307,20 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   setActiveConversationId: (id) => {
     if (!id) return;
     set((state) => {
+      const conv = state.conversations.find((c) => c.id === id);
+      const prevUnread = conv?.unread_count || 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
       const updatedConvs = state.conversations.map((c) =>
         c.id === id ? { ...c, unread_count: 0 } : c
       );
-      return { activeConversationId: id, conversations: updatedConvs };
+      return {
+        activeConversationId: id,
+        conversations: updatedConvs,
+        unreadSummary: {
+          ...state.unreadSummary,
+          total_unread: updatedTotal,
+        },
+      };
     });
     get().fetchMessages(id);
     get().markConversationAsRead(id);
@@ -324,13 +339,26 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   markConversationAsRead: async (id) => {
     if (!id) return;
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, unread_count: 0 } : c
-      ),
-    }));
-    await markConversationReadDirect(id);
-    get().fetchUnreadSummary();
+    set((state) => {
+      const conv = state.conversations.find((c) => c.id === id);
+      const prevUnread = conv?.unread_count || 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
+      return {
+        conversations: state.conversations.map((c) =>
+          c.id === id ? { ...c, unread_count: 0 } : c
+        ),
+        unreadSummary: {
+          ...state.unreadSummary,
+          total_unread: updatedTotal,
+        },
+      };
+    });
+    try {
+      await markConversationReadDirect(id);
+      get().fetchUnreadSummary();
+    } catch (e) {
+      console.warn('markConversationRead error:', e);
+    }
   },
 
 
@@ -339,8 +367,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const selectedBrand = get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
-      const selectedAgent = get().selectedAgentId;
-      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, selectedAgent);
+      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, undefined);
 
       let items: Conversation[] = [];
       if (Array.isArray(raw)) {

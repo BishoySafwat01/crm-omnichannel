@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
@@ -54,6 +54,18 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
 
 export const ConversationList: React.FC = () => {
   const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
+  const employeeMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isEmployeeMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (employeeMenuRef.current && !employeeMenuRef.current.contains(e.target as Node)) {
+        setIsEmployeeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isEmployeeMenuOpen]);
 
   const {
     conversations,
@@ -89,9 +101,14 @@ export const ConversationList: React.FC = () => {
 
     if (availableEmployees && Array.isArray(availableEmployees)) {
       availableEmployees.forEach((emp) => {
-        if (emp.id && !seen.has(emp.id)) {
-          seen.add(emp.id);
-          const assignedConv = conversations.find((c) => c.assigned_agent_id === emp.id);
+        if (emp.id && !seen.has(emp.id.toLowerCase())) {
+          seen.add(emp.id.toLowerCase());
+          if (emp.full_name) seen.add(emp.full_name.toLowerCase());
+          const assignedConv = conversations.find(
+            (c) =>
+              c.assigned_agent_id === emp.id ||
+              (c.customer?.assigned_agent_name && c.customer.assigned_agent_name === emp.full_name)
+          );
           const memberBrand =
             Array.isArray(emp.brand_access) && emp.brand_access.length > 0 && emp.brand_access[0] !== 'ALL' && emp.brand_access[0] !== 'الكل'
               ? emp.brand_access[0]
@@ -102,17 +119,33 @@ export const ConversationList: React.FC = () => {
     }
 
     conversations.forEach((c) => {
-      if (c.assigned_agent_id && !seen.has(c.assigned_agent_id)) {
-        seen.add(c.assigned_agent_id);
-        const name = c.customer?.assigned_agent_name || c.customer?.last_agent_name || 'موظف';
-        list.push({ id: c.assigned_agent_id, name, brand: c.brand || 'LUXIRA' });
+      const agentId = c.assigned_agent_id;
+      const agentName = c.customer?.assigned_agent_name || c.customer?.last_agent_name;
+      if (agentId && !seen.has(agentId.toLowerCase())) {
+        seen.add(agentId.toLowerCase());
+        const name = agentName || 'موظف';
+        if (agentName) seen.add(agentName.toLowerCase());
+        list.push({ id: agentId, name, brand: c.brand || 'LUXIRA' });
+      } else if (agentName && !seen.has(agentName.toLowerCase())) {
+        seen.add(agentName.toLowerCase());
+        list.push({ id: agentName, name: agentName, brand: c.brand || 'LUXIRA' });
       }
     });
 
     return list;
   }, [availableEmployees, conversations]);
 
-  const selectedEmployeeObj = employeeOptions.find((e) => e.id === selectedEmployeeId);
+  const selectedEmployeeObj = useMemo(() => {
+    if (!selectedEmployeeId) return null;
+    const target = selectedEmployeeId.toLowerCase().trim();
+    return (
+      employeeOptions.find(
+        (e) =>
+          (e.id && e.id.toLowerCase().trim() === target) ||
+          (e.name && e.name.toLowerCase().trim() === target)
+      ) || null
+    );
+  }, [employeeOptions, selectedEmployeeId]);
 
   const filteredConversations = useMemo(() => {
     if (!conversations || !Array.isArray(conversations)) return [];
@@ -161,16 +194,29 @@ export const ConversationList: React.FC = () => {
         }
       }
 
-      // 6. Employee Filter (Task 2)
+      // 6. Employee Filter (Task 2 & Instant Reactive Filtering)
       if (selectedEmployeeId) {
-        const convAssignedId = conv.assigned_agent_id || conv.customer?.assigned_agent_id;
-        const isAssigned = convAssignedId === selectedEmployeeId;
+        const targetId = selectedEmployeeId.toLowerCase().trim();
+        const targetName = (selectedEmployeeObj?.name || '').toLowerCase().trim();
+
+        const convAssignedId = (conv.assigned_agent_id || conv.customer?.assigned_agent_id || '').toString().toLowerCase().trim();
+        const convAssignedName = (conv.customer?.assigned_agent_name || (conv as any).assigned_agent_name || '').toString().toLowerCase().trim();
+
+        const isAssigned =
+          (convAssignedId && (convAssignedId === targetId || (targetName && convAssignedId === targetName))) ||
+          (convAssignedName && (convAssignedName === targetId || (targetName && (convAssignedName === targetName || convAssignedName.includes(targetName)))));
 
         // Check if any message in this conversation was answered by the selected employee
         const convMsgs = messages[conv.id] || [];
-        const hasEmployeeReply = convMsgs.some(
-          (m) => m.sender_type === 'agent' && m.sender_user_id === selectedEmployeeId
-        );
+        const hasEmployeeReply = convMsgs.some((m) => {
+          if (m.sender_type !== 'agent') return false;
+          const sId = (m.sender_user_id || '').toLowerCase().trim();
+          const sName = (m.sender_name || '').toLowerCase().trim();
+          return (
+            (sId && sId === targetId) ||
+            (sName && (sName === targetId || (targetName && (sName === targetName || sName.includes(targetName)))))
+          );
+        });
 
         if (!isAssigned && !hasEmployeeReply) {
           return false;
@@ -179,7 +225,7 @@ export const ConversationList: React.FC = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, messages]);
+  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, selectedEmployeeObj, messages]);
 
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
@@ -236,19 +282,24 @@ export const ConversationList: React.FC = () => {
 
             {/* Employee Filter Popover Menu */}
             {isEmployeeMenuOpen && (
-              <div className="absolute top-full left-0 mt-2 w-56 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-100 text-right">
-                <div className="px-2 py-1.5 text-[11px] font-bold text-slate-400 border-b border-slate-100 flex items-center justify-between">
+              <div
+                ref={employeeMenuRef}
+                className="absolute top-full left-0 mt-2 w-56 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-2 z-50 flex flex-col animate-in fade-in zoom-in-95 duration-100 text-right"
+              >
+                {/* Fixed Dropdown Header */}
+                <div className="px-2 py-1.5 text-[11px] font-bold text-slate-400 border-b border-slate-100 flex items-center justify-between shrink-0 mb-1">
                   <span>تصفية المحادثات بالموظف</span>
                   <Users className="w-3.5 h-3.5 text-slate-400" />
                 </div>
 
+                {/* Fixed "All Employees" Selection */}
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedEmployeeId(null);
                     setIsEmployeeMenuOpen(false);
                   }}
-                  className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between ${
+                  className={`w-full text-right px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-between shrink-0 mb-1 ${
                     !selectedEmployeeId ? 'bg-blue-50 text-[#1A73E8]' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
@@ -261,47 +312,50 @@ export const ConversationList: React.FC = () => {
                   {!selectedEmployeeId && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
                 </button>
 
-                {employeeOptions.map((emp) => {
-                  const brandObj =
-                    MOCK_BRANDS.find((b) => b.id.toLowerCase() === (emp.brand || '').toLowerCase()) ||
-                    MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
-                    MOCK_BRANDS[1];
-                  const brandName = emp.brand || brandObj?.name || 'LUXIRA';
-                  const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
-                  const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
+                {/* Scrollable Employee Options List */}
+                <div className="overflow-y-auto max-h-60 sm:max-h-72 space-y-0.5 pr-0.5">
+                  {employeeOptions.map((emp) => {
+                    const brandObj =
+                      MOCK_BRANDS.find((b) => b.id.toLowerCase() === (emp.brand || '').toLowerCase()) ||
+                      MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
+                      MOCK_BRANDS[1];
+                    const brandName = emp.brand || brandObj?.name || 'LUXIRA';
+                    const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
+                    const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
 
-                  return (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedEmployeeId(emp.id);
-                        setIsEmployeeMenuOpen(false);
-                      }}
-                      className={`w-full text-right px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between ${
-                        selectedEmployeeId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {/* Store / Brand Logo Badge (Representing the store/brand the employee is working through) */}
-                        <div
-                          className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
-                          title={`المتجر: ${brandName}`}
-                        >
-                          {brandAvatar}
-                        </div>
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmployeeId(emp.id);
+                          setIsEmployeeMenuOpen(false);
+                        }}
+                        className={`w-full text-right px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between ${
+                          selectedEmployeeId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {/* Store / Brand Logo Badge (Representing the store/brand the employee is working through) */}
+                          <div
+                            className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
+                            title={`المتجر: ${brandName}`}
+                          >
+                            {brandAvatar}
+                          </div>
 
-                        <div className="truncate">
-                          <span className="font-bold text-slate-800">{emp.name}</span>
-                          {emp.role && (
-                            <span className="text-[10px] text-slate-400 font-normal mr-1.5">({emp.role})</span>
-                          )}
+                          <div className="truncate">
+                            <span className="font-bold text-slate-800">{emp.name}</span>
+                            {emp.role && (
+                              <span className="text-[10px] text-slate-400 font-normal mr-1.5">({emp.role})</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
-                    </button>
-                  );
-                })}
+                        {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -340,25 +394,36 @@ export const ConversationList: React.FC = () => {
           );
         })()}
 
-        {/* Filter Tabs (Task 1 Unread Badge) */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100/60 rounded-full border border-slate-200/50 backdrop-blur-md">
+        {/* Filter Tabs (Clean Adaptive Unread Badge & Tab Layout) */}
+        <div className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-full border border-slate-200/60 backdrop-blur-md">
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
+            const hasBadge = tab.badgeCount !== undefined && tab.badgeCount > 0;
+            const formattedBadge = tab.badgeCount && tab.badgeCount > 99 ? '99+' : tab.badgeCount;
+
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveFilterTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] font-medium rounded-full transition relative ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] rounded-full transition-all duration-150 cursor-pointer select-none whitespace-nowrap overflow-hidden ${
                   isActive
                     ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
                 }`}
+                title={tab.label}
               >
-                {tab.icon}
-                <span>{tab.label}</span>
-                {tab.badgeCount !== undefined && tab.badgeCount > 0 && (
-                  <span className="bg-[#1A73E8] text-white text-[9px] font-extrabold px-1.5 py-0.2 rounded-full min-w-[16px] text-center leading-none">
-                    {tab.badgeCount}
+                <span className="shrink-0">{tab.icon}</span>
+                <span className="truncate">{tab.label}</span>
+                {hasBadge && (
+                  <span
+                    className={`inline-flex items-center justify-center h-4 min-w-[18px] px-1 text-[9px] font-extrabold rounded-full transition-colors leading-none shrink-0 ${
+                      isActive
+                        ? 'bg-[#1A73E8] text-white shadow-2xs'
+                        : 'bg-blue-100 text-[#1A73E8]'
+                    }`}
+                  >
+                    {formattedBadge}
                   </span>
                 )}
               </button>

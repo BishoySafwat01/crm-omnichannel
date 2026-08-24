@@ -523,58 +523,88 @@ export const ChatCanvas: React.FC = () => {
 
   // Available employees for in-chat filter (Tasks 2 & 4)
   const chatEmployees = React.useMemo(() => {
-    const list: { id: string; name: string }[] = [];
+    const list: { id: string; name: string; role?: string }[] = [];
     const seen = new Set<string>();
 
-    if (activeConv?.assigned_agent_id) {
-      seen.add(activeConv.assigned_agent_id);
-      list.push({
-        id: activeConv.assigned_agent_id,
-        name: activeConv.customer?.assigned_agent_name || 'موظف المحادثة',
+    if (availableEmployees && Array.isArray(availableEmployees)) {
+      availableEmployees.forEach((emp) => {
+        if (emp.id && !seen.has(emp.id.toLowerCase())) {
+          seen.add(emp.id.toLowerCase());
+          if (emp.full_name) seen.add(emp.full_name.toLowerCase());
+          list.push({ id: emp.id, name: emp.full_name || emp.email, role: emp.role });
+        }
       });
+    }
+
+    if (activeConv?.assigned_agent_id && !seen.has(activeConv.assigned_agent_id.toLowerCase())) {
+      seen.add(activeConv.assigned_agent_id.toLowerCase());
+      const name = activeConv.customer?.assigned_agent_name || 'موظف المحادثة';
+      list.push({ id: activeConv.assigned_agent_id, name });
     }
 
     activeMessages.forEach((m) => {
       if (m.sender_type === 'agent') {
         const id = m.sender_user_id || m.sender_name || 'unknown';
-        if (!seen.has(id)) {
-          seen.add(id);
+        if (!seen.has(id.toLowerCase())) {
+          seen.add(id.toLowerCase());
           list.push({ id, name: m.sender_name || 'موظف الدعم' });
         }
       }
     });
 
-    if (availableEmployees && Array.isArray(availableEmployees)) {
-      availableEmployees.forEach((emp) => {
-        if (!seen.has(emp.id)) {
-          seen.add(emp.id);
-          list.push({ id: emp.id, name: emp.full_name || emp.email });
-        }
-      });
-    }
-
     return list;
   }, [activeConv, activeMessages, availableEmployees]);
 
   const activeEmpFilterId = inChatEmployeeFilter || selectedEmployeeId;
-  const activeEmpFilterObj = chatEmployees.find((e) => e.id === activeEmpFilterId);
+
+  const activeEmpFilterObj = React.useMemo(() => {
+    if (!activeEmpFilterId) return null;
+    const target = activeEmpFilterId.toLowerCase().trim();
+    if (availableEmployees && Array.isArray(availableEmployees)) {
+      const found = availableEmployees.find(
+        (e) =>
+          (e.id && e.id.toLowerCase().trim() === target) ||
+          (e.full_name && e.full_name.toLowerCase().trim() === target) ||
+          (e.email && e.email.toLowerCase().trim() === target)
+      );
+      if (found) {
+        return { id: found.id, name: found.full_name || found.email, role: found.role };
+      }
+    }
+    return (
+      chatEmployees.find(
+        (e) =>
+          (e.id && e.id.toLowerCase().trim() === target) ||
+          (e.name && e.name.toLowerCase().trim() === target)
+      ) || null
+    );
+  }, [activeEmpFilterId, availableEmployees, chatEmployees]);
 
   // In-Chat Matched Messages for Text Search & Employee Search
   const matchedMessageIds = React.useMemo(() => {
     if (!inChatSearchQuery.trim() && !activeEmpFilterId) return [];
     const q = inChatSearchQuery.toLowerCase().trim();
+    const filterTarget = (activeEmpFilterId || '').toLowerCase().trim();
+    const filterName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
+
     return activeMessages
       .filter((m) => {
         const matchText = !q || (m.text || '').toLowerCase().includes(q);
+        const sId = (m.sender_user_id || '').toLowerCase().trim();
+        const sName = (m.sender_name || '').toLowerCase().trim();
+        const sExt = (m.sender_external_id || '').toLowerCase().trim();
+
         const matchEmp =
           !activeEmpFilterId ||
           (m.sender_type === 'agent' &&
-            (m.sender_user_id === activeEmpFilterId ||
-              (m.sender_name && m.sender_name.toLowerCase().includes(activeEmpFilterId.toLowerCase()))));
+            ((sId && sId === filterTarget) ||
+              (sName && (sName === filterTarget || (filterName && (sName === filterName || sName.includes(filterName) || filterName.includes(sName))))) ||
+              (sExt && (sExt === filterTarget || (filterName && sExt.includes(filterName))))));
+
         return matchText && matchEmp;
       })
       .map((m) => m.id);
-  }, [inChatSearchQuery, activeEmpFilterId, activeMessages]);
+  }, [inChatSearchQuery, activeEmpFilterId, activeEmpFilterObj, activeMessages]);
 
   const handleJumpToMatch = (dir: 'next' | 'prev') => {
     if (matchedMessageIds.length === 0) return;
@@ -1245,17 +1275,16 @@ export const ChatCanvas: React.FC = () => {
             let sortedMessages = rawSorted;
             if (activeEmpFilterId) {
               const filterTarget = activeEmpFilterId.toLowerCase().trim();
+              const filterName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
               sortedMessages = sortedMessages.filter((m) => {
                 if (m.sender_type !== 'agent') return false;
+                const sId = (m.sender_user_id || '').toLowerCase().trim();
                 const sName = (m.sender_name || '').toLowerCase().trim();
                 const sExt = (m.sender_external_id || '').toLowerCase().trim();
-                const sId = (m.sender_user_id || '').toLowerCase().trim();
-                const objName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
                 return (
-                  sId === filterTarget ||
-                  sName === filterTarget ||
-                  sExt === filterTarget ||
-                  (objName && (sName.includes(objName) || sExt.includes(objName)))
+                  (sId && sId === filterTarget) ||
+                  (sName && (sName === filterTarget || (filterName && (sName === filterName || sName.includes(filterName) || filterName.includes(sName))))) ||
+                  (sExt && (sExt === filterTarget || (filterName && (sExt === filterName || sExt.includes(filterName)))))
                 );
               });
             }
