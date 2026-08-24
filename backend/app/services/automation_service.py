@@ -118,48 +118,77 @@ class AutomationService:
             session.add(execution_log)
             await session.commit()
 
-            # 6. Dispatch Outbound Auto-Reply via MessageService
-            outbound_msg = None
-            try:
-                from app.services.message_service import MessageService
-                outbound_msg = await MessageService.send_agent_reply(
-                    session=session,
-                    conversation_id=conversation.id,
-                    text=rule.response_text,
-                    sender_external_id="automation_bot",
-                )
-                logger.info(
-                    f"✅ [Automation Engine] Successfully dispatched auto-reply for Rule '{rule.name}' "
-                    f"to Conversation {conversation.id} (Message ID: {outbound_msg.id})"
-                )
-            except Exception as dispatch_err:
-                logger.error(
-                    f"⚠️ [Automation Engine] Meta API dispatch error for Rule '{rule.name}': {dispatch_err}"
-                )
+            # 6. Prepare Message Chunks (Line-by-line splitting if configured)
+            raw_text = rule.response_text or ""
+            should_split = getattr(rule, "split_lines", True)
+            if should_split and "\n" in raw_text:
+                chunks = [line.strip() for line in raw_text.split("\n") if line.strip()]
+            else:
+                chunks = [raw_text.strip()] if raw_text.strip() else []
 
-            # 7. Broadcast via WebSockets if message was created
-            if outbound_msg:
-                try:
-                    from app.api.v1.ws import manager
-                    await manager.broadcast({
-                        "type": "NEW_MESSAGE",
-                        "conversation_id": str(conversation.id),
-                        "message": {
-                            "id": str(outbound_msg.id),
+            outbound_msg = None
+            delay_sec = getattr(rule, "delay_seconds", 2) or 2
+            sim_typing = getattr(rule, "human_typing_simulation", True)
+
+            import asyncio
+            from app.services.message_service import MessageService
+            from app.api.v1.ws import manager as ws_manager
+
+            for idx, chunk in enumerate(chunks):
+                if not chunk:
+                    continue
+
+                if sim_typing:
+                    # Calculate human-like typing speed: ~40ms per character with a min of 0.8s and max of 4.5s
+                    typing_delay = max(0.8, min(4.5, len(chunk) * 0.045))
+                    try:
+                        await ws_manager.broadcast({
+                            "type": "TYPING_INDICATOR",
                             "conversation_id": str(conversation.id),
-                            "external_message_id": outbound_msg.external_message_id,
-                            "sender_type": "agent",
-                            "sender_external_id": "automation_bot",
-                            "message_type": "text",
-                            "text": outbound_msg.text,
-                            "created_at": outbound_msg.created_at.isoformat() if outbound_msg.created_at else datetime.now(timezone.utc).isoformat(),
-                            "delivery_status": "delivered",
-                        }
-                    })
-                except Exception as ws_err:
-                    logger.warning(f"[Automation Engine] WebSocket broadcast failed: {ws_err}")
+                            "is_typing": True,
+                            "sender_name": "المساعد الآلي",
+                        })
+                    except Exception:
+                        pass
+                    await asyncio.sleep(typing_delay)
+
+                try:
+                    outbound_msg = await MessageService.send_agent_reply(
+                        session=session,
+                        conversation_id=conversation.id,
+                        text=chunk,
+                        sender_external_id="automation_bot",
+                    )
+                    logger.info(
+                        f"✅ [Automation Engine] Successfully dispatched message chunk {idx+1}/{len(chunks)} for Rule '{rule.name}'"
+                    )
+
+                    if ws_manager and outbound_msg:
+                        await ws_manager.broadcast({
+                            "type": "NEW_MESSAGE",
+                            "conversation_id": str(conversation.id),
+                            "message": {
+                                "id": str(outbound_msg.id),
+                                "conversation_id": str(conversation.id),
+                                "external_message_id": outbound_msg.external_message_id,
+                                "sender_type": "agent",
+                                "sender_external_id": "automation_bot",
+                                "sender_name": "المساعد الآلي",
+                                "message_type": "text",
+                                "text": outbound_msg.text,
+                                "created_at": outbound_msg.created_at.isoformat() if outbound_msg.created_at else datetime.now(timezone.utc).isoformat(),
+                                "delivery_status": "delivered",
+                            },
+                        })
+                except Exception as dispatch_err:
+                    logger.error(
+                        f"⚠️ [Automation Engine] Meta API dispatch error for Rule '{rule.name}' chunk {idx+1}: {dispatch_err}"
+                    )
+
+                # Wait delay between multiple consecutive messages
+                if idx < len(chunks) - 1 and delay_sec > 0:
+                    await asyncio.sleep(delay_sec)
 
             return outbound_msg
-
 
         return None

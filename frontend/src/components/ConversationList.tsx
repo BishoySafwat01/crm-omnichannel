@@ -1,16 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban, X } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban, X, Lock } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
-import { UserAvatar } from './UserAvatar';
+import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
 import { formatCustomerPresence } from '../utils/presence';
-
-const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
-  low: { label: 'منخفضة', color: 'bg-slate-100 text-slate-600' },
-  normal: { label: 'عادية', color: 'bg-slate-100 text-slate-600' },
-  high: { label: 'عالية', color: 'bg-amber-50 text-amber-700 font-semibold' },
-  urgent: { label: 'عاجلة', color: 'bg-rose-50 text-rose-700 font-bold' },
-};
 
 const LOCATION_FILTERS = [
   { id: 'ALL', label: 'الكل' },
@@ -37,17 +30,6 @@ const formatRelativeTime = (isoStr: string) => {
   if (diffSec < 3600) return `منذ ${Math.floor(diffSec / 60)} د`;
   if (diffSec < 86400) return `منذ ${Math.floor(diffSec / 3600)} س`;
   return date.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' });
-};
-
-const getChannelBadgeDot = (channel: string = 'messenger') => {
-  switch (channel?.toLowerCase()) {
-    case 'whatsapp':
-      return <span className="w-2.5 h-2.5 bg-emerald-500 border border-white rounded-full absolute bottom-0 right-0" title="واتساب" />;
-    case 'instagram':
-      return <span className="w-2.5 h-2.5 bg-gradient-to-tr from-fuchsia-500 to-pink-500 border border-white rounded-full absolute bottom-0 right-0" title="إنستغرام" />;
-    default:
-      return <span className="w-2.5 h-2.5 bg-blue-500 border border-white rounded-full absolute bottom-0 right-0" title="ماسنجر" />;
-  }
 };
 
 export const ConversationList: React.FC = () => {
@@ -281,45 +263,69 @@ export const ConversationList: React.FC = () => {
               conv.last_activity_at || conv.customer?.last_activity_at || conv.last_customer_message_at || conv.last_message_at,
               isCustomerTyping
             );
+            const brandObj = getBrandObject(conv.brand_id, conv.brand || conv.brand_name);
 
             return (
               <div
                 key={conv.id}
                 onClick={() => setActiveConversationId(conv.id)}
-                className={`p-3 cursor-pointer transition-all duration-150 rounded-xl ${
+                className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
                   isActive
                     ? 'bg-[#E8F0FE] border-r-4 border-r-[#1A73E8] shadow-2xs font-medium'
                     : 'bg-transparent hover:bg-white/90'
                 }`}
               >
-                {/* 1. Top Row: Avatar with Channel Badge + Customer Name + Relative Time */}
-                <div className="flex items-center justify-between gap-2 mb-1">
+                {/* 1. Top Row: Brand & Customer Avatar + Store Tag + Customer Name + Relative Time */}
+                <div className="flex items-start justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="relative shrink-0">
-                      <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-                      {getChannelBadgeDot(conv.channel)}
-                      <span className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
-                    </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <ConversationAvatar
+                      customerName={customerName}
+                      customerAvatarUrl={avatarUrl}
+                      brandId={conv.brand_id}
+                      brandName={conv.brand || conv.brand_name}
+                      channel={conv.channel}
+                      size="md"
+                      showPresenceDot={true}
+                      presenceDotColor={presence.dotColor}
+                      presenceStatusText={presence.statusText}
+                    />
+
+                    <div className="flex flex-col min-w-0">
+                      {/* Store / Brand Name Badge or Direct/Private Badge */}
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {brandObj.isDirect ? (
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-200/80 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>شات مباشر</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black text-slate-700 bg-slate-100/90 px-1.5 py-0.5 rounded-md border border-slate-200/70 truncate max-w-[120px]" title={`متجر: ${brandObj.name}`}>
+                            {brandObj.name}
+                          </span>
+                        )}
+                        {renderSlaBadge(conv)}
+                        {conv.customer?.is_blocked && (
+                          <span className="shrink-0 bg-rose-100 text-rose-700 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md flex items-center gap-0.5" title="عميل محظور">
+                            <Ban className="w-2.5 h-2.5" />
+                            <span>محظور</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Customer Name */}
                       <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-extrabold text-slate-900' : 'font-bold text-slate-800'}`}>
                         {customerName}
                       </h3>
-                      {conv.customer?.is_blocked && (
-                        <span className="shrink-0 bg-rose-100 text-rose-700 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md flex items-center gap-0.5" title="عميل محظور">
-                          <Ban className="w-2.5 h-2.5" />
-                          <span>محظور</span>
-                        </span>
-                      )}
                     </div>
                   </div>
 
-                  <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0">
+                  <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0 mt-0.5">
                     {formatRelativeTime(conv.last_message_at)}
                   </span>
                 </div>
 
                 {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
-                <div className="flex items-center justify-between gap-2 pr-11">
+                <div className="flex items-center justify-between gap-2 pr-12">
                   <p className={`text-xs truncate ${unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'}`}>
                     {getMessagePreview(conv)}
                   </p>

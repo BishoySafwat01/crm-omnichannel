@@ -1,6 +1,51 @@
-import React, { useState, useEffect } from 'react';
-import { Bot, Plus, Trash2, Edit3, Power, Zap, Clock, MessageSquare, Layers, ShieldCheck, Tag, X, Check, Activity, AlertCircle, Sliders, Sparkles, Save } from 'lucide-react';
-import { automationApi, AutomationRule, AutomationExecutionLog, socialCommentsApi, ModerationSettings, MOCK_BRANDS } from '../../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Bot,
+  Plus,
+  Trash2,
+  Edit3,
+  Power,
+  Zap,
+  Clock,
+  MessageSquare,
+  Layers,
+  ShieldCheck,
+  Tag,
+  X,
+  Check,
+  Activity,
+  AlertCircle,
+  Sliders,
+  Sparkles,
+  Save,
+  Play,
+  Pause,
+  RefreshCw,
+  Send,
+  CheckCircle2,
+  User,
+  Eye,
+  ArrowRight,
+  Split,
+  Timer,
+  Keyboard,
+} from 'lucide-react';
+import {
+  automationApi,
+  AutomationRule,
+  AutomationExecutionLog,
+  socialCommentsApi,
+  ModerationSettings,
+  MOCK_BRANDS,
+} from '../../services/api';
+
+interface SimulatorMessage {
+  id: string;
+  sender: 'customer' | 'bot' | 'system';
+  text: string;
+  timestamp: string;
+  matchedRuleName?: string;
+}
 
 export const AutomationsManager: React.FC = () => {
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -9,6 +54,7 @@ export const AutomationsManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isAiSettingsModalOpen, setIsAiSettingsModalOpen] = useState(false);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
 
   // AI Moderation & Automations Settings State
@@ -34,10 +80,25 @@ export const AutomationsManager: React.FC = () => {
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
   const [responseText, setResponseText] = useState('');
+  const [splitLines, setSplitLines] = useState<boolean>(true);
+  const [delaySeconds, setDelaySeconds] = useState<number>(2);
+  const [humanTypingSimulation, setHumanTypingSimulation] = useState<boolean>(true);
   const [cooldownMinutes, setCooldownMinutes] = useState(15);
   const [isActive, setIsActive] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Visual Live Simulator State
+  const [simCustomerInput, setSimCustomerInput] = useState('مساء الخير، لو سمحت عايز اعرف تفاصيل الخصم والعروض المتاحة وفستان الحرير بكام؟');
+  const [simMessages, setSimMessages] = useState<SimulatorMessage[]>([
+    { id: '1', sender: 'customer', text: 'مساء الخير، محتاج استفسر عن العروض والخصومات المتاحة حالياً', timestamp: '10:00 AM' },
+  ]);
+  const [isSimRunning, setIsSimRunning] = useState(false);
+  const [simIsTyping, setSimIsTyping] = useState(false);
+  const [simMatchingStatus, setSimMatchingStatus] = useState<'idle' | 'analyzing' | 'matched' | 'unmatched_unread'>('idle');
+  const [simMatchedRuleName, setSimMatchedRuleName] = useState<string | null>(null);
+  const [simConfidenceScore, setSimConfidenceScore] = useState<number>(0);
+  const simChatScrollRef = useRef<HTMLDivElement>(null);
 
   const fetchRulesAndLogs = async () => {
     setIsLoading(true);
@@ -89,6 +150,9 @@ export const AutomationsManager: React.FC = () => {
     setKeywordInput('');
     setKeywords(['خصم', 'عروض']);
     setResponseText('');
+    setSplitLines(true);
+    setDelaySeconds(2);
+    setHumanTypingSimulation(true);
     setCooldownMinutes(15);
     setIsActive(true);
     setFormError(null);
@@ -104,6 +168,9 @@ export const AutomationsManager: React.FC = () => {
     setKeywordInput('');
     setKeywords(rule.keywords || []);
     setResponseText(rule.response_text);
+    setSplitLines(rule.split_lines !== undefined ? rule.split_lines : true);
+    setDelaySeconds(rule.delay_seconds !== undefined ? rule.delay_seconds : 2);
+    setHumanTypingSimulation(rule.human_typing_simulation !== undefined ? rule.human_typing_simulation : true);
     setCooldownMinutes(rule.cooldown_minutes);
     setIsActive(rule.is_active);
     setFormError(null);
@@ -180,6 +247,9 @@ export const AutomationsManager: React.FC = () => {
       match_type: matchType,
       keywords,
       response_text: responseText.trim(),
+      split_lines: splitLines,
+      delay_seconds: delaySeconds,
+      human_typing_simulation: humanTypingSimulation,
       cooldown_minutes: cooldownMinutes,
       is_active: isActive,
     };
@@ -200,6 +270,127 @@ export const AutomationsManager: React.FC = () => {
     }
   };
 
+  // Simulator Step & Live Playback Engine
+  const runSimulatorStep = async (customText?: string) => {
+    const textToTest = (customText || simCustomerInput).trim();
+    if (!textToTest || isSimRunning) return;
+
+    setIsSimRunning(true);
+    setSimMatchingStatus('analyzing');
+    setSimMatchedRuleName(null);
+    setSimConfidenceScore(0);
+
+    const newCustMsg: SimulatorMessage = {
+      id: Date.now().toString(),
+      sender: 'customer',
+      text: textToTest,
+      timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setSimMessages((prev) => [...prev, newCustMsg]);
+
+    setTimeout(() => {
+      simChatScrollRef.current?.scrollTo({ top: simChatScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }, 60);
+
+    await new Promise((r) => setTimeout(r, 650));
+
+    // Live evaluate rules
+    let matchedRule: AutomationRule | null = null;
+    const cleanText = textToTest.toLowerCase();
+
+    for (const rule of rules) {
+      if (!rule.is_active) continue;
+      const kws = rule.keywords || [];
+      const mType = (rule.match_type || 'contains').toLowerCase();
+      let isMatch = false;
+
+      if (mType === 'exact') {
+        isMatch = kws.some((k) => k.trim().toLowerCase() === cleanText);
+      } else if (mType === 'regex') {
+        for (const k of kws) {
+          try {
+            if (k.trim() && new RegExp(k.trim(), 'i').test(cleanText)) {
+              isMatch = true;
+              break;
+            }
+          } catch {}
+        }
+      } else {
+        isMatch = kws.some((k) => k.trim() && cleanText.includes(k.trim().toLowerCase()));
+      }
+
+      if (isMatch) {
+        matchedRule = rule;
+        break;
+      }
+    }
+
+    if (matchedRule) {
+      setSimMatchingStatus('matched');
+      setSimMatchedRuleName(matchedRule.name);
+      setSimConfidenceScore(97);
+
+      const splitMode = matchedRule.split_lines !== undefined ? matchedRule.split_lines : true;
+      const humanType = matchedRule.human_typing_simulation !== undefined ? matchedRule.human_typing_simulation : true;
+      const delay = matchedRule.delay_seconds || 2;
+
+      const raw = matchedRule.response_text || '';
+      const chunks = splitMode && raw.includes('\n')
+        ? raw.split('\n').map((l) => l.trim()).filter(Boolean)
+        : [raw.trim()];
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (!chunk) continue;
+
+        if (humanType) {
+          setSimIsTyping(true);
+          const typingDuration = Math.max(900, Math.min(2600, chunk.length * 35));
+          await new Promise((r) => setTimeout(r, typingDuration));
+          setSimIsTyping(false);
+        }
+
+        const botMsg: SimulatorMessage = {
+          id: (Date.now() + i).toString(),
+          sender: 'bot',
+          text: chunk,
+          timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+          matchedRuleName: matchedRule.name,
+        };
+
+        setSimMessages((prev) => [...prev, botMsg]);
+
+        setTimeout(() => {
+          simChatScrollRef.current?.scrollTo({ top: simChatScrollRef.current.scrollHeight, behavior: 'smooth' });
+        }, 60);
+
+        if (i < chunks.length - 1 && delay > 0) {
+          await new Promise((r) => setTimeout(r, delay * 1000));
+        }
+      }
+    } else {
+      setSimMatchingStatus('unmatched_unread');
+      setSimConfidenceScore(15);
+
+      await new Promise((r) => setTimeout(r, 600));
+
+      const sysMsg: SimulatorMessage = {
+        id: Date.now().toString(),
+        sender: 'system',
+        text: '⚠️ لم يتطابق الاستفسار مع أي قاعدة أتمتة -> تم نقل المحادثة تلقائياً لقائمة (غير مقروءة 🔴) لإسنادها لأحد الموظفين البشريين للرد المباشر.',
+        timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      };
+      setSimMessages((prev) => [...prev, sysMsg]);
+
+      setTimeout(() => {
+        simChatScrollRef.current?.scrollTo({ top: simChatScrollRef.current.scrollHeight, behavior: 'smooth' });
+      }, 60);
+    }
+
+    setIsSimRunning(false);
+  };
+
   const activeRulesCount = rules.filter((r) => r.is_active).length;
 
   return (
@@ -214,12 +405,20 @@ export const AutomationsManager: React.FC = () => {
             <div>
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">محرك الأتمتة والردود الذكية</h1>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                إدارة القواعد التلقائية، الكلمات المفتاحية، وفترات التهدئة لكل عميل
+                إدارة القواعد التلقائية، تقسيم الرسائل، فترات التهدئة، ومحاكاة سرعة الكتابة البشرية
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setIsSimulatorOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-2 border border-indigo-200 shadow-2xs"
+            >
+              <Play className="w-4 h-4 text-indigo-600 fill-indigo-600" />
+              <span>محاكي الأتمتة والتفقد البصري</span>
+            </button>
+
             <button
               onClick={() => setIsAiSettingsModalOpen(true)}
               className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-2 border border-slate-200/60 shadow-2xs"
@@ -320,7 +519,7 @@ export const AutomationsManager: React.FC = () => {
                             {rule.match_type === 'exact' ? 'مطابقة تامة' : rule.match_type === 'regex' ? 'تعبير نمطي (Regex)' : 'يحتوي على'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[11px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-100">
                             {brandObj ? brandObj.name : 'كل البراندات (Global)'}
                           </span>
@@ -329,6 +528,22 @@ export const AutomationsManager: React.FC = () => {
                             <Clock className="w-3 h-3 text-slate-400" />
                             تهدئة {rule.cooldown_minutes} دقيقة
                           </span>
+                          {rule.split_lines !== false && (
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 flex items-center gap-1">
+                              <Split className="w-2.5 h-2.5" />
+                              <span>تقسيم أسطر</span>
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100 flex items-center gap-1">
+                            <Timer className="w-2.5 h-2.5" />
+                            <span>فاصل {rule.delay_seconds || 2}ث</span>
+                          </span>
+                          {rule.human_typing_simulation !== false && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100 flex items-center gap-1">
+                              <Keyboard className="w-2.5 h-2.5" />
+                              <span>محاكاة بشرية</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -359,7 +574,7 @@ export const AutomationsManager: React.FC = () => {
                     {/* Response Text Preview */}
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs font-medium text-slate-700 space-y-1">
                       <p className="text-[10px] font-bold text-slate-400">الرد التلقائي المعتمد:</p>
-                      <p className="line-clamp-2 leading-relaxed">"{rule.response_text}"</p>
+                      <p className="line-clamp-3 whitespace-pre-wrap leading-relaxed">"{rule.response_text}"</p>
                     </div>
                   </div>
 
@@ -378,7 +593,7 @@ export const AutomationsManager: React.FC = () => {
                       </button>
                       <button
                         onClick={() => handleDeleteRule(rule.id)}
-                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
                         title="حذف"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -395,30 +610,22 @@ export const AutomationsManager: React.FC = () => {
       {/* Create / Edit Rule Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
-                  <Bot className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    {editingRule ? 'تعديل قاعدة أتمتة' : 'إنشاء قاعدة أتمتة جديدة'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500">حدد الكلمات المفتاحية والرد التلقائي</p>
-                </div>
-              </div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingRule ? 'تعديل قاعدة الأتمتة' : 'إنشاء قاعدة أتمتة جديدة'}
+              </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {formError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{formError}</span>
               </div>
             )}
@@ -431,7 +638,7 @@ export const AutomationsManager: React.FC = () => {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="مثال: الرد التلقائي على استفسارات الأسعار"
+                  placeholder="مثلاً: الرد التلقائي على عروض الصيف"
                   className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
                 />
               </div>
@@ -483,7 +690,7 @@ export const AutomationsManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">الكلمات المفتاحية (اضغط Enter لإضافة كلمة):</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الكلمات المفتاحية (اضغط Enter للإضافة):</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -518,20 +725,85 @@ export const AutomationsManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">نص الرد التلقائي المعتمد:</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">نص الرد التلقائي المعتمد (اضغط Enter لكتابة أسطر متعددة):</label>
                 <textarea
-                  rows={3}
+                  rows={4}
                   required
                   value={responseText}
                   onChange={(e) => setResponseText(e.target.value)}
-                  placeholder="أهلاً بك! يمكنك الحصول على خصم 20% بزيارة رابط عروضنا..."
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600"
+                  placeholder="أهلاً بك يا فندم! 🌸&#10;كود الخصم المتاح اليوم هو LUX20&#10;يمكنك تصفح منتجاتنا عبر الرابط التالي..."
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 leading-relaxed"
                 />
                 <p className="text-[10px] text-slate-400 text-left mt-0.5">{responseText.length}/2000 حرف</p>
               </div>
 
+              {/* Timing & Multiline Chunking Controls */}
+              <div className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Split className="w-3.5 h-3.5 text-indigo-600" />
+                      إرسال كل سطر في رسالة منفصلة
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      عند النزول لسطر جديد في نص الرد، يتم إرسال كل فقرة كرسالة مستقلة
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSplitLines(!splitLines)}
+                    className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      splitLines ? 'bg-indigo-600 justify-end' : 'bg-slate-300 justify-start'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between pt-2.5 border-t border-slate-200/60">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Keyboard className="w-3.5 h-3.5 text-teal-600" />
+                      محاكاة سرعة الكتابة البشرية (Typing Simulator)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      إظهار مؤشر الكتابة (typing...) وحساب التوقيت كإنسان حقيقي قبل إرسال كل رسالة
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHumanTypingSimulation(!humanTypingSimulation)}
+                    className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      humanTypingSimulation ? 'bg-teal-600 justify-end' : 'bg-slate-300 justify-start'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
+                  </button>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-200/60 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Timer className="w-3.5 h-3.5 text-amber-600" />
+                      الفاصل الزمني بين كل رسالة والأخرى (بالثواني):
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">المدة الزمنية الفاصلة بين إرسال الأسطر المتتالية</p>
+                  </div>
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={delaySeconds}
+                      onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                      className="w-full bg-white text-xs font-bold text-center text-slate-900 px-3 py-1.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">فترة التهدئة (بالدقائق):</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">فترة التهدئة للعميل (بالدقائق):</label>
                 <input
                   type="number"
                   min={0}
@@ -561,6 +833,187 @@ export const AutomationsManager: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Visual Live Simulator Modal */}
+      {isSimulatorOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Play className="w-4 h-4 fill-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">محاكي الأتمتة المباشر والتفقد البصري</h3>
+                  <p className="text-[11px] text-slate-500">
+                    تفقد طريقة تدفق الرسائل، سرعة الكتابة البشرية، وإسناد المحادثة لغير مقروء عند عدم التطابق
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSimulatorOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Test Scenarios Bar */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/60">
+              <span className="text-[11px] font-bold text-slate-600">سيناريوهات سريعة:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimCustomerInput('عايز اعرف تفاصيل كود الخصم والعروض المتاحة');
+                  runSimulatorStep('عايز اعرف تفاصيل كود الخصم والعروض المتاحة');
+                }}
+                disabled={isSimRunning}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold shadow-2xs transition"
+              >
+                🎯 استفسار يطابق كود الخصم
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimCustomerInput('هل يوجد فستان بمقاس 4XL تفصيل خاص غير المعروض؟');
+                  runSimulatorStep('هل يوجد فستان بمقاس 4XL تفصيل خاص غير المعروض؟');
+                }}
+                disabled={isSimRunning}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold shadow-2xs transition"
+              >
+                ⚠️ استفسار خارج الأتمتة (نقل لغير مقروء)
+              </button>
+            </div>
+
+            {/* Live Chat Timeline Simulation Stream */}
+            <div
+              ref={simChatScrollRef}
+              className="flex-1 overflow-y-auto p-4 bg-slate-50/70 rounded-2xl border border-slate-200/80 space-y-3 min-h-[300px] max-h-[380px]"
+            >
+              {simMessages.map((msg) => {
+                if (msg.sender === 'system') {
+                  return (
+                    <div key={msg.id} className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{msg.text}</span>
+                    </div>
+                  );
+                }
+
+                const isCustomer = msg.sender === 'customer';
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex items-end gap-2 ${isCustomer ? 'justify-start' : 'justify-end'} animate-in fade-in slide-in-from-bottom-1 duration-200`}
+                  >
+                    {isCustomer && (
+                      <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold flex items-center justify-center shrink-0">
+                        عميل
+                      </div>
+                    )}
+
+                    <div
+                      className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed shadow-2xs ${
+                        isCustomer
+                          ? 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs'
+                          : 'bg-teal-600 text-white rounded-br-xs'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                      <div className={`text-[10px] mt-1 flex items-center gap-1 ${isCustomer ? 'text-slate-400 justify-start' : 'text-teal-100 justify-end'}`}>
+                        <span>{msg.timestamp}</span>
+                        {!isCustomer && <span>✓✓</span>}
+                      </div>
+                    </div>
+
+                    {!isCustomer && (
+                      <div className="w-7 h-7 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                        <Bot className="w-4 h-4" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Realistic Typing Indicator */}
+              {simIsTyping && (
+                <div className="flex items-end gap-2 justify-end animate-in fade-in">
+                  <div className="bg-white border border-slate-200 px-3.5 py-2.5 rounded-2xl rounded-br-xs shadow-2xs flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-500">المساعد الآلي يكتب الآن</span>
+                    <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce" />
+                    <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <span className="w-1.5 h-1.5 bg-teal-600 rounded-full animate-bounce [animation-delay:0.4s]" />
+                  </div>
+                  <div className="w-7 h-7 rounded-full bg-teal-700 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Live Intent & Decision Status Box */}
+            <div className="bg-slate-900 text-white p-3.5 rounded-2xl flex items-center justify-between text-xs shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-slate-200">حالة الفحص والتحليل: </span>
+                  {simMatchingStatus === 'analyzing' && <span className="text-cyan-400 font-semibold animate-pulse">جاري فحص نية العميل والكلمات المفتاحية...</span>}
+                  {simMatchingStatus === 'matched' && (
+                    <span className="text-emerald-400 font-bold">
+                      تم التطابق مع [{simMatchedRuleName}] بنسبة ثقة {simConfidenceScore}% ✅
+                    </span>
+                  )}
+                  {simMatchingStatus === 'unmatched_unread' && (
+                    <span className="text-rose-400 font-bold">
+                      لم يتم التطابق -&gt; المحادثة معينة كـ (غير مقروءة 🔴)
+                    </span>
+                  )}
+                  {simMatchingStatus === 'idle' && <span className="text-slate-400">جاهز لبدء المحاكاة</span>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSimMessages([
+                    { id: '1', sender: 'customer', text: 'مساء الخير، محتاج استفسر عن العروض والخصومات المتاحة حالياً', timestamp: '10:00 AM' },
+                  ]);
+                  setSimMatchingStatus('idle');
+                }}
+                className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition"
+              >
+                إعادة ضبط الشات
+              </button>
+            </div>
+
+            {/* Input Bar for Simulator */}
+            <div className="flex items-center gap-2 shrink-0 pt-1">
+              <input
+                type="text"
+                value={simCustomerInput}
+                onChange={(e) => setSimCustomerInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    runSimulatorStep();
+                  }
+                }}
+                disabled={isSimRunning}
+                placeholder="اكتب رسالة من العميل لاختبار تدفق الأتمتة..."
+                className="flex-1 bg-slate-50 text-xs font-semibold text-slate-900 px-4 py-2.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+              <button
+                type="button"
+                onClick={() => runSimulatorStep()}
+                disabled={isSimRunning || !simCustomerInput.trim()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>تشغيل المحاكاة</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

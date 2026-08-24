@@ -39,6 +39,7 @@ import { useCrmStore } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
+import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 import { aiApi, API_BASE } from '../services/api';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
@@ -437,13 +438,49 @@ export const ChatCanvas: React.FC = () => {
   // In-Chat Search State & Smooth Jump
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inChatSearchQuery, setInChatSearchQuery] = useState('');
+  const [filterSearchOnlyAgents, setFilterSearchOnlyAgents] = useState(false);
   const [matchedMsgIndex, setMatchedMsgIndex] = useState(0);
 
   const matchedMessageIds = React.useMemo(() => {
     if (!inChatSearchQuery.trim()) return [];
     const q = inChatSearchQuery.toLowerCase().trim();
-    return activeMessages.filter((m) => (m.text || '').toLowerCase().includes(q)).map((m) => m.id);
-  }, [inChatSearchQuery, activeMessages]);
+    return activeMessages
+      .filter((m) => {
+        if (!m) return false;
+        const textMatch = (m.text || '').toLowerCase().includes(q);
+        const senderNameMatch = (m.sender_name || '').toLowerCase().includes(q);
+        const externalMatch = (m.sender_external_id || '').toLowerCase().includes(q);
+
+        let agentMatch = false;
+        if (m.sender_type === 'agent') {
+          if (m.sender_user_id) {
+            const member = teamMembers.find((t) => t.id === m.sender_user_id);
+            if (member) {
+              agentMatch =
+                (member.full_name || '').toLowerCase().includes(q) ||
+                (member.email || '').toLowerCase().includes(q);
+            }
+          }
+          if (!agentMatch) {
+            // Check all team members whose name matches query
+            agentMatch = teamMembers.some(
+              (tm) =>
+                tm.full_name?.toLowerCase().includes(q) &&
+                (m.sender_name?.toLowerCase() === tm.full_name.toLowerCase() ||
+                  m.sender_user_id === tm.id ||
+                  m.sender_external_id?.toLowerCase() === tm.email.toLowerCase())
+            );
+          }
+        }
+
+        if (filterSearchOnlyAgents) {
+          return m.sender_type === 'agent' && (textMatch || senderNameMatch || externalMatch || agentMatch);
+        }
+
+        return textMatch || senderNameMatch || externalMatch || agentMatch;
+      })
+      .map((m) => m.id);
+  }, [inChatSearchQuery, activeMessages, teamMembers, filterSearchOnlyAgents]);
 
   const handleJumpToMatch = (dir: 'next' | 'prev') => {
     if (matchedMessageIds.length === 0) return;
@@ -811,22 +848,41 @@ export const ChatCanvas: React.FC = () => {
       <header className="h-14 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-6 flex items-center justify-between shrink-0 z-20">
         {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-            <span className={`w-3 h-3 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
-          </div>
+          <ConversationAvatar
+            customerName={customerName}
+            customerAvatarUrl={avatarUrl}
+            brandId={activeConv.brand_id}
+            brandName={activeConv.brand || activeConv.brand_name}
+            channel={activeConv.channel}
+            size="md"
+            showPresenceDot={true}
+            presenceDotColor={presence.dotColor}
+            presenceStatusText={presence.statusText}
+          />
 
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
-              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
-                {activeConv.brand || activeConv.brand_name || 'LUXIRA'}
-              </span>
+              {(() => {
+                const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
+                if (brandObj.isDirect) {
+                  return (
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                      محادثة خاصة (Direct)
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+                    {brandObj.name}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
               <span className={presence.colorClass}>{presence.statusText}</span>
               <span>•</span>
-              <span>{activeConv.channel}</span>
+              <span className="capitalize">{activeConv.channel || 'messenger'}</span>
             </p>
           </div>
         </div>
@@ -836,8 +892,8 @@ export const ChatCanvas: React.FC = () => {
           {/* In-Chat Search Trigger & Bar */}
           <div className="relative flex items-center">
             {isSearchOpen ? (
-              <div className="flex items-center gap-1 bg-slate-100/90 rounded-full px-2.5 py-1 border border-slate-200 shadow-2xs animate-in fade-in zoom-in-95 duration-100">
-                <Search className="w-3.5 h-3.5 text-slate-400" />
+              <div className="flex items-center gap-1.5 bg-slate-100/90 rounded-full px-2.5 py-1 border border-slate-200 shadow-2xs animate-in fade-in zoom-in-95 duration-100">
+                <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <input
                   type="text"
                   value={inChatSearchQuery}
@@ -845,12 +901,28 @@ export const ChatCanvas: React.FC = () => {
                     setInChatSearchQuery(e.target.value);
                     setMatchedMsgIndex(0);
                   }}
-                  placeholder="بحث في المحادثة..."
+                  placeholder="بحث بنص أو اسم موظف..."
                   autoFocus
-                  className="bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none w-36 sm:w-44"
+                  className="bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none w-36 sm:w-48"
                 />
+
+                {/* Toggle to show only agent replies matching query */}
+                <button
+                  type="button"
+                  onClick={() => setFilterSearchOnlyAgents(!filterSearchOnlyAgents)}
+                  title={filterSearchOnlyAgents ? 'إلغاء حصر البحث في ردود الموظفين' : 'حصر البحث في ردود الموظفين فقط'}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition flex items-center gap-1 shrink-0 ${
+                    filterSearchOnlyAgents
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'bg-white/80 hover:bg-white text-slate-600 border border-slate-200/80'
+                  }`}
+                >
+                  <User className="w-3 h-3" />
+                  <span>ردود الموظف</span>
+                </button>
+
                 {matchedMessageIds.length > 0 && (
-                  <div className="flex items-center gap-1 border-r border-slate-200 pr-1.5 text-[11px] font-bold text-slate-600">
+                  <div className="flex items-center gap-1 border-r border-slate-200 pr-1.5 text-[11px] font-bold text-slate-600 shrink-0">
                     <span>{matchedMsgIndex + 1}/{matchedMessageIds.length}</span>
                     <button type="button" onClick={() => handleJumpToMatch('prev')} className="hover:text-[#1A73E8] p-0.5">
                       <ChevronUp className="w-3 h-3" />
@@ -865,6 +937,7 @@ export const ChatCanvas: React.FC = () => {
                   onClick={() => {
                     setIsSearchOpen(false);
                     setInChatSearchQuery('');
+                    setFilterSearchOnlyAgents(false);
                   }}
                   className="p-1 text-slate-400 hover:text-slate-600 transition rounded-full"
                 >
@@ -876,7 +949,7 @@ export const ChatCanvas: React.FC = () => {
                 type="button"
                 onClick={() => setIsSearchOpen(true)}
                 className="p-1.5 rounded-full border bg-slate-100/70 hover:bg-white text-slate-600 border-slate-200/60 transition shadow-2xs"
-                title="بحث داخل المحادثة"
+                title="بحث داخل المحادثة (نص / اسم موظف)"
               >
                 <Search className="w-3.5 h-3.5" />
               </button>
@@ -1078,11 +1151,14 @@ export const ChatCanvas: React.FC = () => {
                 (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
               );
 
-            const sortedMessages = selectedAgentId !== 'all'
-              ? rawSorted.filter(isMsgFromAgent)
-              : rawSorted;
+            let sortedMessages = rawSorted;
+            if (selectedAgentId !== 'all') {
+              sortedMessages = sortedMessages.filter(isMsgFromAgent);
+            } else if (filterSearchOnlyAgents && inChatSearchQuery.trim()) {
+              sortedMessages = sortedMessages.filter((m) => matchedMessageIds.includes(m.id) && m.sender_type === 'agent');
+            }
 
-            if (selectedAgentId !== 'all' && sortedMessages.length === 0) {
+            if ((selectedAgentId !== 'all' || (filterSearchOnlyAgents && inChatSearchQuery.trim())) && sortedMessages.length === 0) {
               return (
                 <div className="text-center py-16 px-4 space-y-3 bg-white/50 rounded-2xl border border-dashed border-indigo-200 m-4 animate-in fade-in">
                   <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
@@ -1090,7 +1166,9 @@ export const ChatCanvas: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-800">
-                      لا توجد ردود مسجلة للموظف ({activeMember?.full_name || 'المحدد'}) في هذه المحادثة
+                      {filterSearchOnlyAgents
+                        ? `لا توجد ردود مسجلة للموظف تطابق البحث "${inChatSearchQuery}" في هذه المحادثة`
+                        : `لا توجد ردود مسجلة للموظف (${activeMember?.full_name || 'المحدد'}) في هذه المحادثة`}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-1">
                       إجمالي رسائل هذه المحادثة: {rawSorted.length} رسالة
@@ -1098,7 +1176,10 @@ export const ChatCanvas: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setSelectedAgentId('all')}
+                    onClick={() => {
+                      setSelectedAgentId('all');
+                      setFilterSearchOnlyAgents(false);
+                    }}
                     className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-full transition shadow-2xs cursor-pointer"
                   >
                     عرض كل رسائل المحادثة
