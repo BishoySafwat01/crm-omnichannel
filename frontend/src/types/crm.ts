@@ -59,6 +59,9 @@ export interface Customer {
   assigned_agent_name?: string;
   last_agent_name?: string;
   last_interaction?: string;
+  is_blocked?: boolean;
+  blocked_at?: string;
+  blocked_reason?: string;
 }
 
 export interface MessageReaction {

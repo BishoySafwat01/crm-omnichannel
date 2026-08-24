@@ -375,6 +375,8 @@ export const ChatCanvas: React.FC = () => {
     selectedEmployeeId,
     setSelectedEmployeeId,
     availableEmployees,
+    blockCustomer,
+    unblockCustomer,
   } = useCrmStore();
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
@@ -1186,6 +1188,32 @@ export const ChatCanvas: React.FC = () => {
             <UserCheck className="w-3.5 h-3.5" />
             <span>إكمال</span>
           </button>
+
+          {/* Block / Unblock Customer Header Action */}
+          {activeConv.customer?.is_blocked ? (
+            <button
+              onClick={() => activeConv.customer?.id && unblockCustomer(activeConv.customer.id)}
+              className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
+              title="إلغاء حظر العميل"
+            >
+              <Ban className="w-3.5 h-3.5 text-rose-600" />
+              <span>محظور (فك الحظر)</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (!activeConv.customer?.id) return;
+                const reason = prompt('يرجى كتابة سبب حظر هذا العميل (اختياري):', 'سبام / مخالفة');
+                if (reason !== null) {
+                  blockCustomer(activeConv.customer.id, reason.trim() || 'حظر يدوي من المشرف');
+                }
+              }}
+              className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition"
+              title="حظر هذا العميل (Block Customer)"
+            >
+              <Ban className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -1612,10 +1640,34 @@ export const ChatCanvas: React.FC = () => {
           </div>
         )}
 
-        {/* Rounded All-in-One Floating Dock Composer Box */}
-        <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5 relative">
-          {/* Staged Reply Preview Bar */}
-          {replyingToMessage && !editingMessage && (
+        {/* Rounded All-in-One Floating Dock Composer Box or Blocked Customer Notice */}
+        {activeConv.customer?.is_blocked ? (
+          <div className="border border-rose-200 bg-rose-50/95 backdrop-blur-md rounded-2xl p-4 shadow-sm flex items-center justify-between gap-4 text-right animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold border border-rose-200 shrink-0">
+                <Ban className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-extrabold text-rose-900">هذا العميل محظور حالياً (Blocked)</h4>
+                <p className="text-[11px] text-rose-700 font-medium mt-0.5">
+                  {activeConv.customer.blocked_reason
+                    ? `سبب الحظر: ${activeConv.customer.blocked_reason}`
+                    : 'تم إيقاف استقبال وإرسال الرسائل مع هذا العميل.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => activeConv.customer?.id && unblockCustomer(activeConv.customer.id)}
+              className="px-4 py-2 bg-white hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-300 transition shadow-2xs shrink-0 cursor-pointer"
+            >
+              فك الحظر (Unblock)
+            </button>
+          </div>
+        ) : (
+          <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5 relative">
+            {/* Staged Reply Preview Bar */}
+            {replyingToMessage && !editingMessage && (
             <div className="flex items-center justify-between p-2 px-3 bg-blue-50/80 rounded-xl border border-blue-100 animate-in fade-in duration-150">
               <div className="flex items-center gap-2.5 overflow-hidden">
                 <CornerUpLeft className="w-4 h-4 text-[#1A73E8] shrink-0" />
@@ -1915,6 +1967,7 @@ export const ChatCanvas: React.FC = () => {
             </div>
           )}
         </div>
+      )}
       </footer>
 
       {/* Forward Message Modal */}

@@ -176,6 +176,8 @@ interface CrmState {
   setConversationPriority: (conversationId: string, priority: 'low' | 'normal' | 'high' | 'urgent') => Promise<void>;
   updateConversationBrand: (conversationId: string, brand: string) => Promise<void>;
   updateCustomerProfile: (customerId: string, payload: Partial<Customer>) => Promise<void>;
+  blockCustomer: (customerId: string, reason?: string) => Promise<void>;
+  unblockCustomer: (customerId: string) => Promise<void>;
   handleRealtimeEvent: (event: WebSocketEvent) => void;
 
   // Message Actions Handlers
@@ -1141,6 +1143,36 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     if (payload.location || (payload as any).country) {
       get().fetchAvailableCountries();
     }
+  },
+
+  blockCustomer: async (customerId: string, reason?: string) => {
+    set((state) => ({
+      conversations: state.conversations.map((c) => {
+        if (c.customer_id === customerId || c.customer?.id === customerId) {
+          return {
+            ...c,
+            customer: { ...(c.customer || {}), is_blocked: true, blocked_reason: reason || 'حظر يدوي من المشرف' } as Customer,
+          };
+        }
+        return c;
+      }),
+    }));
+    await customerApi.blockCustomer(customerId, reason);
+  },
+
+  unblockCustomer: async (customerId: string) => {
+    set((state) => ({
+      conversations: state.conversations.map((c) => {
+        if (c.customer_id === customerId || c.customer?.id === customerId) {
+          return {
+            ...c,
+            customer: { ...(c.customer || {}), is_blocked: false, blocked_reason: undefined } as Customer,
+          };
+        }
+        return c;
+      }),
+    }));
+    await customerApi.unblockCustomer(customerId);
   },
 
   handleRealtimeEvent: (event) => {

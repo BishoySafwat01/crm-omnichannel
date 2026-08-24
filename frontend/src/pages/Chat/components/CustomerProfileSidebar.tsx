@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
-  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink
+  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../../../constants/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../../../services/api';
@@ -11,7 +11,7 @@ import { ConversationAvatar, getBrandObject } from '../../../components/Conversa
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, setDraftText, isTyping } = useCrmStore();
+  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -140,6 +140,35 @@ export const CustomerProfileSidebar: React.FC = () => {
       });
     }
     setIsEditing(false);
+  };
+
+  const [isBlocking, setIsBlocking] = useState(false);
+
+  const handleBlockCustomer = async () => {
+    if (!customer?.id) return;
+    const reason = prompt('يرجى كتابة سبب حظر هذا العميل (اختياري):', 'مخالفة أو سبام');
+    if (reason === null) return;
+    setIsBlocking(true);
+    try {
+      await blockCustomer(customer.id, reason.trim() || 'حظر يدوي من المشرف');
+    } catch (e: any) {
+      alert(e?.message || 'تعذر حظر العميل');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const handleUnblockCustomer = async () => {
+    if (!customer?.id) return;
+    if (!confirm('هل أنت متأكد من رغبتك في إلغاء حظر هذا العميل؟')) return;
+    setIsBlocking(true);
+    try {
+      await unblockCustomer(customer.id);
+    } catch (e: any) {
+      alert(e?.message || 'تعذر إلغاء حظر العميل');
+    } finally {
+      setIsBlocking(false);
+    }
   };
 
   const handleSelectAttribute = (key: 'skin_type' | 'tier' | 'stage', value: string) => {
@@ -332,9 +361,40 @@ export const CustomerProfileSidebar: React.FC = () => {
             </div>
           </div>
 
-          <button className="w-full mt-2 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition text-center">
-            عرض الملف الشخصي الكامل
-          </button>
+          {/* Block / Unblock Customer Management Action */}
+          <div className="pt-2 border-t border-slate-100">
+            {customer.is_blocked ? (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-1.5 text-rose-700 font-extrabold text-xs">
+                  <Ban className="w-4 h-4 shrink-0" />
+                  <span>العميل محظور حالياً (Blocked)</span>
+                </div>
+                {customer.blocked_reason && (
+                  <p className="text-[11px] text-rose-600 font-medium leading-tight">السبب: {customer.blocked_reason}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleUnblockCustomer}
+                  disabled={isBlocking}
+                  className="w-full py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>إلغاء حظر العميل (Unblock)</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBlockCustomer}
+                disabled={isBlocking}
+                className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                title="حظر العميل من إرسال رسائل جديدة"
+              >
+                <Ban className="w-3.5 h-3.5" />
+                <span>حظر هذا العميل (Block Customer)</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* CARD 2: تفاصيل الطلب (Order Info Glass Card) */}
