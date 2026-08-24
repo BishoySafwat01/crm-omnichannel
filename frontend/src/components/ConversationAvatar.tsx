@@ -116,7 +116,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       subAvatar: 'w-4 h-4',
       subIcon: 'w-2.5 h-2.5',
       channelBadge: 'w-4 h-4 -top-1 -right-1',
-      presence: 'w-2.5 h-2.5 top-0 right-0',
+      presence: 'w-2.5 h-2.5 -bottom-0.5 -right-0.5',
     },
     md: {
       container: 'w-12 h-12',
@@ -124,7 +124,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       subAvatar: 'w-5 h-5',
       subIcon: 'w-3 h-3',
       channelBadge: 'w-5 h-5 -top-1 -right-1',
-      presence: 'w-2.5 h-2.5 top-0 right-0',
+      presence: 'w-3 h-3 -bottom-0.5 -right-0.5',
     },
     lg: {
       container: 'w-14 h-14',
@@ -132,7 +132,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       subAvatar: 'w-6 h-6',
       subIcon: 'w-3.5 h-3.5',
       channelBadge: 'w-6 h-6 -top-1.5 -right-1.5',
-      presence: 'w-3 h-3 top-0 right-0',
+      presence: 'w-3.5 h-3.5 -bottom-0.5 -right-0.5',
     },
     xl: {
       container: 'w-16 h-16',
@@ -140,7 +140,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       subAvatar: 'w-7 h-7',
       subIcon: 'w-4 h-4',
       channelBadge: 'w-7 h-7 -top-2 -right-2',
-      presence: 'w-3.5 h-3.5 top-0 right-0',
+      presence: 'w-4 h-4 -bottom-1 -right-1',
     },
   }[size];
 
