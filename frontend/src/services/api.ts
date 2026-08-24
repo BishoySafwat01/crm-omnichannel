@@ -63,7 +63,12 @@ export const authApi = {
   },
 };
 
-export const getConversationsDirect = async (brand_id?: string, channel?: string, country?: string): Promise<any> => {
+export const getConversationsDirect = async (
+  brand_id?: string,
+  channel?: string,
+  country?: string,
+  assigned_agent_id?: string
+): Promise<any> => {
   const params = new URLSearchParams();
   if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
     params.set('brand', brand_id);
@@ -73,6 +78,9 @@ export const getConversationsDirect = async (brand_id?: string, channel?: string
   }
   if (country && country.toLowerCase() !== 'all') {
     params.set('country', country);
+  }
+  if (assigned_agent_id && assigned_agent_id.toLowerCase() !== 'all') {
+    params.set('assigned_agent_id', assigned_agent_id);
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 

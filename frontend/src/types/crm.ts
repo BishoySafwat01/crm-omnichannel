@@ -85,6 +85,7 @@ export interface Message {
   sender_type: 'customer' | 'agent' | 'system';
   sender_user_id?: string;
   sender_name?: string;
+  sender_external_id?: string;
   message_type: 'text' | 'image' | 'file' | 'audio' | 'video' | 'location' | 'share_reel' | 'share_post' | 'share' | 'unknown';
   text?: string;
   media_url?: string;

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban, X } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
@@ -55,10 +55,14 @@ export const ConversationList: React.FC = () => {
 
   const {
     conversations,
+    messages,
     activeConversationId,
     setActiveConversationId,
     selectedBrandId,
     selectedChannel,
+    selectedAgentId,
+    setSelectedAgentId,
+    teamMembers,
     searchQuery,
     setSearchQuery,
     activeFilterTab,
@@ -155,16 +159,39 @@ export const ConversationList: React.FC = () => {
       }
 
       // 5. Brand Filter
-      if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all' || selectedBrandId === 'الكل') {
-        return true;
+      if (selectedBrandId && selectedBrandId.toLowerCase() !== 'all' && selectedBrandId !== 'الكل') {
+        const convBrand = ((conv as any).brand || (conv as any).brand_id || (conv as any).business_unit || '').toLowerCase();
+        const filterBrand = selectedBrandId.toLowerCase();
+        if (convBrand && convBrand !== filterBrand && !convBrand.includes(filterBrand)) return false;
       }
 
-      const convBrand = ((conv as any).brand || (conv as any).brand_id || (conv as any).business_unit || '').toLowerCase();
-      const filterBrand = selectedBrandId.toLowerCase();
-      if (!convBrand) return true;
-      return convBrand === filterBrand || convBrand.includes(filterBrand);
+      // 6. Employee / Agent Filter
+      if (selectedAgentId && selectedAgentId !== 'all') {
+        const selectedMember = teamMembers.find((m) => m.id === selectedAgentId);
+        const memberName = selectedMember?.full_name?.toLowerCase().trim();
+        const memberEmail = selectedMember?.email?.toLowerCase().trim();
+
+        const isAssigned =
+          conv.assigned_agent_id === selectedAgentId ||
+          (memberName && (conv.assigned_agent_id?.toLowerCase() === memberName || (conv as any).assigned_agent_name?.toLowerCase() === memberName)) ||
+          (memberEmail && conv.assigned_agent_id?.toLowerCase() === memberEmail);
+
+        const convMsgs = messages[conv.id] || [];
+        const hasAgentMessage = convMsgs.some(
+          (m) =>
+            m.sender_type === 'agent' &&
+            (m.sender_user_id === selectedAgentId ||
+              (memberName && m.sender_name?.toLowerCase() === memberName) ||
+              (memberName && m.sender_external_id?.toLowerCase() === memberName) ||
+              (memberEmail && m.sender_external_id?.toLowerCase() === memberEmail))
+        );
+
+        if (!isAssigned && !hasAgentMessage) return false;
+      }
+
+      return true;
     });
-  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedLocation]);
+  }, [conversations, messages, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedLocation, selectedAgentId, teamMembers]);
 
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
@@ -173,10 +200,12 @@ export const ConversationList: React.FC = () => {
     { id: 'sla_breached', label: 'متأخرة', icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> },
   ];
 
+  const selectedAgentObj = teamMembers.find((m) => m.id === selectedAgentId);
+
   return (
     <aside className="w-80 md:w-96 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-[calc(100vh-80px)] relative z-10 overflow-hidden">
       {/* Header Search & Filter Toolbar */}
-      <div className="p-3 border-b border-slate-100/70 space-y-2.5">
+      <div className="p-3 border-b border-slate-100/70 space-y-2">
         <div className="relative flex items-center">
           <input
             type="text"
@@ -188,6 +217,25 @@ export const ConversationList: React.FC = () => {
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <Filter className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3 cursor-pointer hover:text-[#1A73E8]" />
         </div>
+
+        {/* Active Multi-Filter Pill for Agent */}
+        {selectedAgentId !== 'all' && selectedAgentObj && (
+          <div className="flex items-center justify-between px-2.5 py-1 bg-indigo-50/90 border border-indigo-100/80 rounded-xl text-[11px] text-indigo-900 animate-in fade-in">
+            <div className="flex items-center gap-1.5 truncate">
+              <User className="w-3 h-3 text-indigo-600 shrink-0" />
+              <span className="truncate">
+                فلتر الموظف: <strong>{selectedAgentObj.full_name}</strong>
+              </span>
+            </div>
+            <button
+              onClick={() => setSelectedAgentId('all')}
+              className="text-indigo-600 hover:text-indigo-900 p-0.5 rounded-full hover:bg-indigo-100 transition shrink-0"
+              title="إلغاء فلتر الموظف"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {/* Filter Tabs */}
         <div className="flex items-center gap-1 p-1 bg-slate-100/60 rounded-full border border-slate-200/50 backdrop-blur-md">

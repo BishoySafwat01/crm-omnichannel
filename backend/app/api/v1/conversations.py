@@ -148,6 +148,7 @@ async def list_conversations(
     location: Optional[str] = Query(None, description="Filter by customer location"),
     country: Optional[str] = Query(None, description="Filter by customer country"),
     sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
+    assigned_agent_id: Optional[str] = Query(None, description="Filter by assigned agent ID or name"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
@@ -197,6 +198,7 @@ async def list_conversations(
         location=effective_country,
         country=effective_country,
         sla_status=sla_status,
+        assigned_agent_id=assigned_agent_id,
         allowed_brands=allowed_brands,
         allowed_channels=allowed_channels,
     )

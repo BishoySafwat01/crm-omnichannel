@@ -18,6 +18,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     selectedCountry,
     setSelectedCountry,
     availableCountries,
+    selectedAgentId,
+    setSelectedAgentId,
+    teamMembers,
+    fetchTeamMembers,
     setIsIntegrationsModalOpen,
     unreadSummary,
     fetchUnreadSummary,
@@ -36,6 +40,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   useEffect(() => {
     fetchUnreadSummary();
+    fetchTeamMembers();
   }, []);
 
   const channels: { id: ChannelFilterType; label: string }[] = [
@@ -229,6 +234,20 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </option>
             ))}
             <option value="unspecified">⚪ غير محدد</option>
+          </select>
+
+          {/* Dynamic Team Member / Agent Dropdown Selector */}
+          <select
+            value={selectedAgentId}
+            onChange={(e) => setSelectedAgentId(e.target.value)}
+            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
+          >
+            <option value="all">👥 كل الموظفين</option>
+            {(teamMembers || []).map((m) => (
+              <option key={m.id} value={m.id}>
+                👤 {m.full_name} {m.role === 'admin' ? '(مدير)' : ''}
+              </option>
+            ))}
           </select>
         </div>
       )}
