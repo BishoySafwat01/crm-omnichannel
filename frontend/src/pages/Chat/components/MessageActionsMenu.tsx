@@ -10,9 +10,9 @@ import {
   Check,
   MoreVertical,
 } from 'lucide-react';
-import { Message } from '../../types/crm';
-import { useAuthStore } from '../../store/useAuthStore';
-import { useCrmStore } from '../../store/useCrmStore';
+import { Message } from '../../../types/crm';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { useCrmStore } from '../../../store/useCrmStore';
 import { MessageReactionPicker } from './MessageReactionPicker';
 
 interface MessageActionsMenuProps {

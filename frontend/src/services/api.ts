@@ -1,10 +1,15 @@
-import { Conversation, Customer, Message, PaginatedResponse } from '../types/crm';
+import { CommentAutomationRule, Conversation, Customer, Message, PaginatedResponse, SocialComment } from '../types/crm';
+import { APP_CONFIG } from '../config/appConfig';
+import { MOCK_BRANDS } from '../constants/brands';
+
+export { MOCK_BRANDS };
 
 const metaEnv = (import.meta as any).env || {};
 const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
 export const API_BASE = rawApiUrl
   ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
-  : '/api/v1';
+  : APP_CONFIG.API_BASE || '/api/v1';
+export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || 'http://localhost:8000/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -131,17 +136,6 @@ export const markConversationReadDirect = async (conversationId: string): Promis
     return false;
   }
 };
-
-export const MOCK_BRANDS = [
-  { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
-  { id: 'LAVVA', name: 'LAVVA', avatar: 'LV', color: 'from-teal-600 to-teal-700', page_id: '1302055352987458' },
-  { id: 'LUXIRA', name: 'LUXIRA', avatar: 'LX', color: 'from-[#1A73E8] to-blue-600', page_id: '1302055352987459' },
-  { id: 'MOON LIGHT', name: 'MOON LIGHT', avatar: 'ML', color: 'from-indigo-600 to-indigo-700', page_id: '100099887766554' },
-  { id: 'LOTUS BLUE', name: 'LOTUS BLUE', avatar: 'LB', color: 'from-cyan-600 to-cyan-700', page_id: '100099887766555' },
-  { id: 'BEAUTY CENTER', name: 'BEAUTY CENTER', avatar: 'BC', color: 'from-rose-600 to-rose-700', page_id: '100099887766556' },
-  { id: 'LOXX KING', name: 'LOXX KING', avatar: 'LK', color: 'from-amber-600 to-amber-700', page_id: '100099887766557' },
-  { id: 'FLARE', name: 'FLARE', avatar: 'FL', color: 'from-orange-600 to-orange-700', page_id: '100099887766558' },
-];
 
 export const apiService = {
   async getConversations(params?: {
@@ -674,26 +668,21 @@ export const customerApi = {
     const res = await safeFetch(`/customers/${customerId}/block`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason: reason || 'حظر يدوي من المشرف' }),
     });
-    if (!res || !res.ok) {
-      const err = await res?.json().catch(() => ({ detail: 'فشل حظر العميل' }));
-      throw new Error(err?.detail || 'فشل حظر العميل (يتطلب صلاحيات المشرف)');
-    }
-    return await res.json();
+    if (res && res.ok) return await res.json();
+    const err = await res?.json().catch(() => ({ detail: 'فشل حظر العميل' }));
+    throw new Error(err?.detail || 'فشل حظر العميل');
   },
 
   async unblockCustomer(customerId: string): Promise<Customer> {
     const res = await safeFetch(`/customers/${customerId}/unblock`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({}),
     });
-    if (!res || !res.ok) {
-      const err = await res?.json().catch(() => ({ detail: 'فشل إلغاء حظر العميل' }));
-      throw new Error(err?.detail || 'فشل إلغاء حظر العميل (يتطلب صلاحيات المشرف)');
-    }
-    return await res.json();
+    if (res && res.ok) return await res.json();
+    const err = await res?.json().catch(() => ({ detail: 'فشل إلغاء حظر العميل' }));
+    throw new Error(err?.detail || 'فشل إلغاء حظر العميل');
   },
 };
 
@@ -880,14 +869,150 @@ export const metaApi = {
     throw new Error('Test ping failed');
   },
 
-  async publishPost(message: string, link?: string) {
+  async publishPost(payload: { message: string; link?: string; image_url?: string }): Promise<any> {
     const res = await safeFetch('/meta/posts', {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
-      body: JSON.stringify({ message, link }),
+      body: JSON.stringify(payload),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('فشل نشر المنشور');
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل نشر المنشور على صفحة فيسبوك' }));
+      throw new Error(err?.detail || 'فشل نشر المنشور على صفحة فيسبوك');
+    }
+    return await res.json();
+  },
+};
+
+export const messageActionsApi = {
+  async editMessage(conversationId: string, messageId: string, text: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تعديل الرسالة' }));
+      throw new Error(err?.detail || 'فشل تعديل الرسالة');
+    }
+    return await res.json();
+  },
+
+  async deleteMessage(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل حذف الرسالة' }));
+      throw new Error(err?.detail || 'فشل حذف الرسالة');
+    }
+    return await res.json();
+  },
+
+  async toggleReaction(conversationId: string, messageId: string, emoji: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ emoji }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إضافة التفاعل' }));
+      throw new Error(err?.detail || 'فشل إضافة التفاعل');
+    }
+    return await res.json();
+  },
+
+  async togglePin(conversationId: string, messageId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/pin`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تثبيت/إلغاء تثبيت الرسالة' }));
+      throw new Error(err?.detail || 'فشل تثبيت/إلغاء تثبيت الرسالة');
+    }
+    return await res.json();
+  },
+
+  async forwardMessage(conversationId: string, messageId: string, targetConversationId: string): Promise<Message> {
+    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/forward`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ target_conversation_id: targetConversationId }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إعادة توجيه الرسالة' }));
+      throw new Error(err?.detail || 'فشل إعادة توجيه الرسالة');
+    }
+    return await res.json();
+  },
+};
+
+export const commentsApi = {
+  async listComments(filters?: {
+    brand?: string;
+    channel?: string;
+    sentiment?: string;
+    status?: string;
+  }): Promise<SocialComment[]> {
+    const params = new URLSearchParams();
+    if (filters?.brand && filters.brand !== 'all') params.append('brand', filters.brand);
+    if (filters?.channel && filters.channel !== 'all') params.append('channel', filters.channel);
+    if (filters?.sentiment && filters.sentiment !== 'all') params.append('sentiment', filters.sentiment);
+    if (filters?.status && filters.status !== 'all') params.append('status', filters.status);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await safeFetch(`/comments${query}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.items)) return data.items;
+      return [];
+    }
+    return [];
+  },
+
+  async replyToComment(
+    commentUuid: string,
+    payload: { message: string; private_dm?: boolean }
+  ): Promise<SocialComment> {
+    const res = await safeFetch(`/comments/${commentUuid}/reply`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message: payload.message, private_dm: Boolean(payload.private_dm) }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل إرسال الرد على التعليق' }));
+      throw new Error(err?.detail || 'فشل إرسال الرد على التعليق');
+    }
+    return await res.json();
+  },
+
+  async toggleHideComment(commentUuid: string, is_hidden: boolean): Promise<SocialComment> {
+    const res = await safeFetch(`/comments/${commentUuid}/hide`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ is_hidden }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل تعديل حالة إخفاء التعليق' }));
+      throw new Error(err?.detail || 'فشل تعديل حالة إخفاء التعليق');
+    }
+    return await res.json();
+  },
+
+  async syncComments(): Promise<any> {
+    const res = await safeFetch('/comments/sync', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return null;
   },
 };
 
@@ -1046,56 +1171,36 @@ export const socialCommentsApi = {
   },
 };
 
-export const messageActionsApi = {
-  async editMessage(conversationId: string, messageId: string, text: string): Promise<Message> {
-    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
-      body: JSON.stringify({ text }),
+export const commentAutomationApi = {
+  async listCommentAutomations(): Promise<CommentAutomationRule[]> {
+    const res = await safeFetch('/comments/automations', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to edit message');
+    if (res && res.ok) {
+      return await res.json();
+    }
+    return [];
   },
 
-  async deleteMessage(conversationId: string, messageId: string): Promise<Message> {
-    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}`, {
+  async createCommentAutomation(rule: Partial<CommentAutomationRule>): Promise<CommentAutomationRule> {
+    const res = await safeFetch('/comments/automations', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(rule),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في حفظ قاعدة أتمتة التعليق' }));
+      throw new Error(err?.detail || 'فشل في حفظ قاعدة أتمتة التعليق');
+    }
+    return await res.json();
+  },
+
+  async deleteCommentAutomation(ruleId: string): Promise<boolean> {
+    const res = await safeFetch(`/comments/automations/${ruleId}`, {
       method: 'DELETE',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
+      headers: getAuthHeaders(),
     });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to delete message');
-  },
-
-  async toggleReaction(conversationId: string, messageId: string, emoji: string): Promise<Message> {
-    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
-      body: JSON.stringify({ emoji }),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to toggle reaction');
-  },
-
-  async togglePin(conversationId: string, messageId: string): Promise<Message> {
-    const res = await safeFetch(`/conversations/${conversationId}/messages/${messageId}/pin`, {
-      method: 'POST',
-      headers: getAuthHeaders({ Accept: 'application/json' }),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to toggle pin');
-  },
-
-  async forwardMessage(
-    sourceConversationId: string,
-    messageId: string,
-    targetConversationId: string
-  ): Promise<any> {
-    const res = await safeFetch(`/conversations/${sourceConversationId}/messages/${messageId}/forward`, {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
-      body: JSON.stringify({ target_conversation_id: targetConversationId }),
-    });
-    if (res && res.ok) return await res.json();
-    throw new Error('Failed to forward message');
+    return res ? res.ok : false;
   },
 };

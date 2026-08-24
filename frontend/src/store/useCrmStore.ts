@@ -122,6 +122,8 @@ interface CrmState {
   selectedChannel: ChannelFilterType;
   selectedCountry: string;
   availableCountries: string[];
+  selectedEmployeeId: string | null;
+  availableEmployees: TeamMember[];
   selectedAgentId: string;
   teamMembers: TeamMember[];
   isFetchingTeamMembers: boolean;
@@ -150,6 +152,7 @@ interface CrmState {
   setSelectedBrandId: (brandId: string) => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
   setSelectedCountry: (country: string) => void;
+  setSelectedEmployeeId: (employeeId: string | null) => void;
   setSelectedAgentId: (agentId: string) => void;
   fetchAvailableCountries: () => Promise<void>;
   fetchTeamMembers: () => Promise<void>;
@@ -193,6 +196,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   selectedChannel: 'all',
   selectedCountry: 'all',
   availableCountries: [],
+  selectedEmployeeId: null,
+  availableEmployees: [],
   selectedAgentId: 'all',
   teamMembers: [],
   isFetchingTeamMembers: false,
@@ -240,9 +245,20 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     get().fetchConversations();
   },
 
+  setSelectedEmployeeId: (employeeId) => {
+    const cleanId = !employeeId || employeeId === 'all' || employeeId === 'الكل' ? null : employeeId;
+    set({
+      selectedEmployeeId: cleanId,
+      selectedAgentId: cleanId || 'all',
+    });
+  },
+
   setSelectedAgentId: (agentId) => {
-    set({ selectedAgentId: agentId });
-    get().fetchConversations();
+    const cleanId = !agentId || agentId === 'all' || agentId === 'الكل' ? null : agentId;
+    set({
+      selectedAgentId: cleanId || 'all',
+      selectedEmployeeId: cleanId,
+    });
   },
 
   fetchAvailableCountries: async () => {
@@ -258,7 +274,12 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     try {
       set({ isFetchingTeamMembers: true });
       const members = await teamApi.listMembers();
-      set({ teamMembers: Array.isArray(members) ? members : [], isFetchingTeamMembers: false });
+      const safeMembers = Array.isArray(members) ? members : [];
+      set({
+        availableEmployees: safeMembers,
+        teamMembers: safeMembers,
+        isFetchingTeamMembers: false,
+      });
     } catch (err) {
       console.warn('[Store] fetchTeamMembers error:', err);
       set({ isFetchingTeamMembers: false });
@@ -271,12 +292,10 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   setSearchQuery: (query) => {
     set({ searchQuery: query });
-    get().fetchConversations();
   },
 
   setActiveFilterTab: (tab) => {
     set({ activeFilterTab: tab });
-    get().fetchConversations();
   },
 
   setSelectedMetaTag: (tag) => {
@@ -290,10 +309,20 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   setActiveConversationId: (id) => {
     if (!id) return;
     set((state) => {
+      const conv = state.conversations.find((c) => c.id === id);
+      const prevUnread = conv?.unread_count || 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
       const updatedConvs = state.conversations.map((c) =>
         c.id === id ? { ...c, unread_count: 0 } : c
       );
-      return { activeConversationId: id, conversations: updatedConvs };
+      return {
+        activeConversationId: id,
+        conversations: updatedConvs,
+        unreadSummary: {
+          ...state.unreadSummary,
+          total_unread: updatedTotal,
+        },
+      };
     });
     get().fetchMessages(id);
     get().markConversationAsRead(id);
@@ -312,13 +341,26 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   markConversationAsRead: async (id) => {
     if (!id) return;
-    set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, unread_count: 0 } : c
-      ),
-    }));
-    await markConversationReadDirect(id);
-    get().fetchUnreadSummary();
+    set((state) => {
+      const conv = state.conversations.find((c) => c.id === id);
+      const prevUnread = conv?.unread_count || 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
+      return {
+        conversations: state.conversations.map((c) =>
+          c.id === id ? { ...c, unread_count: 0 } : c
+        ),
+        unreadSummary: {
+          ...state.unreadSummary,
+          total_unread: updatedTotal,
+        },
+      };
+    });
+    try {
+      await markConversationReadDirect(id);
+      get().fetchUnreadSummary();
+    } catch (e) {
+      console.warn('markConversationRead error:', e);
+    }
   },
 
 
@@ -327,8 +369,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const selectedBrand = get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
-      const selectedAgent = get().selectedAgentId;
-      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, selectedAgent);
+      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, undefined);
 
       let items: Conversation[] = [];
       if (Array.isArray(raw)) {
@@ -1104,66 +1145,37 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     }
   },
 
-  blockCustomer: async (customerId, reason) => {
+  blockCustomer: async (customerId: string, reason?: string) => {
     set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.customer_id === customerId || c.customer?.id === customerId
-          ? {
-              ...c,
-              customer: c.customer ? { ...c.customer, is_blocked: true, blocked_reason: reason } : c.customer,
-            }
-          : c
-      ),
+      conversations: state.conversations.map((c) => {
+        if (c.customer_id === customerId || c.customer?.id === customerId) {
+          return {
+            ...c,
+            customer: { ...(c.customer || {}), is_blocked: true, blocked_reason: reason || 'حظر يدوي من المشرف' } as Customer,
+          };
+        }
+        return c;
+      }),
     }));
-
-    try {
-      await customerApi.blockCustomer(customerId, reason);
-    } catch (err: any) {
-      console.error('[Store] Block customer error:', err);
-      get().fetchConversations();
-      throw err;
-    }
+    await customerApi.blockCustomer(customerId, reason);
   },
 
-  unblockCustomer: async (customerId) => {
+  unblockCustomer: async (customerId: string) => {
     set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.customer_id === customerId || c.customer?.id === customerId
-          ? {
-              ...c,
-              customer: c.customer ? { ...c.customer, is_blocked: false, blocked_reason: undefined } : c.customer,
-            }
-          : c
-      ),
+      conversations: state.conversations.map((c) => {
+        if (c.customer_id === customerId || c.customer?.id === customerId) {
+          return {
+            ...c,
+            customer: { ...(c.customer || {}), is_blocked: false, blocked_reason: undefined } as Customer,
+          };
+        }
+        return c;
+      }),
     }));
-
-    try {
-      await customerApi.unblockCustomer(customerId);
-    } catch (err: any) {
-      console.error('[Store] Unblock customer error:', err);
-      get().fetchConversations();
-      throw err;
-    }
+    await customerApi.unblockCustomer(customerId);
   },
 
   handleRealtimeEvent: (event) => {
-    if ((event as any).type === 'CUSTOMER_BLOCKED' || (event as any).type === 'CUSTOMER_UNBLOCKED') {
-      const custId = (event as any).customer_id;
-      const isBlocked = (event as any).is_blocked;
-      const reason = (event as any).blocked_reason;
-      set((state) => ({
-        conversations: state.conversations.map((c) =>
-          c.customer_id === custId || c.customer?.id === custId
-            ? {
-                ...c,
-                customer: c.customer ? { ...c.customer, is_blocked: isBlocked, blocked_reason: reason } : c.customer,
-              }
-            : c
-        ),
-      }));
-      return;
-    }
-
     if ((event as any).type === 'CONVERSATION_READ') {
       get().fetchUnreadSummary();
       return;

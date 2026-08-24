@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { X, Check, Copy, Plug, MessageSquare, Instagram, Facebook, Globe, ShieldCheck, RefreshCw, Send, Loader2 } from 'lucide-react';
-import { useCrmStore } from '../store/useCrmStore';
-import { metaApi } from '../services/api';
+import { useCrmStore } from '../../store/useCrmStore';
+import { metaApi } from '../../services/api';
 
 export const IntegrationsModal: React.FC = () => {
   const { isIntegrationsModalOpen, setIsIntegrationsModalOpen } = useCrmStore();
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusData, setStatusData] = useState<any>(null);
   const [testPingLoading, setTestPingLoading] = useState<Record<string, boolean>>({});
@@ -54,12 +55,17 @@ export const IntegrationsModal: React.FC = () => {
   if (!isIntegrationsModalOpen) return null;
 
   const webhookUrl = statusData?.webhook?.url || 'https://api.luxira.com/api/v1/meta/webhook';
-  const verifyTokenConfigured: boolean = statusData?.webhook?.verify_token_configured ?? false;
+  const verifyToken = statusData?.webhook?.verify_token || 'LUXIRA_META_WEBHOOK_VERIFY_TOKEN';
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, type: 'url' | 'token') => {
     navigator.clipboard.writeText(text);
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
+    if (type === 'url') {
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } else {
+      setCopiedToken(true);
+      setTimeout(() => setCopiedToken(false), 2000);
+    }
   };
 
   return (
@@ -105,15 +111,11 @@ export const IntegrationsModal: React.FC = () => {
               <div className="space-y-1 text-[11px] text-slate-600 pt-2">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Phone ID:</span>
-                  <span className={`font-bold ${statusData?.whatsapp?.phone_number_id_configured ? 'text-emerald-700' : 'text-slate-400'}`}>
-                    {statusData?.whatsapp?.phone_number_id_configured ? 'مهيأ ✓' : 'غير مهيأ'}
-                  </span>
+                  <span className="font-mono font-bold text-slate-800">{statusData?.whatsapp?.phone_number_id || 'غير متاح'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">WABA ID:</span>
-                  <span className={`font-bold ${statusData?.whatsapp?.waba_id_configured ? 'text-emerald-700' : 'text-slate-400'}`}>
-                    {statusData?.whatsapp?.waba_id_configured ? 'مهيأ ✓' : 'غير مهيأ'}
-                  </span>
+                  <span className="font-mono font-bold text-slate-800">{statusData?.whatsapp?.waba_id || 'غير متاح'}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-emerald-100">
                   <span className="text-slate-400">Status:</span>
@@ -163,9 +165,7 @@ export const IntegrationsModal: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Page ID:</span>
-                  <span className={`font-bold ${statusData?.instagram?.page_id_configured ? 'text-pink-700' : 'text-slate-400'}`}>
-                    {statusData?.instagram?.page_id_configured ? 'مهيأ ✓' : 'غير مهيأ'}
-                  </span>
+                  <span className="font-mono font-bold text-slate-800">{statusData?.instagram?.page_id || 'غير متاح'}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-pink-100">
                   <span className="text-slate-400">Token Status:</span>
@@ -215,9 +215,7 @@ export const IntegrationsModal: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Page ID:</span>
-                  <span className={`font-bold ${statusData?.messenger?.page_id_configured ? 'text-blue-700' : 'text-slate-400'}`}>
-                    {statusData?.messenger?.page_id_configured ? 'مهيأ ✓' : 'غير مهيأ'}
-                  </span>
+                  <span className="font-mono font-bold text-slate-800">{statusData?.messenger?.page_id || 'غير متاح'}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t border-blue-100">
                   <span className="text-slate-400">Webhook:</span>
@@ -272,7 +270,7 @@ export const IntegrationsModal: React.FC = () => {
                 className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none shadow-2xs select-all"
               />
               <button
-                onClick={() => copyToClipboard(webhookUrl)}
+                onClick={() => copyToClipboard(webhookUrl, 'url')}
                 className="px-4 py-2 bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold rounded-xl transition shadow-2xs flex items-center gap-1.5 shrink-0"
               >
                 {copiedUrl ? (
@@ -289,12 +287,20 @@ export const IntegrationsModal: React.FC = () => {
               </button>
             </div>
 
-            {/* Verify Token Status (value intentionally never exposed) */}
+            {/* Verify Token Field */}
             <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-200/60">
               <span className="text-slate-500 font-medium">رمز التحقق (Verify Token):</span>
-              <span className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${verifyTokenConfigured ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                {verifyTokenConfigured ? 'مهيأ ✓ Configured' : 'غير مهيأ ✗ Not configured'}
-              </span>
+              <div className="flex items-center gap-2">
+                <code className="bg-white border border-slate-200 px-2.5 py-1 rounded-lg text-slate-800 font-mono font-bold text-[11px]">
+                  {verifyToken}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(verifyToken, 'token')}
+                  className="text-[#1A73E8] hover:underline text-[11px] font-bold flex items-center gap-1"
+                >
+                  {copiedToken ? 'تم النسخ ✓' : 'نسخ'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
