@@ -405,27 +405,16 @@ export const SocialCommentsManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* AI Moderation Settings Modal Trigger */}
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-800 border border-slate-200 shadow-2xs"
-            >
-              <Sliders className="w-3.5 h-3.5 text-slate-600" />
-              <span>إعدادات الأتمتة والـ AI</span>
-            </button>
-
-            <button
-              onClick={handleToggleAiModeration}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
-                settings.auto_delete_negative
-                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-              }`}
-            >
-              {settings.auto_delete_negative ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
-            </button>
-          </div>
+          <button
+            onClick={handleToggleAiModeration}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+              settings.auto_delete_negative
+                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+            }`}
+          >
+            {settings.auto_delete_negative ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
+          </button>
         </div>
 
         {/* KPI Stats Cards (4 Columns) */}
