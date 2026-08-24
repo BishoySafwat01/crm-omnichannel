@@ -9,7 +9,7 @@ import {
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
 import { UserAvatar } from './UserAvatar';
-import { ConversationAvatar } from './ConversationAvatar';
+import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
@@ -292,10 +292,28 @@ export const CustomerProfileSidebar: React.FC = () => {
                 className="w-full text-xs font-bold text-center border border-blue-300 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 bg-blue-50/40"
               />
             ) : (
-              <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || 'عميل غير مسمى'}</h3>
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || 'عميل غير مسمى'}</h3>
+                {(() => {
+                  const brandObj = getBrandObject(activeConversation?.brand_id, activeConversation?.brand || activeConversation?.brand_name);
+                  if (brandObj.isDirect) {
+                    return (
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                        <span>🔒</span>
+                        <span>محادثة خاصة (Direct)</span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 rounded-full font-bold">
+                      <span>متجر: {brandObj.name}</span>
+                    </span>
+                  );
+                })()}
+              </div>
             )}
 
-            <span className={`text-xs font-bold mt-0.5 ${presence.colorClass}`}>{presence.statusText}</span>
+            <span className={`text-xs font-bold mt-1 ${presence.colorClass}`}>{presence.statusText}</span>
           </div>
 
           {/* Contact Information Fields */}

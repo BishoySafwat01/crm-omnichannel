@@ -39,7 +39,7 @@ import { useCrmStore } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
-import { ConversationAvatar } from './ConversationAvatar';
+import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 import { aiApi, API_BASE } from '../services/api';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
@@ -863,9 +863,21 @@ export const ChatCanvas: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
-              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
-                {activeConv.brand || activeConv.brand_name || 'LUXIRA'}
-              </span>
+              {(() => {
+                const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
+                if (brandObj.isDirect) {
+                  return (
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                      محادثة خاصة (Direct)
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+                    {brandObj.name}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
               <span className={presence.colorClass}>{presence.statusText}</span>

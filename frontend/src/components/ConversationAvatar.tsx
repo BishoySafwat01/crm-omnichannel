@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Store } from 'lucide-react';
+import { User, Store, Lock, MessageSquare } from 'lucide-react';
 import { MOCK_BRANDS } from '../services/api';
 
 export interface ConversationAvatarProps {
@@ -17,19 +17,19 @@ export interface ConversationAvatarProps {
 
 export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string; className?: string }> = ({
   channel = 'messenger',
-  sizeClass = 'w-4 h-4',
+  sizeClass = 'w-5 h-5',
   className = '',
 }) => {
   const normChan = (channel || 'messenger').toLowerCase();
 
   if (normChan === 'whatsapp') {
     return (
-      <div className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-xs border border-white bg-emerald-500 ${className}`} title="واتساب WhatsApp">
-        <svg viewBox="0 0 24 24" className="w-[82%] h-[82%]" fill="none">
-          <path
-            d="M12.04 4.5C7.94 4.5 4.6 7.84 4.6 11.94C4.6 13.31 4.97 14.61 5.63 15.75L4.5 19.5L8.38 18.4C9.48 19.01 10.73 19.34 12.04 19.34C16.14 19.34 19.48 16 19.48 11.9C19.48 7.8 16.14 4.5 12.04 4.5ZM15.73 14.86C15.58 15.29 14.97 15.65 14.54 15.74C14.25 15.8 13.86 15.84 12.59 15.31C10.96 14.63 9.91 12.98 9.83 12.87C9.75 12.76 9.17 12 9.17 11.2C9.17 10.4 9.58 10.01 9.75 9.84C9.89 9.7 10.08 9.63 10.28 9.63C10.35 9.63 10.41 9.63 10.47 9.64C10.63 9.64 10.71 9.65 10.82 9.92C10.96 10.26 11.3 11.1 11.34 11.18C11.38 11.27 11.42 11.37 11.35 11.5C11.29 11.63 11.24 11.69 11.14 11.8C11.05 11.91 10.96 11.99 10.86 12.11C10.75 12.22 10.64 12.35 10.77 12.57C10.89 12.78 11.32 13.48 11.96 14.05C12.78 14.78 13.45 15.01 13.69 15.11C13.89 15.19 14.02 15.17 14.16 15.01C14.33 14.82 14.53 14.53 14.73 14.24C14.88 14.03 15.07 14.06 15.27 14.13C15.48 14.2 16.59 14.75 16.82 14.86C17.05 14.97 17.2 15.03 17.26 15.13C17.31 15.24 17.31 15.7 17.16 16.13"
-            fill="white"
-          />
+      <div
+        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-[#25D366] ${className}`}
+        title="واتساب (WhatsApp)"
+      >
+        <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" fill="white">
+          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.63C8.75 21.41 10.38 21.82 12.04 21.82C17.5 21.82 21.95 17.37 21.95 11.91C21.95 6.45 17.5 2 12.04 2ZM12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.07 16.3C4.24 14.99 3.81 13.47 3.81 11.91C3.81 7.37 7.5 3.68 12.04 3.68C16.58 3.68 20.27 7.37 20.27 11.91C20.27 16.45 16.58 20.15 12.04 20.15ZM16.54 14.41C16.29 14.29 15.08 13.69 14.86 13.61C14.63 13.53 14.47 13.49 14.3 13.73C14.14 13.98 13.65 14.55 13.5 14.71C13.36 14.88 13.21 14.9 12.96 14.78C12.72 14.65 11.93 14.4 11 13.57C10.27 12.92 9.78 12.12 9.64 11.87C9.5 11.63 9.62 11.49 9.75 11.37C9.86 11.26 10 11.09 10.12 10.95C10.24 10.81 10.28 10.71 10.36 10.54C10.45 10.38 10.4 10.24 10.34 10.12C10.28 10 9.79 8.79 9.58 8.3C9.38 7.82 9.18 7.88 9.02 7.88C8.88 7.87 8.71 7.87 8.55 7.87C8.39 7.87 8.12 7.93 7.89 8.18C7.67 8.42 7.03 9.02 7.03 10.24C7.03 11.47 7.92 12.65 8.05 12.82C8.17 12.98 9.8 15.5 12.28 16.57C12.87 16.83 13.33 16.98 13.69 17.1C14.29 17.29 14.83 17.26 15.26 17.2C15.74 17.13 16.74 16.6 16.95 16.03C17.15 15.46 17.15 14.97 17.09 14.86C17.03 14.76 16.88 14.7 16.63 14.58L16.54 14.41Z" />
         </svg>
       </div>
     );
@@ -37,45 +37,59 @@ export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string;
 
   if (normChan === 'instagram') {
     return (
-      <div className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-xs border border-white overflow-hidden bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] ${className}`} title="إنستغرام Instagram">
-        <svg viewBox="0 0 24 24" className="w-[78%] h-[78%]" fill="none">
-          <rect x="4.5" y="4.5" width="15" height="15" rx="4" stroke="white" strokeWidth="1.8" fill="none" />
-          <circle cx="12" cy="12" r="3.8" stroke="white" strokeWidth="1.8" fill="none" />
-          <circle cx="16.5" cy="7.5" r="1" fill="white" />
+      <div
+        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] ${className}`}
+        title="إنستغرام (Instagram Direct)"
+      >
+        <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+          <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+          <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" strokeWidth="2.5" />
         </svg>
       </div>
     );
   }
 
-  // Default: Messenger
+  // Default: Messenger - Super vibrant Facebook Messenger Blue with bold white lightning
   return (
-    <div className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-xs border border-white bg-gradient-to-tr from-[#0078FF] via-[#00C6FF] to-[#A033FF] ${className}`} title="فيسبوك ماسنجر Messenger">
-      <svg viewBox="0 0 24 24" className="w-[82%] h-[82%]" fill="none">
-        <path
-          d="M12 4C7.58 4 4 7.36 4 11.5C4 13.86 5.18 15.96 7.02 17.33V20L9.62 18.57C10.38 18.78 11.18 18.9 12 18.9C16.42 18.9 20 15.54 20 11.4C20 7.26 16.42 4 12 4ZM12.8 13.9L10.75 11.7L6.8 13.9L11.15 9.3L13.25 11.5L17.2 9.3L12.8 13.9Z"
-          fill="white"
-        />
+    <div
+      className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-[#0084FF] ${className}`}
+      title="فيسبوك ماسنجر (Facebook Messenger)"
+    >
+      <svg viewBox="0 0 24 24" className="w-[68%] h-[68%]" fill="white">
+        <path d="M12 2C6.48 2 2 6.03 2 11C2 13.77 3.38 16.23 5.56 17.84V22L9.48 19.86C10.29 20.08 11.13 20.2 12 20.2C17.52 20.2 22 16.17 22 11.2C22 6.23 17.52 2 12 2ZM13.06 14.5L10.74 12.03L6.2 14.5L11.18 9.2L13.5 11.67L17.94 9.2L13.06 14.5Z" />
       </svg>
     </div>
   );
 };
 
-export const getBrandObject = (brandId?: string | null, brandName?: string | null) => {
-  if (brandId && brandId !== 'all') {
+export interface BrandObjectInfo {
+  id: string;
+  name: string;
+  avatar: string;
+  color: string;
+  page_id?: string;
+  isDirect: boolean;
+}
+
+export const getBrandObject = (brandId?: string | null, brandName?: string | null): BrandObjectInfo => {
+  if (brandId && brandId !== 'all' && brandId !== 'direct' && brandId !== 'private') {
     const found = MOCK_BRANDS.find((b) => b.id.toLowerCase() === brandId.toLowerCase() || b.name.toLowerCase() === brandId.toLowerCase());
-    if (found) return found;
+    if (found && found.id !== 'all') return { ...found, isDirect: false };
   }
-  if (brandName) {
+  if (brandName && brandName.toLowerCase() !== 'all' && brandName.toLowerCase() !== 'direct' && brandName.toLowerCase() !== 'private' && brandName !== 'عام' && brandName !== 'محادثة خاصة') {
     const found = MOCK_BRANDS.find((b) => b.name.toLowerCase() === brandName.toLowerCase() || b.id.toLowerCase() === brandName.toLowerCase());
-    if (found) return found;
+    if (found && found.id !== 'all') return { ...found, isDirect: false };
   }
-  // Default to LUXIRA
-  return MOCK_BRANDS.find((b) => b.id === 'LUXIRA') || {
-    id: 'LUXIRA',
-    name: 'LUXIRA',
-    avatar: 'LX',
-    color: 'from-[#1A73E8] to-blue-700',
+
+  // Direct Private Message (Customer came directly, not under any store)
+  return {
+    id: 'direct',
+    name: 'شات مباشر / خاص',
+    avatar: 'DM',
+    color: 'from-slate-700 via-indigo-900 to-slate-900',
     page_id: '',
+    isDirect: true,
   };
 };
 
@@ -101,15 +115,15 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       brandBox: 'w-8 h-8 text-[10px]',
       subAvatar: 'w-4 h-4',
       subIcon: 'w-2.5 h-2.5',
-      channelBadge: 'w-3.5 h-3.5 -top-0.5 -right-0.5',
-      presence: 'w-2 h-2 top-0 right-0',
+      channelBadge: 'w-4 h-4 -top-1 -right-1',
+      presence: 'w-2.5 h-2.5 top-0 right-0',
     },
     md: {
       container: 'w-12 h-12',
       brandBox: 'w-10 h-10 text-xs',
       subAvatar: 'w-5 h-5',
       subIcon: 'w-3 h-3',
-      channelBadge: 'w-4 h-4 -top-1 -right-1',
+      channelBadge: 'w-5 h-5 -top-1 -right-1',
       presence: 'w-2.5 h-2.5 top-0 right-0',
     },
     lg: {
@@ -117,7 +131,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       brandBox: 'w-12 h-12 text-sm',
       subAvatar: 'w-6 h-6',
       subIcon: 'w-3.5 h-3.5',
-      channelBadge: 'w-5 h-5 -top-1 -right-1',
+      channelBadge: 'w-6 h-6 -top-1.5 -right-1.5',
       presence: 'w-3 h-3 top-0 right-0',
     },
     xl: {
@@ -125,24 +139,68 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
       brandBox: 'w-14 h-14 text-base',
       subAvatar: 'w-7 h-7',
       subIcon: 'w-4 h-4',
-      channelBadge: 'w-5 h-5 -top-1.5 -right-1.5',
+      channelBadge: 'w-7 h-7 -top-2 -right-2',
       presence: 'w-3.5 h-3.5 top-0 right-0',
     },
   }[size];
 
   const custInitial = (customerName || 'ع').trim().charAt(0).toUpperCase();
 
+  // If it's a Direct/Private chat and the customer has an avatar photo:
+  // Render customer photo as main avatar with a subtle DM badge
+  if (brand.isDirect && customerAvatarUrl && !custImgError) {
+    return (
+      <div className={`relative shrink-0 flex items-center justify-center ${sizeDimensions.container} ${className}`}>
+        {/* Main Customer Photo */}
+        <img
+          src={customerAvatarUrl}
+          alt={customerName}
+          className={`${sizeDimensions.brandBox} rounded-2xl object-cover shadow-sm border border-slate-200`}
+          onError={() => setCustImgError(true)}
+        />
+
+        {/* Overlapping Small Direct/DM Badge */}
+        <div
+          className={`absolute -bottom-0.5 -left-0.5 ${sizeDimensions.subAvatar} rounded-full bg-indigo-600 text-white font-black text-[9px] border-2 border-white shadow-xs flex items-center justify-center z-10`}
+          title="شات خاص مباشر (Direct Message)"
+        >
+          <Lock className={sizeDimensions.subIcon} />
+        </div>
+
+        {/* Clear Vivid Channel Icon Badge */}
+        <div className={`absolute ${sizeDimensions.channelBadge} z-20`}>
+          <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" />
+        </div>
+
+        {/* Presence Dot */}
+        {showPresenceDot && (
+          <span
+            className={`absolute ${sizeDimensions.presence} border-2 border-white rounded-full ${presenceDotColor} z-30`}
+            title={presenceStatusText}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={`relative shrink-0 flex items-center justify-center ${sizeDimensions.container} ${className}`}>
-      {/* 1. Main Store / Brand Avatar Box */}
+      {/* 1. Main Store Avatar Box (or DM Box if Direct) */}
       <div
         className={`${sizeDimensions.brandBox} rounded-2xl bg-gradient-to-tr ${brand.color || 'from-slate-700 to-slate-900'} text-white font-black flex items-center justify-center shadow-xs border border-white/80 select-none tracking-wider`}
-        title={`متجر: ${brand.name}`}
+        title={brand.isDirect ? 'محادثة خاصة مباشرة' : `متجر: ${brand.name}`}
       >
-        <span>{brand.avatar || brand.name.substring(0, 2).toUpperCase()}</span>
+        {brand.isDirect ? (
+          <span className="flex items-center gap-0.5 text-[11px]">
+            <Lock className="w-3 h-3" />
+            <span>DM</span>
+          </span>
+        ) : (
+          <span>{brand.avatar || brand.name.substring(0, 2).toUpperCase()}</span>
+        )}
       </div>
 
-      {/* 2. Overlapping Small Customer Avatar Circle (دايرة صغيرة متداخلة فيها صورة الشخص) */}
+      {/* 2. Overlapping Small Customer Avatar Circle */}
       <div
         className={`absolute -bottom-0.5 -left-0.5 ${sizeDimensions.subAvatar} rounded-full bg-white border-2 border-white shadow-xs flex items-center justify-center overflow-hidden z-10`}
         title={`العميل: ${customerName}`}
@@ -161,15 +219,15 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
         )}
       </div>
 
-      {/* 3. Small Social Channel Icon Badge (علامة الفيس، الواتس، الإنستا الأصلية) */}
-      <div className={`absolute ${sizeDimensions.channelBadge} z-10`}>
+      {/* 3. Small Social Channel Icon Badge (Messenger / WhatsApp / Instagram) */}
+      <div className={`absolute ${sizeDimensions.channelBadge} z-20`}>
         <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" />
       </div>
 
       {/* 4. Presence / Activity Dot */}
       {showPresenceDot && (
         <span
-          className={`absolute ${sizeDimensions.presence} border-2 border-white rounded-full ${presenceDotColor} z-20`}
+          className={`absolute ${sizeDimensions.presence} border-2 border-white rounded-full ${presenceDotColor} z-30`}
           title={presenceStatusText}
         />
       )}

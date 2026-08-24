@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban, X } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Ban, X, Lock } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { FilterTab } from '../types/crm';
 import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
@@ -291,11 +291,18 @@ export const ConversationList: React.FC = () => {
                     />
 
                     <div className="flex flex-col min-w-0">
-                      {/* Store / Brand Name Badge */}
+                      {/* Store / Brand Name Badge or Direct/Private Badge */}
                       <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[10px] font-black text-slate-700 bg-slate-100/90 px-1.5 py-0.5 rounded-md border border-slate-200/70 truncate max-w-[120px]" title={`متجر: ${brandObj.name}`}>
-                          {brandObj.name}
-                        </span>
+                        {brandObj.isDirect ? (
+                          <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-200/80 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>شات مباشر</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black text-slate-700 bg-slate-100/90 px-1.5 py-0.5 rounded-md border border-slate-200/70 truncate max-w-[120px]" title={`متجر: ${brandObj.name}`}>
+                            {brandObj.name}
+                          </span>
+                        )}
                         {renderSlaBadge(conv)}
                         {conv.customer?.is_blocked && (
                           <span className="shrink-0 bg-rose-100 text-rose-700 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md flex items-center gap-0.5" title="عميل محظور">
