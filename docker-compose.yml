@@ -98,6 +98,8 @@ services:
       dockerfile: Dockerfile
     container_name: crm_frontend
     restart: always
+    environment:
+      - VITE_BACKEND_URL=http://backend:8000
     ports:
       - "3000:3000"
     volumes:

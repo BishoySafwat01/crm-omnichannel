@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_optional_current_user
 from app.core.config import settings
+from app.api.deps import get_current_user
 from app.models.user import User
-from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/media", tags=["media"])
 logger = logging.getLogger("MediaProxy")
@@ -89,10 +89,8 @@ def is_trusted_meta_url(target_url: str) -> bool:
 
 @router.post("/upload", summary="Upload Media Attachment")
 async def upload_media(
-    request: Request,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Upload media file for attachment relay in chat. Max 25 MB; MIME type allowlisted."""
     if not file or not file.filename:

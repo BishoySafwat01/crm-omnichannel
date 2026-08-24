@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.api.deps import require_admin
 from app.core.database import get_db
+from app.models.user import User
 from app.integrations.meta import MetaAPIError, MetaProvider
 from app.schemas.messaging import MessageResponse
 from app.schemas.migration import MigrationJobResponse
@@ -40,26 +42,25 @@ async def get_meta_integrations_status():
     return {
         "whatsapp": {
             "connected": bool(wa_phone_id and wa_waba_id),
-            "phone_number_id": wa_phone_id,
-            "waba_id": wa_waba_id,
-            "display_phone_number": "+20 100 123 4567" if (wa_phone_id and wa_waba_id) else "غير مهيأ",
+            "phone_number_id_configured": bool(wa_phone_id and wa_phone_id.strip()),
+            "waba_id_configured": bool(wa_waba_id and wa_waba_id.strip()),
             "status": "ACTIVE" if (wa_phone_id and wa_waba_id) else "UNCONFIGURED",
         },
         "instagram": {
             "connected": bool(ig_acc_id and (has_token or has_page)),
-            "page_id": ig_acc_id or page_id,
+            "page_id_configured": bool(ig_acc_id and str(ig_acc_id).strip()),
             "username": "@luxira.official" if ig_acc_id else "غير مهيأ",
             "status": "VALID" if ig_acc_id else "UNCONFIGURED",
         },
         "messenger": {
             "connected": has_page,
-            "page_id": page_id,
+            "page_id_configured": has_page,
             "pages": ["LAVVA", "LUXIRA"],
             "status": "SUBSCRIBED" if has_page else "UNCONFIGURED",
         },
         "webhook": {
             "url": "https://api.luxira.com/api/v1/meta/webhook",
-            "verify_token": verify_token or "LUXIRA_META_WEBHOOK_VERIFY_TOKEN",
+            "verify_token_configured": bool(verify_token and verify_token.strip()),
             "secured": True,
         },
     }
@@ -71,7 +72,10 @@ class TestPingRequest(BaseModel):
 
 
 @router.post("/test-ping", summary="Send Test Ping Message to Integration Channel")
-async def send_integration_test_ping(payload: TestPingRequest):
+async def send_integration_test_ping(
+    payload: TestPingRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Executes a diagnostic test ping on WhatsApp, Instagram, or Messenger."""
     channel = payload.channel.lower()
     if channel not in ["whatsapp", "instagram", "messenger"]:
@@ -135,7 +139,10 @@ async def get_meta_conversations_preview():
 
 
 @router.post("/import", response_model=MigrationJobResponse, summary="Execute Meta Conversation History Import")
-async def import_meta_history(db: AsyncSession = Depends(get_db)):
+async def import_meta_history(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
     """Run historical Messenger conversation import into PostgreSQL."""
     try:
         job = await MetaImportService.run_import(session=db)
@@ -155,6 +162,7 @@ async def import_meta_history(db: AsyncSession = Depends(get_db)):
 async def send_meta_outbound_message(
     conversation_id: uuid.UUID,
     payload: SendMetaMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send an agent reply to a Messenger conversation through the Meta Graph API."""
@@ -194,6 +202,7 @@ class MetaDirectSendMessageRequest(BaseModel):
 )
 async def send_meta_direct_message(
     payload: MetaDirectSendMessageRequest,
+    admin_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Send outbound Meta message directly by conversation_id or recipient_psid."""
@@ -216,7 +225,10 @@ class PublishPagePostRequest(BaseModel):
 
 
 @router.post("/posts", summary="Publish Post to Facebook Page Feed with Click-to-Chat CTA")
-async def create_facebook_page_post(payload: PublishPagePostRequest):
+async def create_facebook_page_post(
+    payload: PublishPagePostRequest,
+    admin_user: User = Depends(require_admin),
+):
     """Publish a new post to Facebook Page feed with 'Send Message' CTA button."""
     provider = MetaProvider()
     try:
@@ -285,28 +297,38 @@ async def receive_meta_webhook(
     body_bytes = await request.body()
     logger.info("Meta webhook POST event received: payload_size=%d bytes", len(body_bytes))
 
-    # 1. Optional Signature Validation (if META_APP_SECRET is configured)
+    # 1. Signature Validation (FAIL-CLOSED: META_APP_SECRET must be configured)
     app_secret = settings.META_APP_SECRET
-    if app_secret and app_secret.strip():
-        if not x_hub_signature_256 or not x_hub_signature_256.startswith("sha256="):
-            logger.warning("Meta webhook signature validation failed: missing or invalid X-Hub-Signature-256 header")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid X-Hub-Signature-256 header.",
-            )
+    if not app_secret or not app_secret.strip():
+        logger.error(
+            "Meta webhook REJECTED: META_APP_SECRET is not configured. "
+            "Refusing unsigned/unverifiable payloads (fail-closed policy). "
+            "Set META_APP_SECRET to enable webhook processing."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook signature validation unavailable: server app secret is not configured.",
+        )
 
-        expected_sig = "sha256=" + hmac.new(
-            app_secret.strip().encode("utf-8"),
-            body_bytes,
-            hashlib.sha256,
-        ).hexdigest()
+    if not x_hub_signature_256 or not x_hub_signature_256.startswith("sha256="):
+        logger.warning("Meta webhook signature validation failed: missing or invalid X-Hub-Signature-256 header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid X-Hub-Signature-256 header.",
+        )
 
-        if not secrets.compare_digest(x_hub_signature_256, expected_sig):
-            logger.warning("Meta webhook signature validation failed: HMAC signature mismatch")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid X-Hub-Signature-256 signature.",
-            )
+    expected_sig = "sha256=" + hmac.new(
+        app_secret.strip().encode("utf-8"),
+        body_bytes,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not secrets.compare_digest(x_hub_signature_256, expected_sig):
+        logger.warning("Meta webhook signature validation failed: HMAC signature mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid X-Hub-Signature-256 signature.",
+        )
 
     # 2. Parse JSON Body
     try:
