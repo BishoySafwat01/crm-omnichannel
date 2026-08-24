@@ -244,6 +244,107 @@ class CommentModerationService:
         return list(res.scalars().all()), total
 
     @staticmethod
+    async def process_and_moderate_comment(
+        session: AsyncSession,
+        comment: SocialComment,
+        brand: str = "all",
+    ) -> SocialComment:
+        import httpx
+        from app.core.config import settings
+        import logging
+
+        logger = logging.getLogger("CommentModerationService")
+        sett = await CommentModerationService.get_or_create_settings(session, brand)
+        text_lower = (comment.comment_text or "").lower().strip()
+
+        matched_neg = [k for k in (sett.negative_keywords or []) if k.lower() in text_lower]
+        matched_inq = [k for k in (sett.inquiry_keywords or []) if k.lower() in text_lower]
+
+        # 1. Negative / Toxic Detection
+        if matched_neg:
+            comment.sentiment = "negative"
+            comment.sentiment_score = min(99, 80 + len(matched_neg) * 10)
+
+            if sett.auto_delete_negative:
+                if sett.action_for_negative in ("delete", "delete_and_dm"):
+                    comment.moderation_status = "auto_deleted"
+                else:
+                    comment.moderation_status = "auto_hidden"
+
+                comment.ai_action_reason = f"تم الحذف/الإخفاء التلقائي لرصد ألفاظ مسيئة: ({', '.join(matched_neg)})"
+
+                # Trigger Live Meta Graph API Delete / Hide if token is available
+                if settings.META_PAGE_ACCESS_TOKEN and comment.post_id:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            if comment.moderation_status == "auto_deleted":
+                                await client.delete(
+                                    f"https://graph.facebook.com/v23.0/{comment.post_id}",
+                                    params={"access_token": settings.META_PAGE_ACCESS_TOKEN},
+                                )
+                            else:
+                                await client.post(
+                                    f"https://graph.facebook.com/v23.0/{comment.post_id}",
+                                    params={"is_hidden": "true", "access_token": settings.META_PAGE_ACCESS_TOKEN},
+                                )
+                    except Exception as e:
+                        logger.warning("Meta Graph API comment moderation call failed: %s", e)
+
+                if sett.action_for_negative == "delete_and_dm" and sett.negative_dm_apology_text:
+                    comment.is_direct_message_sent = True
+
+                log = CommentModerationLog(
+                    id=uuid.uuid4(),
+                    comment_id=comment.id,
+                    comment_author=comment.author_name,
+                    action_type="AUTO_DELETE" if comment.moderation_status == "auto_deleted" else "AUTO_HIDE",
+                    performed_by="AI_AUTO_MODERATION",
+                    details={"matched_keywords": matched_neg, "status": comment.moderation_status},
+                )
+                session.add(log)
+
+        # 2. Inquiry / Price detection
+        elif matched_inq and sett.auto_reply_inquiries:
+            comment.sentiment = "neutral_inquiry"
+            comment.sentiment_score = 90
+            comment.moderation_status = "replied"
+            comment.auto_replied_text = sett.inquiry_reply_text
+            comment.is_direct_message_sent = bool(sett.inquiry_dm_text)
+            comment.ai_action_reason = f"تم الرد التلقائي وإرسال التفاصيل في الخاص لرصد استفسارات: ({', '.join(matched_inq)})"
+
+            # Trigger Live Meta Graph API Public Reply if token is available
+            if settings.META_PAGE_ACCESS_TOKEN and comment.post_id and sett.inquiry_reply_text:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        await client.post(
+                            f"https://graph.facebook.com/v23.0/{comment.post_id}/comments",
+                            params={
+                                "message": sett.inquiry_reply_text,
+                                "access_token": settings.META_PAGE_ACCESS_TOKEN,
+                            },
+                        )
+                except Exception as e:
+                    logger.warning("Meta Graph API auto-reply call failed: %s", e)
+
+            log = CommentModerationLog(
+                id=uuid.uuid4(),
+                comment_id=comment.id,
+                comment_author=comment.author_name,
+                action_type="AUTO_REPLY_AND_DM",
+                performed_by="AI_AUTO_MODERATION",
+                details={"matched_keywords": matched_inq, "reply": sett.inquiry_reply_text},
+            )
+            session.add(log)
+
+        else:
+            comment.sentiment = "positive"
+            comment.sentiment_score = 30
+            comment.moderation_status = "active"
+
+        session.add(comment)
+        return comment
+
+    @staticmethod
     async def simulate_ai(
         session: AsyncSession, comment_text: str, brand: str = "all"
     ) -> AiSimulationResponse:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Plus, Trash2, Edit3, Power, Zap, Clock, MessageSquare, Layers, ShieldCheck, Tag, X, Check, Activity, AlertCircle } from 'lucide-react';
-import { automationApi, AutomationRule, AutomationExecutionLog, MOCK_BRANDS } from '../../services/api';
+import { Bot, Plus, Trash2, Edit3, Power, Zap, Clock, MessageSquare, Layers, ShieldCheck, Tag, X, Check, Activity, AlertCircle, Sliders, Sparkles, Save } from 'lucide-react';
+import { automationApi, AutomationRule, AutomationExecutionLog, socialCommentsApi, ModerationSettings, MOCK_BRANDS } from '../../services/api';
 
 export const AutomationsManager: React.FC = () => {
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -8,7 +8,23 @@ export const AutomationsManager: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [isAiSettingsModalOpen, setIsAiSettingsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
+
+  // AI Moderation & Automations Settings State
+  const [aiSettings, setAiSettings] = useState<ModerationSettings>({
+    auto_delete_negative: true,
+    auto_hide_spam: true,
+    auto_reply_inquiries: true,
+    strictness_level: 'strict',
+    action_for_negative: 'delete',
+    negative_keywords: [],
+    inquiry_keywords: [],
+    inquiry_reply_text: 'تم الرد على استفسارك في الخاص بنجاح 📩',
+    inquiry_dm_text: 'أهلاً بك! تم إرسال تفاصيل الأسعار والعروض المتاحة في رسالة خاصة.',
+    negative_dm_apology_text: 'نعتذر عن أي تجربة غير مرضية، فريق الدعم سيتواصل معك فوراً.',
+  });
+  const [isSavingAiSettings, setIsSavingAiSettings] = useState(false);
 
   // Form State
   const [name, setName] = useState('');
@@ -31,10 +47,32 @@ export const AutomationsManager: React.FC = () => {
 
       const fetchedLogs = await automationApi.listLogs();
       setLogs(fetchedLogs);
+
+      try {
+        const fetchedAiSettings = await socialCommentsApi.getSettings('all');
+        if (fetchedAiSettings) {
+          setAiSettings(fetchedAiSettings);
+        }
+      } catch (err) {
+        console.warn('[AutomationsManager] Error fetching AI moderation settings:', err);
+      }
     } catch (e) {
       console.warn('[AutomationsManager] Error fetching rules/logs:', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveAiSettings = async () => {
+    setIsSavingAiSettings(true);
+    try {
+      const updated = await socialCommentsApi.updateSettings(aiSettings, 'all');
+      setAiSettings(updated);
+      setIsAiSettingsModalOpen(false);
+    } catch (e: any) {
+      console.warn('[AutomationsManager] Error saving AI settings:', e);
+    } finally {
+      setIsSavingAiSettings(false);
     }
   };
 
@@ -181,10 +219,18 @@ export const AutomationsManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setIsAiSettingsModalOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-2 border border-slate-200/60 shadow-2xs"
+            >
+              <Sliders className="w-4 h-4 text-teal-600" />
+              <span>إعدادات الأتمتة والـ AI</span>
+            </button>
+
             <button
               onClick={() => setIsLogsModalOpen(true)}
-              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-2 border border-slate-200/60"
+              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-2 border border-slate-200/60 shadow-2xs"
             >
               <Activity className="w-4 h-4 text-teal-600" />
               <span>سجل التنفيذي ({logs.length})</span>
@@ -554,6 +600,175 @@ export const AutomationsManager: React.FC = () => {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* AI Moderation & Automations Settings Modal */}
+      {isAiSettingsModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-teal-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  إعدادات محرك الأتمتة وقواعد الذكاء الاصطناعي
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAiSettingsModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Switches Container */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      الحذف التلقائي الفوري للتعليقات المسيئة والسامة (Auto-Delete)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      حذف أي تعليق يتضمن شتائم، اتهامات بالنصب، أو إساءة فور نشره
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setAiSettings({ ...aiSettings, auto_delete_negative: !aiSettings.auto_delete_negative })
+                    }
+                    className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      aiSettings.auto_delete_negative ? 'bg-rose-600 justify-end' : 'bg-slate-300 justify-start'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200/60">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      إخفاء الروابط الدعائية والسبام تلقائياً (Anti-Spam)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      حظر التعليقات التي تحتوي على أرقام هواتف منافسين أو روابط خارجية
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAiSettings({ ...aiSettings, auto_hide_spam: !aiSettings.auto_hide_spam })}
+                    className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      aiSettings.auto_hide_spam ? 'bg-purple-600 justify-end' : 'bg-slate-300 justify-start'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200/60">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">
+                      الرد التلقائي وإرسال رسالة خاصة على استفسارات الأسعار (Auto-DM)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      الرد على التعليقات التي تسأل عن السعر أو الشحن وإرسال التفاصيل في مسنجر فوراً
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setAiSettings({ ...aiSettings, auto_reply_inquiries: !aiSettings.auto_reply_inquiries })
+                    }
+                    className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
+                      aiSettings.auto_reply_inquiries ? 'bg-teal-600 justify-end' : 'bg-slate-300 justify-start'
+                    }`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Strictness Level & Action Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    درجة حساسية فحص المشاعر (AI Strictness):
+                  </label>
+                  <select
+                    value={aiSettings.strictness_level}
+                    onChange={(e) => setAiSettings({ ...aiSettings, strictness_level: e.target.value as any })}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  >
+                    <option value="strict">صارم جداً (حذف فوري لأي نبرة استياء أو إساءة)</option>
+                    <option value="balanced">متوازن (حذف الشتائم والاتهامات المباشرة فقط)</option>
+                    <option value="relaxed">مرن (مراقبة فقط بدون حذف تلقائي)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    الإجراء التلقائي للتعليقات السلبية:
+                  </label>
+                  <select
+                    value={aiSettings.action_for_negative}
+                    onChange={(e) => setAiSettings({ ...aiSettings, action_for_negative: e.target.value as any })}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  >
+                    <option value="delete">حذف التعليق فوراً (Delete)</option>
+                    <option value="hide">إخفاء التعليق فقط (Hide)</option>
+                    <option value="delete_and_dm">حذف وإرسال رسالة اعتذار بالخاص (Delete & DM)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Auto Reply Templates */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    نص الرد العام على التعليق في الصفحة (Public Reply):
+                  </label>
+                  <input
+                    type="text"
+                    value={aiSettings.inquiry_reply_text}
+                    onChange={(e) => setAiSettings({ ...aiSettings, inquiry_reply_text: e.target.value })}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    placeholder="تم الرد على استفسارك في الخاص بنجاح 📩"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    نص الرسالة المرسلة في الخاص (Direct Message):
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={aiSettings.inquiry_dm_text}
+                    onChange={(e) => setAiSettings({ ...aiSettings, inquiry_dm_text: e.target.value })}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    placeholder="أهلاً بك! تم إرسال تفاصيل الأسعار والعروض المتاحة في رسالة خاصة."
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAiSettingsModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAiSettings}
+                  disabled={isSavingAiSettings}
+                  className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingAiSettings ? 'جاري الحفظ...' : 'حفظ إعدادات الأتمتة'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
