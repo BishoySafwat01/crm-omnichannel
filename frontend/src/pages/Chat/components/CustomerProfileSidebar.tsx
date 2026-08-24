@@ -51,6 +51,7 @@ export const CustomerProfileSidebar: React.FC = () => {
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState<CustomerTimelineEvent[]>([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
 
   useEffect(() => {
     if (customer) {
@@ -118,16 +119,6 @@ export const CustomerProfileSidebar: React.FC = () => {
     }
   };
 
-  if (!customer || !activeConversation) {
-    return (
-      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
-        <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-        <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
-        <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
-      </aside>
-    );
-  }
-
   const handleSaveContact = async () => {
     if (customer?.id) {
       const locVal = formData.location.trim() || undefined;
@@ -141,8 +132,6 @@ export const CustomerProfileSidebar: React.FC = () => {
     }
     setIsEditing(false);
   };
-
-  const [isBlocking, setIsBlocking] = useState(false);
 
   const handleBlockCustomer = async () => {
     if (!customer?.id) return;
@@ -176,6 +165,16 @@ export const CustomerProfileSidebar: React.FC = () => {
       updateCustomerProfile(customer.id, { [key]: value });
     }
   };
+
+  if (!customer || !activeConversation) {
+    return (
+      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
+        <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+        <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
+        <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
+      </aside>
+    );
+  }
 
   const currentSkin = customer?.skin_type || 'عادية';
   const currentTier = customer?.tier || 'درجة أولى';
