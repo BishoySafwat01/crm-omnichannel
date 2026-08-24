@@ -9,6 +9,7 @@ import {
 import { SALES_SCRIPTS, SalesScript } from '../data/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../services/api';
 import { UserAvatar } from './UserAvatar';
+import { ConversationAvatar } from './ConversationAvatar';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
 
 export const CustomerProfileSidebar: React.FC = () => {
@@ -268,9 +269,18 @@ export const CustomerProfileSidebar: React.FC = () => {
 
           {/* Centered Avatar & Status */}
           <div className="flex flex-col items-center text-center py-1">
-            <div className="relative mb-2">
-              <UserAvatar name={customer.display_name || 'عميل'} avatarUrl={customer.avatar_url} size="lg" />
-              <span className={`w-3.5 h-3.5 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
+            <div className="mb-2">
+              <ConversationAvatar
+                customerName={customer.display_name || 'عميل'}
+                customerAvatarUrl={customer.avatar_url}
+                brandId={activeConversation?.brand_id}
+                brandName={activeConversation?.brand || activeConversation?.brand_name}
+                channel={activeConversation?.channel}
+                size="xl"
+                showPresenceDot={true}
+                presenceDotColor={presence.dotColor}
+                presenceStatusText={presence.statusText}
+              />
             </div>
 
             {isEditing ? (

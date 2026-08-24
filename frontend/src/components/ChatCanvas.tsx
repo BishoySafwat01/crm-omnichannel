@@ -39,6 +39,7 @@ import { useCrmStore } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { MetaMessageTag } from '../types/crm';
 import { UserAvatar } from './UserAvatar';
+import { ConversationAvatar } from './ConversationAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
 import { aiApi, API_BASE } from '../services/api';
 import { useCustomerPresence } from '../hooks/useCustomerPresence';
@@ -847,10 +848,17 @@ export const ChatCanvas: React.FC = () => {
       <header className="h-14 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-6 flex items-center justify-between shrink-0 z-20">
         {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-            <span className={`w-3 h-3 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
-          </div>
+          <ConversationAvatar
+            customerName={customerName}
+            customerAvatarUrl={avatarUrl}
+            brandId={activeConv.brand_id}
+            brandName={activeConv.brand || activeConv.brand_name}
+            channel={activeConv.channel}
+            size="md"
+            showPresenceDot={true}
+            presenceDotColor={presence.dotColor}
+            presenceStatusText={presence.statusText}
+          />
 
           <div>
             <div className="flex items-center gap-2">
@@ -862,7 +870,7 @@ export const ChatCanvas: React.FC = () => {
             <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
               <span className={presence.colorClass}>{presence.statusText}</span>
               <span>•</span>
-              <span>{activeConv.channel}</span>
+              <span className="capitalize">{activeConv.channel || 'messenger'}</span>
             </p>
           </div>
         </div>
