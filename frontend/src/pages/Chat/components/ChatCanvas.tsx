@@ -16,38 +16,39 @@ import {
   Clock,
   X,
   Mic,
-  User,
   AlertCircle,
   Plus,
   MapPin,
   ExternalLink,
   ChevronDown,
+  Image as ImageIcon,
+  Video,
+  Loader2,
+  Pin,
+  Forward as ForwardIcon,
   Search,
   ChevronUp,
+  Users,
+  User,
+  Check,
+  CornerUpLeft,
+  Edit2,
   Ban,
   ShieldCheck,
-  Pin,
-  CornerUpLeft,
-  Video,
-  Edit2,
-  Check,
-  Loader2,
-  Image as ImageIcon,
-  Forward as ForwardIcon,
   ZoomIn,
   ZoomOut,
   RotateCw,
 } from 'lucide-react';
-import { useCrmStore } from '../store/useCrmStore';
-import { useAuthStore } from '../store/useAuthStore';
-import { MetaMessageTag } from '../types/crm';
-import { UserAvatar } from './UserAvatar';
-import { ConversationAvatar, getBrandObject } from './ConversationAvatar';
-import { formatChatDateDivider, isDifferentDay } from '../lib/dateUtils';
-import { aiApi, API_BASE } from '../services/api';
-import { useCustomerPresence } from '../hooks/useCustomerPresence';
-import { MessageActionsMenu } from './MessageActions/MessageActionsMenu';
-import { ForwardMessageModal } from './MessageActions/ForwardMessageModal';
+import { useCrmStore } from '../../../store/useCrmStore';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { MetaMessageTag } from '../../../types/crm';
+import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
+import { formatChatDateDivider, isDifferentDay } from '../../../utils/dateUtils';
+import { aiApi, API_BASE } from '../../../services/api';
+import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
+import { MessageActionsMenu } from './MessageActionsMenu';
+import { ForwardMessageModal } from './ForwardMessageModal';
 
 // Custom Inline Audio Player Component
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
@@ -371,10 +372,10 @@ export const ChatCanvas: React.FC = () => {
     forwardingMessage,
     editMessage,
     toggleReaction,
+    selectedEmployeeId,
+    setSelectedEmployeeId,
+    availableEmployees,
   } = useCrmStore();
-
-  const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
@@ -383,6 +384,13 @@ export const ChatCanvas: React.FC = () => {
   const [previewRotation, setPreviewRotation] = useState<number>(0);
   const [editInputText, setEditInputText] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  // In-Chat Search & Employee Filtering State (Tasks 4 & 7)
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [inChatSearchQuery, setInChatSearchQuery] = useState('');
+  const [inChatEmployeeFilter, setInChatEmployeeFilter] = useState<string | null>(null);
+  const [isChatEmpMenuOpen, setIsChatEmpMenuOpen] = useState(false);
+  const [matchedMsgIndex, setMatchedMsgIndex] = useState(0);
 
   const handleOpenImagePreview = (url: string) => {
     setPreviewImage(url);
@@ -469,84 +477,7 @@ export const ChatCanvas: React.FC = () => {
     Boolean(isCustomerTyping)
   );
 
-  // In-Chat Search State & Smooth Jump
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [inChatSearchQuery, setInChatSearchQuery] = useState('');
-  const [filterSearchOnlyAgents, setFilterSearchOnlyAgents] = useState(false);
-  const [matchedMsgIndex, setMatchedMsgIndex] = useState(0);
 
-  const matchedMessageIds = React.useMemo(() => {
-    if (!inChatSearchQuery.trim()) return [];
-    const q = inChatSearchQuery.toLowerCase().trim();
-    return activeMessages
-      .filter((m) => {
-        if (!m) return false;
-        const textMatch = (m.text || '').toLowerCase().includes(q);
-        const senderNameMatch = (m.sender_name || '').toLowerCase().includes(q);
-        const externalMatch = (m.sender_external_id || '').toLowerCase().includes(q);
-
-        let agentMatch = false;
-        if (m.sender_type === 'agent') {
-          if (m.sender_user_id) {
-            const member = teamMembers.find((t) => t.id === m.sender_user_id);
-            if (member) {
-              agentMatch =
-                (member.full_name || '').toLowerCase().includes(q) ||
-                (member.email || '').toLowerCase().includes(q);
-            }
-          }
-          if (!agentMatch) {
-            // Check all team members whose name matches query
-            agentMatch = teamMembers.some(
-              (tm) =>
-                tm.full_name?.toLowerCase().includes(q) &&
-                (m.sender_name?.toLowerCase() === tm.full_name.toLowerCase() ||
-                  m.sender_user_id === tm.id ||
-                  m.sender_external_id?.toLowerCase() === tm.email.toLowerCase())
-            );
-          }
-        }
-
-        if (filterSearchOnlyAgents) {
-          return m.sender_type === 'agent' && (textMatch || senderNameMatch || externalMatch || agentMatch);
-        }
-
-        return textMatch || senderNameMatch || externalMatch || agentMatch;
-      })
-      .map((m) => m.id);
-  }, [inChatSearchQuery, activeMessages, teamMembers, filterSearchOnlyAgents]);
-
-  const handleJumpToMatch = (dir: 'next' | 'prev') => {
-    if (matchedMessageIds.length === 0) return;
-    let nextIdx = dir === 'next' ? matchedMsgIndex + 1 : matchedMsgIndex - 1;
-    if (nextIdx >= matchedMessageIds.length) nextIdx = 0;
-    if (nextIdx < 0) nextIdx = matchedMessageIds.length - 1;
-    setMatchedMsgIndex(nextIdx);
-    const targetId = matchedMessageIds[nextIdx];
-    const el = document.getElementById(`msg-${targetId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
-
-  const renderHighlightedText = (text: string, query: string) => {
-    if (!query || !query.trim()) return text;
-    const q = query.trim();
-    const parts = text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
-    return (
-      <>
-        {parts.map((part, i) =>
-          part.toLowerCase() === q.toLowerCase() ? (
-            <mark key={i} className="bg-amber-300 text-slate-950 font-bold px-1 rounded shadow-2xs">
-              {part}
-            </mark>
-          ) : (
-            part
-          )
-        )}
-      </>
-    );
-  };
 
   // AI Copilot Intelligence State
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
@@ -588,6 +519,120 @@ export const ChatCanvas: React.FC = () => {
     } finally {
       setIsAnalyzingAI(false);
     }
+  };
+
+  // Available employees for in-chat filter (Tasks 2 & 4)
+  const chatEmployees = React.useMemo(() => {
+    const list: { id: string; name: string; role?: string }[] = [];
+    const seen = new Set<string>();
+
+    if (availableEmployees && Array.isArray(availableEmployees)) {
+      availableEmployees.forEach((emp) => {
+        if (emp.id && !seen.has(emp.id.toLowerCase())) {
+          seen.add(emp.id.toLowerCase());
+          if (emp.full_name) seen.add(emp.full_name.toLowerCase());
+          list.push({ id: emp.id, name: emp.full_name || emp.email, role: emp.role });
+        }
+      });
+    }
+
+    if (activeConv?.assigned_agent_id && !seen.has(activeConv.assigned_agent_id.toLowerCase())) {
+      seen.add(activeConv.assigned_agent_id.toLowerCase());
+      const name = activeConv.customer?.assigned_agent_name || 'موظف المحادثة';
+      list.push({ id: activeConv.assigned_agent_id, name });
+    }
+
+    activeMessages.forEach((m) => {
+      if (m.sender_type === 'agent') {
+        const id = m.sender_user_id || m.sender_name || 'unknown';
+        if (!seen.has(id.toLowerCase())) {
+          seen.add(id.toLowerCase());
+          list.push({ id, name: m.sender_name || 'موظف الدعم' });
+        }
+      }
+    });
+
+    return list;
+  }, [activeConv, activeMessages, availableEmployees]);
+
+  const activeEmpFilterId = inChatEmployeeFilter || selectedEmployeeId;
+
+  const activeEmpFilterObj = React.useMemo(() => {
+    if (!activeEmpFilterId) return null;
+    const target = activeEmpFilterId.toLowerCase().trim();
+    if (availableEmployees && Array.isArray(availableEmployees)) {
+      const found = availableEmployees.find(
+        (e) =>
+          (e.id && e.id.toLowerCase().trim() === target) ||
+          (e.full_name && e.full_name.toLowerCase().trim() === target) ||
+          (e.email && e.email.toLowerCase().trim() === target)
+      );
+      if (found) {
+        return { id: found.id, name: found.full_name || found.email, role: found.role };
+      }
+    }
+    return (
+      chatEmployees.find(
+        (e) =>
+          (e.id && e.id.toLowerCase().trim() === target) ||
+          (e.name && e.name.toLowerCase().trim() === target)
+      ) || null
+    );
+  }, [activeEmpFilterId, availableEmployees, chatEmployees]);
+
+  // In-Chat Matched Messages for Text Search & Employee Search
+  const matchedMessageIds = React.useMemo(() => {
+    if (!inChatSearchQuery.trim() && !activeEmpFilterId) return [];
+    const q = inChatSearchQuery.toLowerCase().trim();
+    const filterTarget = (activeEmpFilterId || '').toLowerCase().trim();
+    const filterName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
+
+    return activeMessages
+      .filter((m) => {
+        const matchText = !q || (m.text || '').toLowerCase().includes(q);
+        const sId = (m.sender_user_id || '').toLowerCase().trim();
+        const sName = (m.sender_name || '').toLowerCase().trim();
+        const sExt = (m.sender_external_id || '').toLowerCase().trim();
+
+        const matchEmp =
+          !activeEmpFilterId ||
+          (m.sender_type === 'agent' &&
+            ((sId && sId === filterTarget) ||
+              (sName && (sName === filterTarget || (filterName && (sName === filterName || sName.includes(filterName) || filterName.includes(sName))))) ||
+              (sExt && (sExt === filterTarget || (filterName && sExt.includes(filterName))))));
+
+        return matchText && matchEmp;
+      })
+      .map((m) => m.id);
+  }, [inChatSearchQuery, activeEmpFilterId, activeEmpFilterObj, activeMessages]);
+
+  const handleJumpToMatch = (dir: 'next' | 'prev') => {
+    if (matchedMessageIds.length === 0) return;
+    let nextIdx = dir === 'next' ? matchedMsgIndex + 1 : matchedMsgIndex - 1;
+    if (nextIdx >= matchedMessageIds.length) nextIdx = 0;
+    if (nextIdx < 0) nextIdx = matchedMessageIds.length - 1;
+    setMatchedMsgIndex(nextIdx);
+    const targetId = matchedMessageIds[nextIdx];
+    scrollToMessage(targetId);
+  };
+
+  const renderHighlightedText = (text: string, query: string) => {
+    if (!query || !query.trim()) return text;
+    const q = query.trim();
+    const parts = text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return (
+      <>
+        {parts.map((part, i) =>
+          part.toLowerCase() === q.toLowerCase() ? (
+            <mark key={i} className="bg-amber-300 text-slate-900 rounded px-0.5 font-bold">
+              {part}
+            </mark>
+          ) : (
+            part
+          )
+        )}
+      </>
+    );
   };
 
   const lastCustomerMsgAt = activeConv?.last_customer_message_at
@@ -923,7 +968,7 @@ export const ChatCanvas: React.FC = () => {
 
         {/* Grouped Actions Toolbar (RTL Left) */}
         <div className="flex items-center gap-2">
-          {/* In-Chat Search Trigger & Bar */}
+          {/* In-Chat Search & Employee Filter Toolbar (Tasks 4 & 7) */}
           <div className="relative flex items-center">
             {isSearchOpen ? (
               <div className="flex items-center gap-1.5 bg-slate-100/90 rounded-full px-2.5 py-1 border border-slate-200 shadow-2xs animate-in fade-in zoom-in-95 duration-100">
@@ -937,43 +982,95 @@ export const ChatCanvas: React.FC = () => {
                   }}
                   placeholder="بحث بنص أو اسم موظف..."
                   autoFocus
-                  className="bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none w-36 sm:w-48"
+                  className="bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none w-32 sm:w-44"
                 />
 
-                {/* Toggle to show only agent replies matching query */}
-                <button
-                  type="button"
-                  onClick={() => setFilterSearchOnlyAgents(!filterSearchOnlyAgents)}
-                  title={filterSearchOnlyAgents ? 'إلغاء حصر البحث في ردود الموظفين' : 'حصر البحث في ردود الموظفين فقط'}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition flex items-center gap-1 shrink-0 ${
-                    filterSearchOnlyAgents
-                      ? 'bg-indigo-600 text-white shadow-2xs'
-                      : 'bg-white/80 hover:bg-white text-slate-600 border border-slate-200/80'
-                  }`}
-                >
-                  <User className="w-3 h-3" />
-                  <span>ردود الموظف</span>
-                </button>
+                {/* Employee Filter inside Chat (Task 4) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsChatEmpMenuOpen(!isChatEmpMenuOpen)}
+                    className={`p-1 rounded-full text-xs flex items-center gap-0.5 font-bold transition ${
+                      activeEmpFilterId ? 'bg-blue-600 text-white px-2 py-0.5' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="تصفية المحادثة بالموظف الذي رد"
+                  >
+                    <Users className="w-3 h-3" />
+                    {activeEmpFilterObj && <span className="max-w-[65px] truncate text-[10px]">{activeEmpFilterObj.name}</span>}
+                    <ChevronDown className="w-2.5 h-2.5" />
+                  </button>
 
+                  {isChatEmpMenuOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-52 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 text-right">
+                      <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-100">
+                        تصفية الردود حسب الموظف
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInChatEmployeeFilter(null);
+                          setSelectedEmployeeId(null);
+                          setIsChatEmpMenuOpen(false);
+                        }}
+                        className="w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                      >
+                        <span>كل الموظفين (All)</span>
+                        {!activeEmpFilterId && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
+                      </button>
+                      {chatEmployees.map((emp) => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onClick={() => {
+                            setInChatEmployeeFilter(emp.id);
+                            setIsChatEmpMenuOpen(false);
+                          }}
+                          className={`w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                            activeEmpFilterId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <span className="truncate">{emp.name}</span>
+                          {activeEmpFilterId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Match navigation */}
                 {matchedMessageIds.length > 0 && (
-                  <div className="flex items-center gap-1 border-r border-slate-200 pr-1.5 text-[11px] font-bold text-slate-600 shrink-0">
-                    <span>{matchedMsgIndex + 1}/{matchedMessageIds.length}</span>
-                    <button type="button" onClick={() => handleJumpToMatch('prev')} className="hover:text-[#1A73E8] p-0.5">
-                      <ChevronUp className="w-3 h-3" />
+                  <div className="flex items-center gap-1 border-r border-slate-200 pr-1 mr-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-500">
+                      {matchedMsgIndex + 1}/{matchedMessageIds.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleJumpToMatch('prev')}
+                      className="p-0.5 text-slate-400 hover:text-slate-700 transition"
+                      title="المطابقة السابقة"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
                     </button>
-                    <button type="button" onClick={() => handleJumpToMatch('next')} className="hover:text-[#1A73E8] p-0.5">
-                      <ChevronDown className="w-3 h-3" />
+                    <button
+                      type="button"
+                      onClick={() => handleJumpToMatch('next')}
+                      className="p-0.5 text-slate-400 hover:text-slate-700 transition"
+                      title="المطابقة التالية"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
+
                 <button
                   type="button"
                   onClick={() => {
                     setIsSearchOpen(false);
                     setInChatSearchQuery('');
-                    setFilterSearchOnlyAgents(false);
+                    setInChatEmployeeFilter(null);
                   }}
                   className="p-1 text-slate-400 hover:text-slate-600 transition rounded-full"
+                  title="إغلاق البحث"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1122,21 +1219,25 @@ export const ChatCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* Active Agent Filter Banner */}
-      {selectedAgentId !== 'all' && (
-        <div className="bg-indigo-50/95 border-b border-indigo-200/80 px-6 py-2 flex items-center justify-between text-xs backdrop-blur-xs shrink-0 z-10 shadow-2xs">
-          <div className="flex items-center gap-2">
-            <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-            <span className="text-indigo-950 font-medium">
-              تصفية رسائل الموظف: <strong className="font-bold text-indigo-900">{teamMembers.find((m) => m.id === selectedAgentId)?.full_name || selectedAgentId}</strong>
+      {/* Active Employee Filter Notice Banner (Task 2 & Task 4) */}
+      {activeEmpFilterObj && (
+        <div className="bg-blue-50/95 border-b border-blue-200/80 px-6 py-2 flex items-center justify-between text-xs backdrop-blur-xs shrink-0 z-10 shadow-2xs">
+          <div className="flex items-center gap-2 truncate">
+            <Users className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+            <span className="font-bold text-blue-900">تصفية حسب الموظف:</span>
+            <span className="text-blue-800 font-medium truncate">
+              عرض الردود المقدمة بواسطة ({activeEmpFilterObj.name}) فقط
             </span>
           </div>
           <button
             type="button"
-            onClick={() => setSelectedAgentId('all')}
-            className="text-[11px] font-bold text-indigo-700 hover:text-indigo-950 underline cursor-pointer"
+            onClick={() => {
+              setInChatEmployeeFilter(null);
+              setSelectedEmployeeId(null);
+            }}
+            className="text-[11px] font-bold text-blue-700 hover:text-blue-950 underline shrink-0 cursor-pointer"
           >
-            إلغاء الفلترة وعرض المحادثة كاملة
+            إلغاء التصفية وإظهار الكل
           </button>
         </div>
       )}
@@ -1159,20 +1260,6 @@ export const ChatCanvas: React.FC = () => {
           </div>
         ) : (
           (() => {
-            const activeMember = teamMembers.find((m) => m.id === selectedAgentId);
-            const isMsgFromAgent = (m: any) => {
-              if (!activeMember || selectedAgentId === 'all') return true;
-              if (m.sender_type !== 'agent') return false;
-              const mName = activeMember.full_name?.toLowerCase().trim();
-              const mEmail = activeMember.email?.toLowerCase().trim();
-              return (
-                m.sender_user_id === selectedAgentId ||
-                (mName && m.sender_name?.toLowerCase() === mName) ||
-                (mName && m.sender_external_id?.toLowerCase() === mName) ||
-                (mEmail && m.sender_external_id?.toLowerCase() === mEmail)
-              );
-            };
-
             const seenMsgIds = new Set<string>();
             const rawSorted = [...activeMessages]
               .filter((m) => {
@@ -1186,13 +1273,23 @@ export const ChatCanvas: React.FC = () => {
               );
 
             let sortedMessages = rawSorted;
-            if (selectedAgentId !== 'all') {
-              sortedMessages = sortedMessages.filter(isMsgFromAgent);
-            } else if (filterSearchOnlyAgents && inChatSearchQuery.trim()) {
-              sortedMessages = sortedMessages.filter((m) => matchedMessageIds.includes(m.id) && m.sender_type === 'agent');
+            if (activeEmpFilterId) {
+              const filterTarget = activeEmpFilterId.toLowerCase().trim();
+              const filterName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
+              sortedMessages = sortedMessages.filter((m) => {
+                if (m.sender_type !== 'agent') return false;
+                const sId = (m.sender_user_id || '').toLowerCase().trim();
+                const sName = (m.sender_name || '').toLowerCase().trim();
+                const sExt = (m.sender_external_id || '').toLowerCase().trim();
+                return (
+                  (sId && sId === filterTarget) ||
+                  (sName && (sName === filterTarget || (filterName && (sName === filterName || sName.includes(filterName) || filterName.includes(sName))))) ||
+                  (sExt && (sExt === filterTarget || (filterName && (sExt === filterName || sExt.includes(filterName)))))
+                );
+              });
             }
 
-            if ((selectedAgentId !== 'all' || (filterSearchOnlyAgents && inChatSearchQuery.trim())) && sortedMessages.length === 0) {
+            if (activeEmpFilterId && sortedMessages.length === 0) {
               return (
                 <div className="text-center py-16 px-4 space-y-3 bg-white/50 rounded-2xl border border-dashed border-indigo-200 m-4 animate-in fade-in">
                   <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
@@ -1200,9 +1297,7 @@ export const ChatCanvas: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-800">
-                      {filterSearchOnlyAgents
-                        ? `لا توجد ردود مسجلة للموظف تطابق البحث "${inChatSearchQuery}" في هذه المحادثة`
-                        : `لا توجد ردود مسجلة للموظف (${activeMember?.full_name || 'المحدد'}) في هذه المحادثة`}
+                      لا توجد ردود مسجلة للموظف ({activeEmpFilterObj?.name || activeEmpFilterId}) في هذه المحادثة
                     </p>
                     <p className="text-[11px] text-slate-500 mt-1">
                       إجمالي رسائل هذه المحادثة: {rawSorted.length} رسالة
@@ -1211,8 +1306,8 @@ export const ChatCanvas: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedAgentId('all');
-                      setFilterSearchOnlyAgents(false);
+                      setInChatEmployeeFilter(null);
+                      setSelectedEmployeeId(null);
                     }}
                     className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-full transition shadow-2xs cursor-pointer"
                   >
@@ -1253,7 +1348,12 @@ export const ChatCanvas: React.FC = () => {
                     </div>
                   )}
 
-                  <div id={`msg-${msg.id}`} className={`flex flex-col ${isAgent ? 'items-start' : 'items-end'}`}>
+                  <div
+                    id={`msg-${msg.id}`}
+                    className={`group/msg relative flex items-center gap-1.5 my-1 transition-all ${
+                      isAgent ? 'flex-row' : 'flex-row-reverse'
+                    }`}
+                  >
                     <div
                       className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs transition-all relative ${
                         isFailed
@@ -1365,7 +1465,7 @@ export const ChatCanvas: React.FC = () => {
                             </div>
                           )}
 
-                          {/* Regular Text Content */}
+                          {/* Regular Text Content (with search term highlighting) */}
                           {msg.text &&
                             !msg.text.startsWith('voice_') &&
                             !msg.text.startsWith('img_') &&
@@ -1379,7 +1479,7 @@ export const ChatCanvas: React.FC = () => {
                         </>
                       )}
 
-                      {/* Timestamp & Double Checkmarks (✓✓) */}
+                      {/* Timestamp, Pin, Edited & Delivery Status */}
                       <div
                         className={`flex items-center gap-1.5 mt-1 text-[10px] ${
                           isAgent ? 'text-[#137333]/80 justify-start' : 'text-slate-400 justify-end'
@@ -1462,27 +1562,6 @@ export const ChatCanvas: React.FC = () => {
         <div ref={messagesEndRef} />
         <div ref={bottomAnchorRef} className="h-px w-full" />
       </div>
-
-      {/* Floating Smart Reply Chips */}
-      {aiInsights.replies && aiInsights.replies.length > 0 && (
-        <div className="px-6 pt-1 flex justify-center bg-transparent">
-          <div className="w-full max-w-2xl flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <span className="text-[10px] font-bold text-[#1A73E8] shrink-0 flex items-center gap-1 bg-white/90 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-slate-200/80 shadow-2xs">
-              <Sparkles className="w-3 h-3 text-amber-500" /> اقتراحات:
-            </span>
-            {aiInsights.replies.map((reply, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setDraftText(reply)}
-                className="text-xs bg-white/90 backdrop-blur-md hover:bg-[#E8F0FE] text-slate-700 border border-slate-200/80 px-3.5 py-1 rounded-full shrink-0 shadow-2xs font-medium transition"
-              >
-                "{reply}"
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Floating Dock Message Composer */}
       <footer className="px-6 mb-4 mt-1 bg-transparent relative z-20">

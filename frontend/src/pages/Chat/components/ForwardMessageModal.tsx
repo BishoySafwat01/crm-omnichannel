@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, X, Forward, Check, MessageSquare, AlertCircle } from 'lucide-react';
-import { useCrmStore } from '../../store/useCrmStore';
-import { Conversation, Message } from '../../types/crm';
+import { useCrmStore } from '../../../store/useCrmStore';
+import { Conversation, Message } from '../../../types/crm';
 
 interface ForwardMessageModalProps {
   isOpen: boolean;

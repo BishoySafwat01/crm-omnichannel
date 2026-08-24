@@ -432,4 +432,6 @@ export const ExecutiveDashboard: React.FC = () => {
   );
 };
 
+export { ExecutiveDashboard as DashboardPage };
 export default ExecutiveDashboard;
+

@@ -1047,3 +1047,7 @@ export const TeamGovernance: React.FC = () => {
     </div>
   );
 };
+
+export { TeamGovernance as TeamPage };
+export default TeamGovernance;
+

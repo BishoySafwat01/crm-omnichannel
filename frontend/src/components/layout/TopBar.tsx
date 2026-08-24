@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
-import { MOCK_BRANDS, metaApi } from '../services/api';
-import { useCrmStore, ChannelFilterType } from '../store/useCrmStore';
-import { useAuthStore } from '../store/useAuthStore';
+import { MOCK_BRANDS } from '../../constants/brands';
+import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
@@ -59,17 +59,30 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     setPublishError(null);
 
     try {
-      const data = await metaApi.publishPost(postMessage.trim(), postLink.trim() || undefined);
+      const res = await fetch('/api/v1/meta/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: postMessage.trim(),
+          link: postLink.trim() || undefined,
+        }),
+      });
 
-      setPublishSuccess(`تم نشر المنشور بنجاح (ID: ${data.post_id || 'تم'})`);
-      setPostMessage('');
-      setPostLink('');
-      setTimeout(() => {
-        setIsPostModalOpen(false);
-        setPublishSuccess(null);
-      }, 2500);
+      if (res.ok) {
+        const data = await res.json();
+        setPublishSuccess(`تم نشر المنشور بنجاح (ID: ${data.post_id || 'تم'})`);
+        setPostMessage('');
+        setPostLink('');
+        setTimeout(() => {
+          setIsPostModalOpen(false);
+          setPublishSuccess(null);
+        }, 2500);
+      } else {
+        const errData = await res.json().catch(() => ({ detail: 'فشل نشر المنشور' }));
+        setPublishError(errData.detail || 'تعذر التواصل مع الخادم لنشر المنشور.');
+      }
     } catch (err: any) {
-      setPublishError(err?.message || 'تعذر نشر المنشور. يرجى التحقق من الاتصال بالخادم.');
+      setPublishError('تعذر نشر المنشور. يرجى التحقق من الاتصال بالخادم.');
     } finally {
       setIsPublishing(false);
     }
