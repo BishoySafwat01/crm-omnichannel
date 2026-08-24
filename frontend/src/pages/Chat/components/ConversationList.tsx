@@ -4,6 +4,7 @@ import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
 import { MOCK_BRANDS } from '../../../constants/brands';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { ConversationAvatar } from '../../../components/ConversationAvatar';
 import { formatCustomerPresence } from '../../../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
@@ -446,15 +447,8 @@ export const ConversationList: React.FC = () => {
         ) : (
           filteredConversations.map((conv) => {
             const isActive = activeConversationId === conv.id;
-            const storeName = conv.brand || conv.brand_name || 'LUXIRA';
             const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
-            const brandObj =
-              MOCK_BRANDS.find((b) => b.id.toLowerCase() === storeName.toLowerCase()) ||
-              MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
-              MOCK_BRANDS[1];
-            const brandAvatar = brandObj?.avatar || storeName.substring(0, 2).toUpperCase();
-            const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
-            const storeAvatarUrl = (conv as any).brand_avatar_url || (conv as any).page_avatar_url || (conv as any).store_logo_url;
+            const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
             const unreadCount = conv.unread_count || 0;
             const isCustomerTyping = Boolean(isTyping[conv.id]);
             const presence = formatCustomerPresence(
@@ -472,45 +466,30 @@ export const ConversationList: React.FC = () => {
                     : 'bg-transparent hover:bg-white/90'
                 }`}
               >
-                {/* 1. Top Row: Store/Brand Avatar with overlaid Channel Badge + Store Name (Primary) + Time */}
-                <div className="flex items-center justify-between gap-2 mb-1">
+                {/* 1. Top Row: Conversation Avatar (Store gradient + Customer sub-avatar + Channel badge) + Customer Name + Time */}
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Overlapping Brand/Store Avatar with Channel Badge Overlay */}
-                    <div className="relative shrink-0">
-                      {storeAvatarUrl ? (
-                        <img
-                          src={storeAvatarUrl}
-                          alt={storeName}
-                          className="w-10 h-10 rounded-full object-cover shadow-xs border border-white/80 shrink-0"
-                        />
-                      ) : (
-                        <div
-                          className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shadow-xs border border-slate-200/80 shrink-0"
-                          title={`المتجر: ${storeName}`}
-                        >
-                          <Store className="w-5 h-5 text-slate-500" />
-                        </div>
-                      )}
-                      <div className="absolute -bottom-1 -right-1 z-10">
-                        <ChannelBadgeIcon channel={conv.channel} className="w-4 h-4" />
-                      </div>
-                      <span
-                        className={`w-2.5 h-2.5 border border-white rounded-full absolute top-0 right-0 ${presence.dotColor}`}
-                        title={presence.statusText}
-                      />
-                    </div>
+                    <ConversationAvatar
+                      customerName={customerName}
+                      customerAvatarUrl={avatarUrl}
+                      brandId={conv.brand_id}
+                      brandName={conv.brand || conv.brand_name}
+                      channel={conv.channel}
+                      size="md"
+                      showPresenceDot={true}
+                      presenceDotColor={presence.dotColor}
+                      presenceStatusText={presence.statusText}
+                    />
 
                     <div className="min-w-0">
-                      {/* Store Name is Primary (Task 6) */}
-                      <div className="flex items-center gap-1.5">
-                        <h3 className={`text-xs truncate ${unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'}`}>
-                          {storeName}
-                        </h3>
-                      </div>
-                      {/* Customer Name */}
-                      <p className="text-[11px] font-medium text-slate-500 truncate">
+                      {/* Customer Name is the only prominent text */}
+                      <h3
+                        className={`text-xs truncate ${
+                          unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'
+                        }`}
+                      >
                         {customerName}
-                      </p>
+                      </h3>
                     </div>
                   </div>
 
@@ -521,7 +500,11 @@ export const ConversationList: React.FC = () => {
 
                 {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
                 <div className="flex items-center justify-between gap-2 pr-12">
-                  <p className={`text-xs truncate ${unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'}`}>
+                  <p
+                    className={`text-xs truncate ${
+                      unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'
+                    }`}
+                  >
                     {getMessagePreview(conv)}
                   </p>
 
