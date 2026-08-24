@@ -663,6 +663,27 @@ export const customerApi = {
     });
     return res !== null && res.ok;
   },
+
+  async blockCustomer(customerId: string, reason?: string): Promise<Customer> {
+    const res = await safeFetch(`/customers/${customerId}/block`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ reason: reason || 'حظر يدوي من المشرف' }),
+    });
+    if (res && res.ok) return await res.json();
+    const err = await res?.json().catch(() => ({ detail: 'فشل حظر العميل' }));
+    throw new Error(err?.detail || 'فشل حظر العميل');
+  },
+
+  async unblockCustomer(customerId: string): Promise<Customer> {
+    const res = await safeFetch(`/customers/${customerId}/unblock`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    const err = await res?.json().catch(() => ({ detail: 'فشل إلغاء حظر العميل' }));
+    throw new Error(err?.detail || 'فشل إلغاء حظر العميل');
+  },
 };
 
 export interface TeamMember {
