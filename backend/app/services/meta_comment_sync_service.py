@@ -27,7 +27,7 @@ class MetaCommentSyncService:
         if page_id and access_token and access_token.strip():
             url = f"https://graph.facebook.com/v20.0/{page_id}/feed"
             params = {
-                "fields": "id,message,created_time,full_picture,comments{id,message,from,created_time}",
+                "fields": "id,message,created_time,full_picture,permalink_url,comments{id,message,from,created_time,permalink_url}",
                 "access_token": access_token,
             }
             try:
@@ -39,6 +39,7 @@ class MetaCommentSyncService:
                             post_id = str(post.get("id", "post_meta"))
                             post_text = post.get("message", "Facebook Post")
                             post_thumb = post.get("full_picture")
+                            post_permalink = post.get("permalink_url") or f"https://facebook.com/{post_id}"
                             comments_data = post.get("comments", {}).get("data", [])
 
                             for c in comments_data:
@@ -60,7 +61,9 @@ class MetaCommentSyncService:
                                         platform="facebook",
                                         post_id=c_id,
                                         post_title=post_text[:100],
+                                        post_content=post_text,
                                         post_thumbnail=post_thumb,
+                                        post_url=post_permalink,
                                         author_name=author_name,
                                         comment_text=c_text,
                                     )
@@ -86,7 +89,9 @@ class MetaCommentSyncService:
                     "platform": "facebook",
                     "post_id": "comment_fb_real_101",
                     "post_title": "تشكيلة الصيف الجديدة من LUXIRA - الخصم السنوي الحصري",
+                    "post_content": "يسر دار LUXIRA إطلاق تشكيلة الصيف الحصرية بأقمشة طبيعية 100% مستوردة وتصاميم مريحة للأجواء الحارة. تسوق الآن واحصل على خصم 25% مع شحن سريع لكافة دول الخليج ومصر.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://facebook.com/luxira/posts/1015886657613",
                     "author_name": "Bishoy Safwat",
                     "comment_text": "I will follow u and order the new summer collection!",
                 },
@@ -95,7 +100,9 @@ class MetaCommentSyncService:
                     "platform": "instagram",
                     "post_id": "comment_ig_real_102",
                     "post_title": "فستان الحرير الأزرق الميموزا - الطبعة الفاخرة",
+                    "post_content": "إطلالة ملكية ناعمة مع فستان الحرير الأزرق الميموزا، متوفر بجميع المقاسات من S إلى XXL. كميات محدودة جداً لهذا الموسم.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://instagram.com/p/C-luxira-dress-02",
                     "author_name": "سارة المنصوري",
                     "comment_text": "كم سعر الفستان الأزرق الحرير ومتاح التوصيل للرياض؟",
                 },
@@ -104,7 +111,9 @@ class MetaCommentSyncService:
                     "platform": "facebook",
                     "post_id": "comment_fb_toxic_103",
                     "post_title": "عروض الحجز المسبق لفصل الخريف",
+                    "post_content": "استعد للأناقة مع تشكيلة الخريف الفاخرة. احجز قطعتك المفضلة مسبقاً قبل نفاد الكمية.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://facebook.com/luxira/posts/1014839859883",
                     "author_name": "حساب وهمي",
                     "comment_text": "هذا احتيال ونصب لعين scam لا تشتروا منهم!",
                 },
@@ -113,7 +122,9 @@ class MetaCommentSyncService:
                     "platform": "instagram",
                     "post_id": "comment_ig_inquiry_104",
                     "post_title": "فستان الحرير الأزرق الميموزا - الطبعة الفاخرة",
+                    "post_content": "إطلالة ملكية ناعمة مع فستان الحرير الأزرق الميموزا، متوفر بجميع المقاسات من S إلى XXL.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://instagram.com/p/C-luxira-dress-04",
                     "author_name": "ريم العتيبي",
                     "comment_text": "ممكن تفاصيل كود الخصم وإمكانية الدفع عند الاستلام في جدة؟",
                 },
@@ -122,7 +133,9 @@ class MetaCommentSyncService:
                     "platform": "facebook",
                     "post_id": "comment_fb_positive_105",
                     "post_title": "تشكيلة الصيف الجديدة من LUXIRA - الخصم السنوي الحصري",
+                    "post_content": "يسر دار LUXIRA إطلاق تشكيلة الصيف الحصرية بأقمشة طبيعية 100%.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://facebook.com/luxira/posts/1014452051702",
                     "author_name": "كريم ممدوح",
                     "comment_text": "خامة القماش ممتازة والتوصيل وصل في أقل من 24 ساعة، شكراً LUXIRA!",
                 },
@@ -131,7 +144,9 @@ class MetaCommentSyncService:
                     "platform": "instagram",
                     "post_id": "comment_ig_negative_106",
                     "post_title": "عروض الحجز المسبق لفصل الخريف",
+                    "post_content": "استعد للأناقة مع تشكيلة الخريف الفاخرة.",
                     "post_thumbnail": "https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&w=400&q=80",
+                    "post_url": "https://instagram.com/p/C-luxira-fall-06",
                     "author_name": "نورة الشمري",
                     "comment_text": "تأخر الشحن يومين عن الموعد المحدد وأرجو متابعة الطلب مع شركة الشحن.",
                 },

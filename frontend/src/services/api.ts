@@ -323,6 +323,9 @@ export interface AutomationRule {
   keywords: string[];
   response_text: string;
   response_media_url?: string | null;
+  split_lines?: boolean;
+  delay_seconds?: number;
+  human_typing_simulation?: boolean;
   cooldown_minutes: number;
   is_active: boolean;
   created_by?: string | null;
@@ -895,6 +898,8 @@ export interface SocialCommentItem {
   post_id: string;
   post_title: string;
   post_thumbnail?: string;
+  post_url?: string;
+  post_content?: string;
   author_name: string;
   author_avatar?: string;
   comment_text: string;

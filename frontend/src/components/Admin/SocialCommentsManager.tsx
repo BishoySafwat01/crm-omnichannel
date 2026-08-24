@@ -771,6 +771,49 @@ export const SocialCommentsManager: React.FC = () => {
                     </p>
                   </div>
 
+                  {/* Associated Post Context Card (Image Thumbnail, Caption & Direct Link) */}
+                  <div className="mb-3 p-3 bg-slate-50/90 hover:bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition">
+                    <div className="flex items-start gap-3 min-w-0">
+                      {comment.post_thumbnail ? (
+                        <div className="relative group/thumb shrink-0">
+                          <img
+                            src={comment.post_thumbnail}
+                            alt={comment.post_title}
+                            className="w-13 h-13 object-cover rounded-xl border border-slate-200 shadow-2xs group-hover/thumb:scale-105 transition duration-150"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-11 h-11 rounded-xl bg-slate-200/70 flex items-center justify-center text-slate-500 shrink-0">
+                          <MessageCircle className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+                          <span className="text-slate-400 font-medium">المنشور الأصلي:</span>
+                          <span className="truncate max-w-sm sm:max-w-md text-slate-900">{comment.post_title}</span>
+                        </div>
+                        {comment.post_content && (
+                          <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                            {comment.post_content}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Direct Link to Meta Post */}
+                    <div className="shrink-0 self-end sm:self-center">
+                      <a
+                        href={comment.post_url || (comment.platform === 'facebook' ? `https://facebook.com/${comment.post_id}` : `https://instagram.com/p/${comment.post_id}`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 hover:text-[#1877F2] border border-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <span>فتح المنشور</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-[#1877F2]" />
+                      </a>
+                    </div>
+                  </div>
+
                   {/* AI Auto-Action Banner or Reply Message */}
                   {comment.ai_action_reason && (
                     <div className="mb-3 p-3 bg-slate-900 text-white rounded-2xl text-[11px] font-bold flex items-center justify-between border border-slate-800">

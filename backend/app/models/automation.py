@@ -26,6 +26,9 @@ class AutomationRule(Base):
     )  # e.g. ["خصم", "عروض"]
     response_text: Mapped[str] = mapped_column(Text, nullable=False)
     response_media_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    split_lines: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    delay_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
+    human_typing_simulation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(

@@ -19,6 +19,8 @@ class SocialComment(Base):
     post_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     post_title: Mapped[str] = mapped_column(String(500), nullable=False)
     post_thumbnail: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    post_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    post_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     author_avatar: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
