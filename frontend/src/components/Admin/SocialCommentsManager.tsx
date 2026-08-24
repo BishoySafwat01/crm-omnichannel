@@ -339,7 +339,7 @@ export const SocialCommentsManager: React.FC = () => {
             <button
               onClick={fetchCommentsData}
               disabled={isLoading}
-              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition"
+              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition border border-slate-200/60"
               title="تحديث البيانات"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#1A73E8]' : ''}`} />
@@ -360,19 +360,10 @@ export const SocialCommentsManager: React.FC = () => {
                 fetchLogs();
                 setIsLogsModalOpen(true);
               }}
-              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60"
+              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60 shadow-2xs"
             >
               <Activity className="w-4 h-4 text-slate-600" />
               <span>سجل العمليات ({stats.auto_deleted_or_hidden + stats.auto_replied_dms})</span>
-            </button>
-
-            {/* AI Moderation Settings Modal Trigger */}
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="px-4 py-2 rounded-2xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold shadow-md shadow-blue-500/20 transition flex items-center gap-1.5"
-            >
-              <Sliders className="w-4 h-4" />
-              <span>إعدادات الأتمتة والـ AI</span>
             </button>
           </div>
         </div>
@@ -414,16 +405,27 @@ export const SocialCommentsManager: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={handleToggleAiModeration}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
-              settings.auto_delete_negative
-                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-            }`}
-          >
-            {settings.auto_delete_negative ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* AI Moderation Settings Modal Trigger */}
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-800 border border-slate-200 shadow-2xs"
+            >
+              <Sliders className="w-3.5 h-3.5 text-slate-600" />
+              <span>إعدادات الأتمتة والـ AI</span>
+            </button>
+
+            <button
+              onClick={handleToggleAiModeration}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+                settings.auto_delete_negative
+                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+              }`}
+            >
+              {settings.auto_delete_negative ? 'إيقاف مؤقت' : 'تفعيل الحماية الفورية الآن'}
+            </button>
+          </div>
         </div>
 
         {/* KPI Stats Cards (4 Columns) */}
