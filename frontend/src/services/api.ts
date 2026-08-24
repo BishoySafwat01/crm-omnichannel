@@ -847,6 +847,19 @@ export const metaApi = {
     if (res && res.ok) return await res.json();
     throw new Error('Test ping failed');
   },
+
+  async publishPost(payload: { message: string; link?: string; image_url?: string }): Promise<any> {
+    const res = await safeFetch('/meta/posts', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل نشر المنشور على صفحة فيسبوك' }));
+      throw new Error(err?.detail || 'فشل نشر المنشور على صفحة فيسبوك');
+    }
+    return await res.json();
+  },
 };
 
 export const messageActionsApi = {

@@ -4,6 +4,7 @@ import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Che
 import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { metaApi } from '../../services/api';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
@@ -59,31 +60,28 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     setPublishSuccess(null);
     setPublishError(null);
 
+    const rawLink = postLink.trim();
+    let formattedLink: string | undefined = undefined;
+    if (rawLink) {
+      formattedLink = /^https?:\/\//i.test(rawLink) ? rawLink : `https://${rawLink}`;
+    }
+
     try {
-      const res = await fetch('/api/v1/meta/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: postMessage.trim(),
-          link: postLink.trim() || undefined,
-        }),
+      const data = await metaApi.publishPost({
+        message: postMessage.trim(),
+        link: formattedLink,
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setPublishSuccess(`تم نشر المنشور بنجاح (ID: ${data.post_id || 'تم'})`);
-        setPostMessage('');
-        setPostLink('');
-        setTimeout(() => {
-          setIsPostModalOpen(false);
-          setPublishSuccess(null);
-        }, 2500);
-      } else {
-        const errData = await res.json().catch(() => ({ detail: 'فشل نشر المنشور' }));
-        setPublishError(errData.detail || 'تعذر التواصل مع الخادم لنشر المنشور.');
-      }
+      setPublishSuccess(`تم نشر المنشور بنجاح على صفحة فيسبوك ✨ (ID: ${data.post_id || 'تم'})`);
+      setPostMessage('');
+      setPostLink('');
+      setTimeout(() => {
+        setIsPostModalOpen(false);
+        setPublishSuccess(null);
+      }, 2500);
     } catch (err: any) {
-      setPublishError('تعذر نشر المنشور. يرجى التحقق من الاتصال بالخادم.');
+      console.warn('[PublishPost] error:', err);
+      setPublishError(err?.message || 'تعذر نشر المنشور. يرجى التأكد من صلاحيات الصفحة.');
     } finally {
       setIsPublishing(false);
     }
@@ -357,10 +355,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">رابط اختياري للمنتج / العرض (Link):</label>
                   <input
-                    type="url"
+                    type="text"
                     value={postLink}
                     onChange={(e) => setPostLink(e.target.value)}
-                    placeholder="https://luxira.com/offer"
+                    placeholder="https://luxira.com/offer أو luxira.com"
                     className="w-full bg-slate-50 text-xs text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1877F2]/20 focus:border-[#1877F2] font-medium"
                   />
                 </div>
