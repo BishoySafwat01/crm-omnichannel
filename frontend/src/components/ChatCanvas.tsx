@@ -34,6 +34,9 @@ import {
   Loader2,
   Image as ImageIcon,
   Forward as ForwardIcon,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
 } from 'lucide-react';
 import { useCrmStore } from '../store/useCrmStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -376,8 +379,39 @@ export const ChatCanvas: React.FC = () => {
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(1);
+  const [previewRotation, setPreviewRotation] = useState<number>(0);
   const [editInputText, setEditInputText] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  const handleOpenImagePreview = (url: string) => {
+    setPreviewImage(url);
+    setPreviewZoom(1);
+    setPreviewRotation(0);
+  };
+
+  const handleCloseImagePreview = () => {
+    setPreviewImage(null);
+    setPreviewZoom(1);
+    setPreviewRotation(0);
+  };
+
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseImagePreview();
+      } else if (e.key === '+' || e.key === '=') {
+        setPreviewZoom((prev) => Math.min(prev + 0.25, 3));
+      } else if (e.key === '-' || e.key === '_') {
+        setPreviewZoom((prev) => Math.max(prev - 0.25, 0.5));
+      } else if (e.key === 'r' || e.key === 'R') {
+        setPreviewRotation((prev) => (prev + 90) % 360);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewImage]);
 
   useEffect(() => {
     if (editingMessage) {
@@ -1291,14 +1325,23 @@ export const ChatCanvas: React.FC = () => {
 
                           {/* Inline Image Preview */}
                           {media.isImage && media.url && (
-                            <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs my-1">
+                            <div
+                              className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-xs my-1 shadow-xs border border-slate-200/80 bg-slate-50 select-none"
+                              onClick={() => handleOpenImagePreview(media.url!)}
+                              title="اضغط للتكبير وعرض الصورة بالحجم الكامل"
+                            >
                               <img
                                 src={media.url}
                                 alt="مرفق صورة"
                                 onLoad={handleMediaLoaded}
-                                className="w-full max-h-64 object-cover rounded-xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-100"
-                                onClick={() => setPreviewImage(media.url)}
+                                className="w-full max-h-72 object-cover rounded-2xl transition-all duration-300 group-hover:scale-[1.03] group-hover:brightness-95"
                               />
+                              <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-2xl">
+                                <span className="p-2.5 bg-black/70 backdrop-blur-md rounded-full text-white shadow-xl flex items-center gap-1.5 text-xs font-bold">
+                                  <ZoomIn className="w-4 h-4" />
+                                  <span>عرض وتكبير</span>
+                                </span>
+                              </div>
                             </div>
                           )}
 
@@ -1776,7 +1819,7 @@ export const ChatCanvas: React.FC = () => {
               </div>
 
               {/* Send Button */}
-             المزيد  <button
+              <button
                 type="button"
                 onClick={handleSend}
                 disabled={!draftText.trim() && !stagedMedia}
@@ -1801,6 +1844,134 @@ export const ChatCanvas: React.FC = () => {
         message={forwardingMessage}
         onClose={() => setIsForwardModalOpen(false, null)}
       />
+
+      {/* WhatsApp-Style Image Lightbox Popup Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col justify-between p-4 select-none animate-in fade-in zoom-in-95 duration-150"
+          onClick={handleCloseImagePreview}
+        >
+          {/* Top Bar with Controls */}
+          <div
+            className="flex items-center justify-between w-full max-w-5xl mx-auto text-white z-10 shrink-0 py-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Sender / Title Info */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/20">
+                <ImageIcon className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white">معاينة الصورة بالحجم الكامل</p>
+                <p className="text-[10px] text-slate-300">
+                  {activeConv.customer_display_name || activeConv.customer?.display_name || 'محادثة الشات'}
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons Toolbar */}
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-lg">
+              {/* Zoom Out */}
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((prev) => Math.max(prev - 0.25, 0.5))}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تصغير (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+
+              {/* Zoom Reset */}
+              <span className="text-xs font-mono px-1.5 font-bold text-white">
+                {Math.round(previewZoom * 100)}%
+              </span>
+
+              {/* Zoom In */}
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((prev) => Math.min(prev + 0.25, 3))}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تكبير (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              {/* Rotate */}
+              <button
+                type="button"
+                onClick={() => setPreviewRotation((prev) => (prev + 90) % 360)}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تدوير 90 درجة (R)"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+
+              {/* Open External / New Tab */}
+              <a
+                href={previewImage}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="فتح في تبويب جديد"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              {/* Direct Download */}
+              <a
+                href={previewImage}
+                download={`chat-image-${Date.now()}.jpg`}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white transition flex items-center gap-1 font-bold text-xs shadow-xs"
+                title="تحميل الصورة"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">تحميل</span>
+              </a>
+
+              {/* Close (X / Esc) */}
+              <button
+                type="button"
+                onClick={handleCloseImagePreview}
+                className="p-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white transition shadow-xs"
+                title="إغلاق (ESC)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Image Viewport */}
+          <div
+            className="flex-1 flex items-center justify-center overflow-hidden my-auto w-full max-w-5xl mx-auto cursor-pointer"
+            onClick={handleCloseImagePreview}
+          >
+            <div
+              className="transition-transform duration-200 ease-out flex items-center justify-center"
+              style={{
+                transform: `scale(${previewZoom}) rotate(${previewRotation}deg)`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={previewImage}
+                alt="معاينة الشات"
+                className="max-h-[78vh] max-w-[85vw] object-contain rounded-2xl shadow-2xl border border-white/20 cursor-default"
+                onDoubleClick={() => setPreviewZoom((prev) => (prev > 1 ? 1 : 1.75))}
+              />
+            </div>
+          </div>
+
+          {/* Bottom Caption / Controls Note */}
+          <div
+            className="text-center text-[11px] text-slate-400 font-medium py-1 shrink-0 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span>اضغط مرتين للتكبير السريع • يمكنك استخدام أزرار التكبير والتدوير والتحميل أو زر ESC للخروج</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 };
