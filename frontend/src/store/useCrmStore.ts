@@ -19,32 +19,48 @@ export interface UnreadSummary {
 
 
 export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Message[]): Message[] => {
-  const byPermanentId = new Map<string, Message>();
-  const byExternalId = new Map<string, Message>();
-  const tempToPermMap = new Map<string, string>();
+  const result: Message[] = [];
+  const seenIds = new Set<string>();
+  const seenExternalIds = new Set<string>();
 
-  // Process incoming messages first to establish permanent truth
+  // 1. Process incoming authoritative messages from backend
   incoming.forEach((msg) => {
-    if (msg.id) byPermanentId.set(msg.id, msg);
-    if (msg.external_message_id) byExternalId.set(msg.external_message_id, msg);
-    if ((msg as any).temp_id && msg.id) {
-      tempToPermMap.set((msg as any).temp_id, msg.id);
-    }
+    if (!msg || !msg.id) return;
+    if (seenIds.has(msg.id)) return;
+    if (msg.external_message_id && seenExternalIds.has(msg.external_message_id)) return;
+
+    seenIds.add(msg.id);
+    if (msg.external_message_id) seenExternalIds.add(msg.external_message_id);
+    result.push(msg);
   });
 
-  // Merge with existing items, discarding replaced temp placeholders
+  // 2. Only keep recent pending optimistic messages from existing state that are not yet in server list
+  const now = Date.now();
   existing.forEach((msg) => {
-    const isReplacedTemp = (msg as any).temp_id && tempToPermMap.has((msg as any).temp_id);
-    const isKnownExternal = msg.external_message_id && byExternalId.has(msg.external_message_id);
+    if (!msg || !msg.id) return;
+    if (seenIds.has(msg.id)) return;
+    if (msg.external_message_id && seenExternalIds.has(msg.external_message_id)) return;
 
-    if (!isReplacedTemp && !isKnownExternal && !byPermanentId.has(msg.id)) {
-      byPermanentId.set(msg.id, msg);
-      if (msg.external_message_id) byExternalId.set(msg.external_message_id, msg);
+    const isTemp = msg.id.startsWith('temp-') || msg.delivery_status === 'pending';
+    if (isTemp) {
+      const msgTime = new Date(msg.created_at || now).getTime();
+      const isRecent = (now - msgTime) < 30000;
+      const alreadyHasSameText = incoming.some(
+        (inc) =>
+          inc.text === msg.text &&
+          inc.sender_type === msg.sender_type &&
+          Math.abs(new Date(inc.created_at || now).getTime() - msgTime) < 30000
+      );
+
+      if (isRecent && !alreadyHasSameText) {
+        seenIds.add(msg.id);
+        result.push(msg);
+      }
     }
   });
 
-  return Array.from(byPermanentId.values()).sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  return result.sort(
+    (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
 };
 
@@ -108,6 +124,9 @@ interface CrmState {
   availableCountries: string[];
   selectedEmployeeId: string | null;
   availableEmployees: TeamMember[];
+  selectedAgentId: string;
+  teamMembers: TeamMember[];
+  isFetchingTeamMembers: boolean;
   isIntegrationsModalOpen: boolean;
   searchQuery: string;
   activeFilterTab: FilterTab;
@@ -134,6 +153,7 @@ interface CrmState {
   setSelectedChannel: (channel: ChannelFilterType) => void;
   setSelectedCountry: (country: string) => void;
   setSelectedEmployeeId: (employeeId: string | null) => void;
+  setSelectedAgentId: (agentId: string) => void;
   fetchAvailableCountries: () => Promise<void>;
   fetchTeamMembers: () => Promise<void>;
   setIsIntegrationsModalOpen: (open: boolean) => void;
@@ -176,6 +196,9 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   availableCountries: [],
   selectedEmployeeId: null,
   availableEmployees: [],
+  selectedAgentId: 'all',
+  teamMembers: [],
+  isFetchingTeamMembers: false,
   isIntegrationsModalOpen: false,
   searchQuery: '',
   activeFilterTab: 'all',
@@ -221,7 +244,12 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   setSelectedEmployeeId: (employeeId) => {
-    set({ selectedEmployeeId: employeeId });
+    set({ selectedEmployeeId: employeeId, selectedAgentId: employeeId || 'all' });
+  },
+
+  setSelectedAgentId: (agentId) => {
+    set({ selectedAgentId: agentId, selectedEmployeeId: agentId === 'all' ? null : agentId });
+    get().fetchConversations();
   },
 
   fetchAvailableCountries: async () => {
@@ -235,12 +263,17 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   fetchTeamMembers: async () => {
     try {
+      set({ isFetchingTeamMembers: true });
       const members = await teamApi.listMembers();
-      if (members && Array.isArray(members)) {
-        set({ availableEmployees: members });
-      }
+      const safeMembers = Array.isArray(members) ? members : [];
+      set({
+        availableEmployees: safeMembers,
+        teamMembers: safeMembers,
+        isFetchingTeamMembers: false,
+      });
     } catch (err) {
       console.warn('[Store] fetchTeamMembers error:', err);
+      set({ isFetchingTeamMembers: false });
     }
   },
 
@@ -306,7 +339,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const selectedBrand = get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
-      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry);
+      const selectedAgent = get().selectedAgentId;
+      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, selectedAgent);
 
       let items: Conversation[] = [];
       if (Array.isArray(raw)) {
@@ -512,18 +546,27 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const newLoc = (persistedMsg as any)?.updated_customer_location;
       set((state) => {
         const list = state.messages[activeConversationId] || [];
-        let replaced = list.map((m) =>
-          m.id === tempId
-            ? { ...persistedMsg, delivery_status: 'sent' as const }
-            : m
-        );
+        const alreadyHasPersisted = list.some((m) => m.id === persistedMsg.id);
+        let replaced: Message[];
+        if (alreadyHasPersisted) {
+          replaced = list.filter((m) => m.id !== tempId);
+        } else {
+          replaced = list.map((m) =>
+            m.id === tempId
+              ? { ...persistedMsg, delivery_status: 'sent' as const }
+              : m
+          );
+        }
 
-        // Strict deduplication by ID
+        // Strict deduplication by ID and external_message_id
         const seenIds = new Set<string>();
+        const seenExtIds = new Set<string>();
         replaced = replaced.filter((m) => {
           if (!m.id) return true;
           if (seenIds.has(m.id)) return false;
+          if (m.external_message_id && seenExtIds.has(m.external_message_id)) return false;
           seenIds.add(m.id);
+          if (m.external_message_id) seenExtIds.add(m.external_message_id);
           return true;
         });
 
@@ -1125,19 +1168,60 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       return;
     }
 
-    if ((event.type === 'NEW_MESSAGE' || (event as any).type === 'new_message') && event.conversation_id && event.message) {
+    if ((event.type === 'NEW_MESSAGE' || (event as any).type === 'new_message') && event.conversation_id) {
       const convId = event.conversation_id;
       const msg = event.message;
 
       get().fetchUnreadSummary();
 
+      // If no full message payload was attached (e.g. background poller ping), fetch from server
+      if (!msg) {
+        if (convId === get().activeConversationId) {
+          get().fetchMessages(convId);
+        }
+        get().fetchConversations();
+        return;
+      }
+
       set((state) => {
         const convMsgs = state.messages[convId] || [];
-        if (convMsgs.some((m) => m.id === msg.id || m.external_message_id === msg.external_message_id)) {
-          return state;
+
+        // Avoid adding duplicate if already present
+        const alreadyExists = convMsgs.some(
+          (m) =>
+            m.id === msg.id ||
+            (msg.external_message_id && m.external_message_id === msg.external_message_id)
+        );
+        if (alreadyExists) return state;
+
+        // If this message corresponds to a pending optimistic message, replace the temp message
+        const matchingTempIndex = convMsgs.findIndex(
+          (m) =>
+            m.id.startsWith('temp-') &&
+            m.text === msg.text &&
+            m.sender_type === msg.sender_type
+        );
+
+        let updatedMsgs: Message[];
+        if (matchingTempIndex !== -1) {
+          updatedMsgs = [...convMsgs];
+          updatedMsgs[matchingTempIndex] = msg;
+        } else {
+          updatedMsgs = [...convMsgs, msg];
         }
 
-        const updatedMsgs = [...convMsgs, msg];
+        // Deduplicate array
+        const seen = new Set<string>();
+        const seenExt = new Set<string>();
+        updatedMsgs = updatedMsgs.filter((m) => {
+          if (!m || !m.id) return false;
+          if (seen.has(m.id)) return false;
+          if (m.external_message_id && seenExt.has(m.external_message_id)) return false;
+          seen.add(m.id);
+          if (m.external_message_id) seenExt.add(m.external_message_id);
+          return true;
+        });
+
         const updatedConvs = sortConversationsByLatest(
           state.conversations.map((c) =>
             c.id === convId

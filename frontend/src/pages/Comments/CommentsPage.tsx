@@ -295,6 +295,16 @@ export const SocialCommentsManager: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Refresh Button */}
+            <button
+              onClick={loadComments}
+              disabled={isLoadingComments}
+              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition border border-slate-200/60 shadow-2xs"
+              title="تحديث البيانات"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoadingComments ? 'animate-spin text-[#1A73E8]' : ''}`} />
+            </button>
+
             {/* AI Sandbox Simulator Trigger */}
             <button
               onClick={() => setIsSimulatorModalOpen(true)}
@@ -307,19 +317,10 @@ export const SocialCommentsManager: React.FC = () => {
             {/* AI Audit Logs Modal Trigger */}
             <button
               onClick={() => setIsLogsModalOpen(true)}
-              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60"
+              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60 shadow-2xs"
             >
               <Activity className="w-4 h-4 text-slate-600" />
               <span>سجل العمليات ({autoDeletedCount + autoRepliedCount})</span>
-            </button>
-
-            {/* AI Moderation Settings Modal Trigger */}
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="px-4 py-2 rounded-2xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold shadow-md shadow-blue-500/20 transition flex items-center gap-1.5"
-            >
-              <Sliders className="w-4 h-4" />
-              <span>إعدادات الأتمتة والـ AI</span>
             </button>
           </div>
         </div>

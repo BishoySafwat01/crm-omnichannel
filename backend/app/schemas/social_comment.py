@@ -10,6 +10,8 @@ class SocialCommentBase(BaseModel):
     post_id: str
     post_title: str
     post_thumbnail: Optional[str] = None
+    post_url: Optional[str] = None
+    post_content: Optional[str] = None
     author_name: str
     author_avatar: Optional[str] = None
     comment_text: str

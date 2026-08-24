@@ -2,6 +2,7 @@ import logging
 import os
 import uuid
 from typing import Optional
+from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse

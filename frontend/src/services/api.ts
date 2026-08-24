@@ -4,8 +4,12 @@ import { MOCK_BRANDS } from '../constants/brands';
 
 export { MOCK_BRANDS };
 
-const API_BASE = APP_CONFIG.API_BASE;
-const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE;
+const metaEnv = (import.meta as any).env || {};
+const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
+export const API_BASE = rawApiUrl
+  ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
+  : APP_CONFIG.API_BASE || '/api/v1';
+export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || 'http://localhost:8000/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -16,7 +20,60 @@ export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Reco
   return headers;
 };
 
-export const getConversationsDirect = async (brand_id?: string, channel?: string, country?: string): Promise<any> => {
+export async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = getAuthHeaders((init?.headers as Record<string, string>) || {});
+  const reqInit = { ...init, headers };
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const targetUrl = `${API_BASE}${cleanPath}`;
+
+  try {
+    return await fetch(targetUrl, reqInit);
+  } catch (err) {
+    console.warn(`Primary fetch ${targetUrl} network error:`, err);
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      const fallbackUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      return await fetch(fallbackUrl, reqInit);
+    }
+    throw err;
+  }
+}
+
+export const authApi = {
+  async login(email: string, password: string): Promise<any> {
+    const res = await safeFetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ detail: 'فشل في تسجيل الدخول' }));
+      throw new Error(errData.detail || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
+    }
+    return await res.json();
+  },
+
+  async getMe(token?: string): Promise<any> {
+    const customHeaders: Record<string, string> = { Accept: 'application/json' };
+    if (token) {
+      customHeaders['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await safeFetch('/auth/me', {
+      method: 'GET',
+      headers: getAuthHeaders(customHeaders),
+    });
+    if (!res.ok) {
+      throw new Error('Unauthorized');
+    }
+    return await res.json();
+  },
+};
+
+export const getConversationsDirect = async (
+  brand_id?: string,
+  channel?: string,
+  country?: string,
+  assigned_agent_id?: string
+): Promise<any> => {
   const params = new URLSearchParams();
   if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
     params.set('brand', brand_id);
@@ -27,72 +84,31 @@ export const getConversationsDirect = async (brand_id?: string, channel?: string
   if (country && country.toLowerCase() !== 'all') {
     params.set('country', country);
   }
+  if (assigned_agent_id && assigned_agent_id.toLowerCase() !== 'all') {
+    params.set('assigned_agent_id', assigned_agent_id);
+  }
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const urls = [
-    `${API_BASE}/conversations${query}`,
-    `${FALLBACK_API_BASE}/conversations${query}`,
-    `http://127.0.0.1:8000/api/v1/conversations${query}`
-  ];
-
-  const headers = getAuthHeaders({ 'Accept': 'application/json' });
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        console.log(`[API] Successfully fetched conversations from ${url}:`, data);
-        return data;
-      }
-    } catch (e) {
-      console.warn(`[API] Failed to fetch conversations from ${url}, trying next...`, e);
-    }
+  const res = await safeFetch(`/conversations${query}`, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (res && res.ok) {
+    return await res.json();
   }
-  throw new Error('All conversation API endpoints failed');
+  throw new Error('Failed to fetch conversations');
 };
 
 export const getMessagesDirect = async (conversationId: string): Promise<any> => {
-  const urls = [
-    `${API_BASE}/conversations/${conversationId}/messages?page_size=200&order=asc`,
-    `${FALLBACK_API_BASE}/conversations/${conversationId}/messages?page_size=200&order=asc`,
-    `http://127.0.0.1:8000/api/v1/conversations/${conversationId}/messages?page_size=200&order=asc`
-  ];
-
-  const headers = getAuthHeaders({ 'Accept': 'application/json' });
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (e) {
-      // try next
-    }
+  const res = await safeFetch(`/conversations/${conversationId}/messages?page_size=200&order=asc`, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (res && res.ok) {
+    return await res.json();
   }
   return { items: [], total: 0 };
 };
-
-async function safeFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers = getAuthHeaders((init?.headers as Record<string, string>) || {});
-  const reqInit = { ...init, headers };
-
-  try {
-    const res = await fetch(`${API_BASE}${path}`, reqInit);
-    if (res.ok) return res;
-    console.warn(`Primary fetch ${API_BASE}${path} returned HTTP ${res.status}, trying fallback...`);
-  } catch (err) {
-    console.warn(`Primary fetch ${API_BASE}${path} failed, trying fallback:`, err);
-  }
-  return await fetch(`${FALLBACK_API_BASE}${path}`, reqInit);
-}
 
 export const getUnreadSummaryDirect = async (): Promise<any> => {
   try {
@@ -301,6 +317,9 @@ export interface AutomationRule {
   keywords: string[];
   response_text: string;
   response_media_url?: string | null;
+  split_lines?: boolean;
+  delay_seconds?: number;
+  human_typing_simulation?: boolean;
   cooldown_minutes: number;
   is_active: boolean;
   created_by?: string | null;
@@ -957,6 +976,161 @@ export const commentsApi = {
       return await res.json();
     }
     return null;
+  },
+};
+
+export interface SocialCommentItem {
+  id: string;
+  brand: string;
+  platform: 'facebook' | 'instagram';
+  post_id: string;
+  post_title: string;
+  post_thumbnail?: string;
+  post_url?: string;
+  post_content?: string;
+  author_name: string;
+  author_avatar?: string;
+  comment_text: string;
+  sentiment: 'positive' | 'neutral_inquiry' | 'negative' | 'spam';
+  sentiment_score: number;
+  moderation_status: 'active' | 'auto_deleted' | 'auto_hidden' | 'replied' | 'flagged';
+  ai_action_reason?: string;
+  auto_replied_text?: string;
+  likes_count: number;
+  replies_count: number;
+  is_direct_message_sent: boolean;
+  created_at: string;
+}
+
+export interface CommentStats {
+  total_comments: number;
+  auto_deleted_or_hidden: number;
+  auto_replied_dms: number;
+  positive_rate: number;
+  active_auto_delete_enabled: boolean;
+}
+
+export interface ModerationSettings {
+  auto_delete_negative: boolean;
+  auto_hide_spam: boolean;
+  auto_reply_inquiries: boolean;
+  strictness_level: 'strict' | 'balanced' | 'relaxed';
+  action_for_negative: 'delete' | 'hide' | 'delete_and_dm';
+  negative_keywords: string[];
+  inquiry_keywords: string[];
+  inquiry_reply_text: string;
+  inquiry_dm_text: string;
+  negative_dm_apology_text: string;
+}
+
+export interface ModerationLog {
+  id: string;
+  comment_id?: string;
+  comment_author: string;
+  action_type: string;
+  performed_by: string;
+  details?: Record<string, any>;
+  created_at: string;
+}
+
+export const socialCommentsApi = {
+  async getComments(params?: {
+    brand?: string;
+    platform?: string;
+    sentiment?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<{ items: SocialCommentItem[]; total: number; total_pages: number }> {
+    const q = new URLSearchParams();
+    if (params?.brand && params.brand !== 'all' && params.brand !== 'الكل') q.append('brand', params.brand);
+    if (params?.platform && params.platform !== 'all') q.append('platform', params.platform);
+    if (params?.sentiment && params.sentiment !== 'all') q.append('sentiment', params.sentiment);
+    if (params?.status && params.status !== 'all') q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', params.page.toString());
+    if (params?.page_size) q.append('page_size', params.page_size.toString());
+
+    const res = await safeFetch(`/comments?${q.toString()}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return { items: [], total: 0, total_pages: 1 };
+  },
+
+  async getStats(): Promise<CommentStats> {
+    const res = await safeFetch('/comments/stats', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      total_comments: 0,
+      auto_deleted_or_hidden: 0,
+      auto_replied_dms: 0,
+      positive_rate: 50,
+      active_auto_delete_enabled: true,
+    };
+  },
+
+  async updateCommentStatus(commentId: string, status: string, reason?: string): Promise<SocialCommentItem> {
+    const res = await safeFetch(`/comments/${commentId}/status`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ status, reason }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to update comment status');
+  },
+
+  async replyToComment(commentId: string, replyText: string, sendDm: boolean = false, dmText?: string): Promise<SocialCommentItem> {
+    const res = await safeFetch(`/comments/${commentId}/reply`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ reply_text: replyText, send_dm: sendDm, dm_text: dmText }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to post reply to comment');
+  },
+
+  async getSettings(brand: string = 'all'): Promise<ModerationSettings> {
+    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to fetch settings');
+  },
+
+  async updateSettings(settings: ModerationSettings, brand: string = 'all'): Promise<ModerationSettings> {
+    const res = await safeFetch(`/comments/settings?brand=${brand}`, {
+      method: 'PUT',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(settings),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to update settings');
+  },
+
+  async getLogs(): Promise<ModerationLog[]> {
+    const res = await safeFetch('/comments/logs', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return [];
+  },
+
+  async simulateAi(commentText: string, brand: string = 'all'): Promise<any> {
+    const res = await safeFetch('/comments/simulate-ai', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ comment_text: commentText, brand }),
+    });
+    if (res && res.ok) return await res.json();
+    throw new Error('Failed to simulate AI check');
   },
 };
 

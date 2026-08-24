@@ -129,12 +129,24 @@ class MessageService:
             .options(selectinload(Message.sender_user))
             .where(Message.conversation_id == conversation_id)
         )
-        if order.lower() == "desc":
+        order_str = str(getattr(order, "default", order) or "asc").lower()
+        if order_str == "desc":
             stmt = stmt.order_by(Message.created_at.desc(), Message.id.desc())
         else:
             stmt = stmt.order_by(Message.created_at.asc(), Message.id.asc())
 
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+        try:
+            p = int(getattr(page, "default", page) if page is not None else 1)
+        except (ValueError, TypeError):
+            p = 1
+        try:
+            ps = int(getattr(page_size, "default", page_size) if page_size is not None else 20)
+        except (ValueError, TypeError):
+            ps = 20
+        p = max(1, p)
+        ps = max(1, min(ps, 500))
+
+        stmt = stmt.offset((p - 1) * ps).limit(ps)
         res = await session.execute(stmt)
         messages = list(res.scalars().all())
         return messages, total

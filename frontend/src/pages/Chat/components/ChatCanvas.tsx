@@ -16,7 +16,6 @@ import {
   Clock,
   X,
   Mic,
-  User,
   AlertCircle,
   Plus,
   MapPin,
@@ -27,19 +26,26 @@ import {
   Loader2,
   Pin,
   Forward as ForwardIcon,
-  CornerUpLeft,
-  Edit2,
-  Check,
   Search,
   ChevronUp,
   Users,
+  User,
+  Check,
+  CornerUpLeft,
+  Edit2,
+  Ban,
+  ShieldCheck,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
 } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { MetaMessageTag } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
+import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { formatChatDateDivider, isDifferentDay } from '../../../utils/dateUtils';
-import { aiApi } from '../../../services/api';
+import { aiApi, API_BASE } from '../../../services/api';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { MessageActionsMenu } from './MessageActionsMenu';
 import { ForwardMessageModal } from './ForwardMessageModal';
@@ -180,11 +186,24 @@ interface ResolvedMedia {
 
 const getProxiedMediaUrl = (url: string | null | undefined): string => {
   if (!url) return '';
-  if (url.startsWith('/uploads/') || url.startsWith('/api') || url.startsWith('blob:') || url.startsWith('data:')) {
+  if (url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
   }
-  if (url.includes('fbcdn.net') || url.includes('facebook.com') || url.includes('cdninstagram.com')) {
-    return `/api/v1/media/proxy?url=${encodeURIComponent(url)}`;
+  const rootBase = (API_BASE || '').replace(/\/api\/v1\/?$/, '');
+  if (url.startsWith('/uploads/')) {
+    return `${rootBase}${url}`;
+  }
+  if (url.startsWith('/api/')) {
+    return `${rootBase}${url}`;
+  }
+  if (
+    url.includes('fbcdn.net') ||
+    url.includes('fbsbx.com') ||
+    url.includes('facebook.com') ||
+    url.includes('cdninstagram.com') ||
+    url.includes('instagram.com')
+  ) {
+    return `${API_BASE}/media/proxy?url=${encodeURIComponent(url)}`;
   }
   return url;
 };
@@ -339,6 +358,9 @@ export const ChatCanvas: React.FC = () => {
     loadMoreMessages,
     selectedMetaTag,
     setSelectedMetaTag,
+    selectedAgentId,
+    setSelectedAgentId,
+    teamMembers,
     draftText,
     setDraftText,
     replyingToMessage,
@@ -358,6 +380,8 @@ export const ChatCanvas: React.FC = () => {
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<number>(1);
+  const [previewRotation, setPreviewRotation] = useState<number>(0);
   const [editInputText, setEditInputText] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
@@ -367,6 +391,35 @@ export const ChatCanvas: React.FC = () => {
   const [inChatEmployeeFilter, setInChatEmployeeFilter] = useState<string | null>(null);
   const [isChatEmpMenuOpen, setIsChatEmpMenuOpen] = useState(false);
   const [matchedMsgIndex, setMatchedMsgIndex] = useState(0);
+
+  const handleOpenImagePreview = (url: string) => {
+    setPreviewImage(url);
+    setPreviewZoom(1);
+    setPreviewRotation(0);
+  };
+
+  const handleCloseImagePreview = () => {
+    setPreviewImage(null);
+    setPreviewZoom(1);
+    setPreviewRotation(0);
+  };
+
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseImagePreview();
+      } else if (e.key === '+' || e.key === '=') {
+        setPreviewZoom((prev) => Math.min(prev + 0.25, 3));
+      } else if (e.key === '-' || e.key === '_') {
+        setPreviewZoom((prev) => Math.max(prev - 0.25, 0.5));
+      } else if (e.key === 'r' || e.key === 'R') {
+        setPreviewRotation((prev) => (prev + 90) % 360);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewImage]);
 
   useEffect(() => {
     if (editingMessage) {
@@ -417,14 +470,14 @@ export const ChatCanvas: React.FC = () => {
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
   const activeMessages = activeConversationId ? messages[activeConversationId] || [] : [];
+  const latestPinned = React.useMemo(() => activeMessages.filter((m) => m.is_pinned && !m.is_deleted).slice(-1)[0] || null, [activeMessages]);
   const isCustomerTyping = activeConversationId ? isTyping[activeConversationId] : false;
   const presence = useCustomerPresence(
     activeConv?.last_activity_at || activeConv?.customer?.last_activity_at || activeConv?.last_customer_message_at || activeConv?.last_message_at,
     Boolean(isCustomerTyping)
   );
 
-  const pinnedMessages = activeMessages.filter((m) => m.is_pinned && !m.is_deleted);
-  const latestPinned = pinnedMessages.length > 0 ? pinnedMessages[pinnedMessages.length - 1] : null;
+
 
   // AI Copilot Intelligence State
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
@@ -844,22 +897,41 @@ export const ChatCanvas: React.FC = () => {
       <header className="h-14 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-6 flex items-center justify-between shrink-0 z-20">
         {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <UserAvatar name={customerName} avatarUrl={avatarUrl} size="md" />
-            <span className={`w-3 h-3 border-2 border-white rounded-full absolute bottom-0 right-0 ${presence.dotColor}`} title={presence.statusText} />
-          </div>
+          <ConversationAvatar
+            customerName={customerName}
+            customerAvatarUrl={avatarUrl}
+            brandId={activeConv.brand_id}
+            brandName={activeConv.brand || activeConv.brand_name}
+            channel={activeConv.channel}
+            size="md"
+            showPresenceDot={true}
+            presenceDotColor={presence.dotColor}
+            presenceStatusText={presence.statusText}
+          />
 
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
-              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
-                {activeConv.brand || activeConv.brand_name || 'LUXIRA'}
-              </span>
+              {(() => {
+                const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
+                if (brandObj.isDirect) {
+                  return (
+                    <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                      محادثة خاصة (Direct)
+                    </span>
+                  );
+                }
+                return (
+                  <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+                    {brandObj.name}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
               <span className={presence.colorClass}>{presence.statusText}</span>
               <span>•</span>
-              <span>{activeConv.channel}</span>
+              <span className="capitalize">{activeConv.channel || 'messenger'}</span>
             </p>
           </div>
         </div>
@@ -878,7 +950,7 @@ export const ChatCanvas: React.FC = () => {
                     setInChatSearchQuery(e.target.value);
                     setMatchedMsgIndex(0);
                   }}
-                  placeholder="بحث في نصوص الرسائل..."
+                  placeholder="بحث بنص أو اسم موظف..."
                   autoFocus
                   className="bg-transparent text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none w-32 sm:w-44"
                 />
@@ -978,7 +1050,7 @@ export const ChatCanvas: React.FC = () => {
                 type="button"
                 onClick={() => setIsSearchOpen(true)}
                 className="p-1.5 rounded-full border bg-slate-100/70 hover:bg-white text-slate-600 border-slate-200/60 transition shadow-2xs"
-                title="بحث داخل المحادثة وبالسجل"
+                title="بحث داخل المحادثة (نص / اسم موظف)"
               >
                 <Search className="w-3.5 h-3.5" />
               </button>
@@ -1158,21 +1230,63 @@ export const ChatCanvas: React.FC = () => {
           </div>
         ) : (
           (() => {
-            const sortedMessages = [...activeMessages]
+            const seenMsgIds = new Set<string>();
+            const rawSorted = [...activeMessages]
               .filter((m) => {
-                if (activeEmpFilterId) {
-                  return (
-                    m.sender_type === 'agent' &&
-                    (m.sender_user_id === activeEmpFilterId ||
-                      (m.sender_name && m.sender_name.toLowerCase().includes(activeEmpFilterId.toLowerCase())) ||
-                      (activeEmpFilterObj && m.sender_name === activeEmpFilterObj.name))
-                  );
-                }
+                if (!m || !m.id) return false;
+                if (seenMsgIds.has(m.id)) return false;
+                seenMsgIds.add(m.id);
                 return true;
               })
               .sort(
                 (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
               );
+
+            let sortedMessages = rawSorted;
+            if (activeEmpFilterId) {
+              const filterTarget = activeEmpFilterId.toLowerCase().trim();
+              sortedMessages = sortedMessages.filter((m) => {
+                if (m.sender_type !== 'agent') return false;
+                const sName = (m.sender_name || '').toLowerCase().trim();
+                const sExt = (m.sender_external_id || '').toLowerCase().trim();
+                const sId = (m.sender_user_id || '').toLowerCase().trim();
+                const objName = (activeEmpFilterObj?.name || '').toLowerCase().trim();
+                return (
+                  sId === filterTarget ||
+                  sName === filterTarget ||
+                  sExt === filterTarget ||
+                  (objName && (sName.includes(objName) || sExt.includes(objName)))
+                );
+              });
+            }
+
+            if (activeEmpFilterId && sortedMessages.length === 0) {
+              return (
+                <div className="text-center py-16 px-4 space-y-3 bg-white/50 rounded-2xl border border-dashed border-indigo-200 m-4 animate-in fade-in">
+                  <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">
+                      لا توجد ردود مسجلة للموظف ({activeEmpFilterObj?.name || activeEmpFilterId}) في هذه المحادثة
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      إجمالي رسائل هذه المحادثة: {rawSorted.length} رسالة
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInChatEmployeeFilter(null);
+                      setSelectedEmployeeId(null);
+                    }}
+                    className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-full transition shadow-2xs cursor-pointer"
+                  >
+                    عرض كل رسائل المحادثة
+                  </button>
+                </div>
+              );
+            }
 
             return sortedMessages.map((msg, index) => {
               const media = resolveMedia(msg);
@@ -1282,14 +1396,23 @@ export const ChatCanvas: React.FC = () => {
 
                           {/* Inline Image Preview */}
                           {media.isImage && media.url && (
-                            <div className="relative group cursor-pointer overflow-hidden rounded-xl max-w-xs my-1">
+                            <div
+                              className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-xs my-1 shadow-xs border border-slate-200/80 bg-slate-50 select-none"
+                              onClick={() => handleOpenImagePreview(media.url!)}
+                              title="اضغط للتكبير وعرض الصورة بالحجم الكامل"
+                            >
                               <img
                                 src={media.url}
                                 alt="مرفق صورة"
                                 onLoad={handleMediaLoaded}
-                                className="w-full max-h-64 object-cover rounded-xl transition-transform duration-200 group-hover:scale-[1.02] border border-slate-100"
-                                onClick={() => setPreviewImage(media.url)}
+                                className="w-full max-h-72 object-cover rounded-2xl transition-all duration-300 group-hover:scale-[1.03] group-hover:brightness-95"
                               />
+                              <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-2xl">
+                                <span className="p-2.5 bg-black/70 backdrop-blur-md rounded-full text-white shadow-xl flex items-center gap-1.5 text-xs font-bold">
+                                  <ZoomIn className="w-4 h-4" />
+                                  <span>عرض وتكبير</span>
+                                </span>
+                              </div>
                             </div>
                           )}
 
@@ -1334,6 +1457,12 @@ export const ChatCanvas: React.FC = () => {
                         }`}
                       >
                         <span>{formatMessageTime(msg.created_at)}</span>
+                        {isAgent && (msg.sender_name || (msg.sender_user_id && teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
+                          <span className="text-[10px] text-[#137333] font-semibold flex items-center gap-0.5">
+                            <span>•</span>
+                            <span>{msg.sender_name || teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name}</span>
+                          </span>
+                        )}
                         {msg.is_edited && !isDeleted && (
                           <span className="text-[10px] opacity-75 font-medium">(معدلة)</span>
                         )}
@@ -1765,6 +1894,134 @@ export const ChatCanvas: React.FC = () => {
         message={forwardingMessage}
         onClose={() => setIsForwardModalOpen(false, null)}
       />
+
+      {/* WhatsApp-Style Image Lightbox Popup Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col justify-between p-4 select-none animate-in fade-in zoom-in-95 duration-150"
+          onClick={handleCloseImagePreview}
+        >
+          {/* Top Bar with Controls */}
+          <div
+            className="flex items-center justify-between w-full max-w-5xl mx-auto text-white z-10 shrink-0 py-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Sender / Title Info */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/20">
+                <ImageIcon className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white">معاينة الصورة بالحجم الكامل</p>
+                <p className="text-[10px] text-slate-300">
+                  {activeConv.customer_display_name || activeConv.customer?.display_name || 'محادثة الشات'}
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons Toolbar */}
+            <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-lg">
+              {/* Zoom Out */}
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((prev) => Math.max(prev - 0.25, 0.5))}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تصغير (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+
+              {/* Zoom Reset */}
+              <span className="text-xs font-mono px-1.5 font-bold text-white">
+                {Math.round(previewZoom * 100)}%
+              </span>
+
+              {/* Zoom In */}
+              <button
+                type="button"
+                onClick={() => setPreviewZoom((prev) => Math.min(prev + 0.25, 3))}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تكبير (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              {/* Rotate */}
+              <button
+                type="button"
+                onClick={() => setPreviewRotation((prev) => (prev + 90) % 360)}
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="تدوير 90 درجة (R)"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+
+              {/* Open External / New Tab */}
+              <a
+                href={previewImage}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-xl text-white hover:bg-white/20 transition"
+                title="فتح في تبويب جديد"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              {/* Direct Download */}
+              <a
+                href={previewImage}
+                download={`chat-image-${Date.now()}.jpg`}
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white transition flex items-center gap-1 font-bold text-xs shadow-xs"
+                title="تحميل الصورة"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">تحميل</span>
+              </a>
+
+              {/* Close (X / Esc) */}
+              <button
+                type="button"
+                onClick={handleCloseImagePreview}
+                className="p-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white transition shadow-xs"
+                title="إغلاق (ESC)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Image Viewport */}
+          <div
+            className="flex-1 flex items-center justify-center overflow-hidden my-auto w-full max-w-5xl mx-auto cursor-pointer"
+            onClick={handleCloseImagePreview}
+          >
+            <div
+              className="transition-transform duration-200 ease-out flex items-center justify-center"
+              style={{
+                transform: `scale(${previewZoom}) rotate(${previewRotation}deg)`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={previewImage}
+                alt="معاينة الشات"
+                className="max-h-[78vh] max-w-[85vw] object-contain rounded-2xl shadow-2xl border border-white/20 cursor-default"
+                onDoubleClick={() => setPreviewZoom((prev) => (prev > 1 ? 1 : 1.75))}
+              />
+            </div>
+          </div>
+
+          {/* Bottom Caption / Controls Note */}
+          <div
+            className="text-center text-[11px] text-slate-400 font-medium py-1 shrink-0 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span>اضغط مرتين للتكبير السريع • يمكنك استخدام أزرار التكبير والتدوير والتحميل أو زر ESC للخروج</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

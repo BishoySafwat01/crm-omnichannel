@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { authApi } from '../services/api';
 
 export type UserRole = 'admin' | 'agent' | 'supervisor';
 
@@ -36,18 +37,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: 'فشل في تسجيل الدخول' }));
-        throw new Error(errData.detail || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
-      }
-
-      const data = await res.json();
+      const data = await authApi.login(email, password);
       const token = data.access_token;
       const user = data.user;
 
@@ -87,21 +77,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const res = await fetch('/api/v1/auth/me', {
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (res.ok) {
-        const user: User = await res.json();
-        set({ user, isAuthenticated: true, token });
-      } else {
-        get().logout();
-      }
+      const user: User = await authApi.getMe(token);
+      set({ user, isAuthenticated: true, token });
     } catch (e) {
       console.warn('[AuthStore] Failed to fetch current user profile:', e);
+      get().logout();
     }
   },
 
