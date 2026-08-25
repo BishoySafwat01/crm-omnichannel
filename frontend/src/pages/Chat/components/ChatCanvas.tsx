@@ -497,14 +497,46 @@ export const ChatCanvas: React.FC = () => {
 
   useEffect(() => {
     if (activeConv) {
-      setAiInsights({
-        summary: activeConv.ai_summary,
-        intent: activeConv.detected_intent,
-        sentiment: activeConv.detected_sentiment,
-        replies: activeConv.ai_suggested_replies || [],
-      });
+      if (
+        activeConv.ai_summary ||
+        activeConv.detected_intent ||
+        (activeConv.ai_suggested_replies && activeConv.ai_suggested_replies.length > 0)
+      ) {
+        setAiInsights({
+          summary: activeConv.ai_summary,
+          intent: activeConv.detected_intent,
+          sentiment: activeConv.detected_sentiment,
+          replies: activeConv.ai_suggested_replies || [],
+        });
+      } else {
+        setAiInsights({ replies: [] });
+        const convId = activeConv.id;
+        aiApi
+          .getInsights(convId)
+          .then((res) => {
+            if (res && (res.ai_summary || (res.ai_suggested_replies && res.ai_suggested_replies.length > 0))) {
+              setAiInsights({
+                summary: res.ai_summary,
+                intent: res.detected_intent,
+                sentiment: res.detected_sentiment,
+                replies: res.ai_suggested_replies || [],
+              });
+            }
+          })
+          .catch((err) => {
+            console.warn('AI insights auto-hydrate error:', err);
+          });
+      }
+    } else {
+      setAiInsights({ replies: [] });
     }
-  }, [activeConv?.id, activeConv?.ai_summary, activeConv?.detected_intent, activeConv?.detected_sentiment, activeConv?.ai_suggested_replies]);
+  }, [
+    activeConv?.id,
+    activeConv?.ai_summary,
+    activeConv?.detected_intent,
+    activeConv?.detected_sentiment,
+    activeConv?.ai_suggested_replies,
+  ]);
 
   const handleRunAIAnalysis = async () => {
     if (!activeConv?.id || isAnalyzingAI) return;
@@ -1126,6 +1158,31 @@ export const ChatCanvas: React.FC = () => {
                 <p className="text-xs text-slate-700 leading-relaxed font-medium">
                   {aiInsights.summary ? `✨ ${aiInsights.summary}` : 'لا يوجد ملخص متاح حالياً. انقر زر التحليل لتوليد ملخص للمحادثة.'}
                 </p>
+
+                {/* 1-Click Smart Replies Section (DEF-AI-01 Resolution) */}
+                {aiInsights.replies && aiInsights.replies.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                      <span>💡</span>
+                      <span>الردود الذكية المقترحة (Smart Replies):</span>
+                    </span>
+                    <div className="flex flex-col gap-1.5">
+                      {aiInsights.replies.map((rep, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setDraftText(rep);
+                            setIsAiPopoverOpen(false);
+                          }}
+                          className="text-right text-xs bg-blue-50/70 hover:bg-blue-100/90 text-blue-900 border border-blue-200/80 p-2 rounded-xl transition font-medium cursor-pointer shadow-2xs hover:shadow-xs"
+                        >
+                          {rep}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                   <div className="flex items-center gap-1.5">
