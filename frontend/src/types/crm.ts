@@ -136,6 +136,7 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at: string;
   last_customer_message_at?: string;
+  last_sender_type?: string;
   last_activity_at?: string;
   created_at: string;
   sla_due_at?: string;

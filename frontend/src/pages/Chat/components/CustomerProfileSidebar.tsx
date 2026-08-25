@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import {
   User, Phone, Mail, MapPin, Edit2, Check, X,
-  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert
+  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert, Store
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../../../constants/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../../../services/api';
@@ -10,9 +10,20 @@ import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
+import { MOCK_BRANDS } from '../../../constants/brands';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping, addLocationAlert } = useCrmStore();
+  const {
+    conversations,
+    activeConversationId,
+    updateCustomerProfile,
+    updateConversationBrand,
+    blockCustomer,
+    unblockCustomer,
+    setDraftText,
+    isTyping,
+    addLocationAlert,
+  } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -43,6 +54,7 @@ export const CustomerProfileSidebar: React.FC = () => {
     phone: '',
     email: '',
     location: '',
+    brand: 'LAVVA',
   });
   const [copiedScriptId, setCopiedScriptId] = useState<string | null>(null);
 
@@ -63,6 +75,7 @@ export const CustomerProfileSidebar: React.FC = () => {
         phone: customer.phone || '',
         email: customer.email || '',
         location: customer.location || '',
+        brand: activeConversation?.brand || activeConversation?.brand_name || 'LAVVA',
       });
       setIsEditing(false);
 
@@ -71,7 +84,7 @@ export const CustomerProfileSidebar: React.FC = () => {
         loadTimeline(customer.id);
       }
     }
-  }, [customer?.id, customer?.display_name, customer?.phone, customer?.email, customer?.location]);
+  }, [customer?.id, customer?.display_name, customer?.phone, customer?.email, customer?.location, activeConversation?.brand, activeConversation?.brand_name]);
 
   const loadNotes = async (custId: string) => {
     try {
@@ -132,6 +145,10 @@ export const CustomerProfileSidebar: React.FC = () => {
         location: locVal,
         country: locVal,
       });
+
+      if (formData.brand && activeConversation?.id && formData.brand !== activeConversation.brand) {
+        await updateConversationBrand(activeConversation.id, formData.brand);
+      }
 
       if (locVal) {
         addLocationAlert({
@@ -349,6 +366,28 @@ export const CustomerProfileSidebar: React.FC = () => {
                 />
               ) : (
                 <span className="font-semibold text-slate-800">{formattedLocation}</span>
+              )}
+            </div>
+
+            {/* Store / Brand Selection */}
+            <div className="flex items-center gap-2.5 text-slate-700">
+              <Store className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              {isEditing ? (
+                <select
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  className="w-full rounded-lg border border-blue-300 bg-blue-50/60 px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-[#1A73E8] outline-none cursor-pointer"
+                >
+                  {MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => (
+                    <option key={b.id} value={b.id}>
+                      متجر: {b.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="font-bold text-slate-800">
+                  متجر: {activeConversation?.brand || activeConversation?.brand_name || 'LAVVA'}
+                </span>
               )}
             </div>
 

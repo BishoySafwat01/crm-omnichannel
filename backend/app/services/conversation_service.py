@@ -187,31 +187,34 @@ class ConversationService:
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
             prio = getattr(conv, 'priority', "normal") or "normal"
-            last_text = getattr(conv, 'last_message_text', None)
+            msg_stmt = (
+                select(Message)
+                .where(Message.conversation_id == conv.id)
+                .order_by(Message.created_at.desc(), Message.id.desc())
+                .limit(1)
+            )
+            latest_msg = (await session.execute(msg_stmt)).scalars().first()
+            last_sender_type = None
+            if latest_msg:
+                last_sender_type = str(latest_msg.sender_type.value if hasattr(latest_msg.sender_type, "value") else latest_msg.sender_type)
+                preview = latest_msg.text
+                if not preview or preview == "مرفق وسائط":
+                    m_type = str(latest_msg.message_type.value if hasattr(latest_msg.message_type, "value") else latest_msg.message_type).lower()
+                    if m_type in ["audio", "voice"]:
+                        preview = "تسجيل صوتي"
+                    elif m_type == "image":
+                        preview = "صورة مرفقة"
+                    elif m_type == "location" or (preview and "📍" in preview):
+                        preview = "موقع جغرافي"
+                    else:
+                        preview = "مرفق وسائط"
+                last_text = preview
+            else:
+                last_text = getattr(conv, 'last_message_text', None) or "محادثة نشطة"
 
-            if not last_text:
-                msg_stmt = (
-                    select(Message)
-                    .where(Message.conversation_id == conv.id)
-                    .order_by(Message.created_at.desc(), Message.id.desc())
-                    .limit(1)
-                )
-                latest_msg = (await session.execute(msg_stmt)).scalars().first()
-                if latest_msg:
-                    preview = latest_msg.text
-                    if not preview or preview == "مرفق وسائط":
-                        m_type = str(latest_msg.message_type.value if hasattr(latest_msg.message_type, "value") else latest_msg.message_type).lower()
-                        if m_type in ["audio", "voice"]:
-                            preview = "تسجيل صوتي"
-                        elif m_type == "image":
-                            preview = "صورة مرفقة"
-                        elif m_type == "location" or (preview and "📍" in preview):
-                            preview = "موقع جغرافي"
-                        else:
-                            preview = "مرفق وسائط"
-                    last_text = preview
-                else:
-                    last_text = "محادثة نشطة"
+            cust_msg_at = conv.last_customer_message_at
+            if not cust_msg_at and latest_msg and last_sender_type == "customer":
+                cust_msg_at = latest_msg.created_at
 
             item = {
                 "id": conv.id,
@@ -228,7 +231,10 @@ class ConversationService:
                 "customer_display_name": cust_name,
                 "customer_avatar_url": cust_avatar,
                 "last_message_text": last_text,
-                "last_message_at": conv.last_message_at,
+                "last_message_at": conv.last_message_at or (latest_msg.created_at if latest_msg else conv.created_at),
+                "last_customer_message_at": cust_msg_at,
+                "last_sender_type": last_sender_type,
+                "last_activity_at": conv.last_activity_at or conv.last_message_at or conv.created_at,
                 "created_at": conv.created_at,
                 "updated_at": conv.updated_at,
                 "sla_due_at": getattr(conv, "sla_due_at", None),

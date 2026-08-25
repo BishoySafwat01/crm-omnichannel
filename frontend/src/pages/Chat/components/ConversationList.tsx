@@ -53,68 +53,69 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
   );
 };
 
-export const isConversationWaitingForAgent = (conv: any, convMessages?: any[]): boolean => {
-  if (!conv) return false;
+/**
+ * Returns the timestamp of the last UNANSWERED customer message.
+ * If the agent already replied to the customer (i.e. last message was from agent), returns null.
+ */
+export const getCustomerUnansweredMessageTime = (conv: any, convMessages?: any[]): string | null => {
+  if (!conv) return null;
   if (conv.status === 'closed' || conv.status === 'completed' || conv.status === 'resolved') {
-    return false;
+    return null;
   }
 
-  // 1. If messages array is present in memory, inspect the last message
-  if (convMessages && convMessages.length > 0) {
+  // 1. If messages are loaded in memory, inspect the latest message:
+  if (convMessages && Array.isArray(convMessages) && convMessages.length > 0) {
     const lastMsg = convMessages[convMessages.length - 1];
-    if (lastMsg) {
-      if (lastMsg.sender_type === 'agent' || lastMsg.sender_type === 'user' || lastMsg.is_from_agent) {
-        return false; // Agent already replied!
-      }
-      if (lastMsg.sender_type === 'customer' || lastMsg.sender_type === 'contact') {
-        return true; // Customer is waiting for reply
-      }
+    // If the latest message in the conversation is from the agent -> REPLIED! NOT waiting!
+    if (lastMsg && (lastMsg.sender_type === 'agent' || lastMsg.sender_type === 'user' || lastMsg.is_from_agent)) {
+      return null;
+    }
+    // If the latest message is from the customer -> return its created_at
+    if (lastMsg && (lastMsg.sender_type === 'customer' || lastMsg.sender_type === 'contact')) {
+      return lastMsg.created_at || conv.last_customer_message_at || conv.last_message_at || null;
     }
   }
 
-  // 2. If unread_count > 0, customer sent unread messages -> Waiting for reply
-  if ((conv.unread_count || 0) > 0) {
-    return true;
+  // 2. If backend provided last_sender_type on initial load:
+  if (conv.last_sender_type) {
+    if (conv.last_sender_type === 'agent' || conv.last_sender_type === 'user') {
+      return null; // Replied by agent!
+    }
+    if (conv.last_sender_type === 'customer' || conv.last_sender_type === 'contact') {
+      return conv.last_customer_message_at || conv.last_message_at || conv.created_at;
+    }
   }
 
-  // 3. Compare last_customer_message_at with last_message_at
+  // 3. If conv.last_message_at and conv.last_customer_message_at exist:
   if (conv.last_customer_message_at && conv.last_message_at) {
     const custTime = new Date(conv.last_customer_message_at).getTime();
     const lastTime = new Date(conv.last_message_at).getTime();
     if (!isNaN(custTime) && !isNaN(lastTime)) {
-      if (custTime >= lastTime - 2000) {
-        return true;
+      // If last_message_at is after customer message by > 2 seconds -> Agent has replied!
+      if (lastTime > custTime + 2000) {
+        return null;
       }
-      return false; // Agent replied after customer message
+      return conv.last_customer_message_at;
     }
   }
 
-  if (conv.last_customer_message_at && !conv.last_message_at) {
-    return true;
+  // 4. If unread_count > 0, customer sent unread message waiting for reply:
+  if ((conv.unread_count || 0) > 0) {
+    return conv.last_customer_message_at || conv.last_message_at || conv.created_at;
   }
 
-  return false;
+  return null;
 };
 
 export const isConversationLate = (conv: any, convMessages?: any[]): boolean => {
-  if (!conv) return false;
-  if (conv.status === 'closed' || conv.status === 'completed' || conv.status === 'resolved') {
-    return false;
-  }
+  const custTimeStr = getCustomerUnansweredMessageTime(conv, convMessages);
+  if (!custTimeStr) return false;
 
-  // Must be waiting for an agent reply (Customer message was NOT replied to yet)
-  if (!isConversationWaitingForAgent(conv, convMessages)) {
-    return false;
-  }
+  const custTime = new Date(custTimeStr).getTime();
+  if (isNaN(custTime)) return false;
 
-  // Calculate elapsed time from the customer's unanswered message
-  const timeStr = conv.last_customer_message_at || conv.last_message_at || conv.last_activity_at;
-  if (!timeStr) return false;
-
-  const lastTime = new Date(timeStr).getTime();
-  if (isNaN(lastTime)) return false;
-
-  const diffMinutes = (Date.now() - lastTime) / (1000 * 60);
+  // Elapsed minutes since customer's unanswered message
+  const diffMinutes = (Date.now() - custTime) / (1000 * 60);
 
   // STRICTLY >= 10 minutes
   return diffMinutes >= 10;
@@ -587,7 +588,7 @@ export const ConversationList: React.FC = () => {
                             className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200/90 flex items-center gap-1 shrink-0"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block" />
-                            <span>متأخرة ({getLateDurationText(conv.last_customer_message_at || conv.last_message_at)})</span>
+                            <span>متأخرة ({getLateDurationText(getCustomerUnansweredMessageTime(conv, messages[conv.id]))})</span>
                           </span>
                         )}
                       </div>
