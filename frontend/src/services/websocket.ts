@@ -19,12 +19,25 @@ export class RealtimeWebSocketService {
 
   public connect() {
     this.isExplicitlyClosed = false;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
+    const metaEnv = (import.meta as any).env || {};
+    const envWsUrl = (metaEnv.VITE_WS_URL || '').trim();
+    const envApiUrl = (metaEnv.VITE_API_URL || '').trim();
+
+    let wsBase = '';
+    if (envWsUrl) {
+      wsBase = envWsUrl.replace(/\/$/, '');
+    } else if (envApiUrl) {
+      wsBase = envApiUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      wsBase = `${protocol}//${host}`;
+    }
+
     const token = this.getToken();
     // Append token as query param so the server can authenticate the handshake
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    const wsUrl = `${protocol}//${host}/ws/chat${tokenParam}`;
+    const wsUrl = `${wsBase}/ws/chat${tokenParam}`;
 
     try {
       this.socket = new WebSocket(wsUrl);
