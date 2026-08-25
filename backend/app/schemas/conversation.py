@@ -48,6 +48,7 @@ class ConversationResponse(BaseModel):
     last_message_text: Optional[str] = ""
     last_message_at: Optional[datetime] = None
     last_customer_message_at: Optional[datetime] = None
+    last_sender_type: Optional[str] = None
     last_activity_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
