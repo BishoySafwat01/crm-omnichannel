@@ -3,6 +3,7 @@ import { TopBar } from './components/layout/TopBar';
 import { LoginModal } from './components/common/LoginModal';
 import { IntegrationsModal } from './components/common/IntegrationsModal';
 import { AdminSecurityAlertToast } from './components/common/AdminSecurityAlertToast';
+import { LocationAlertToast } from './components/common/LocationAlertToast';
 import { ChatPage } from './pages/Chat/ChatPage';
 import { CommentsPage } from './pages/Comments/CommentsPage';
 import { AutomationPage } from './pages/Automation/AutomationPage';
@@ -23,6 +24,8 @@ export const App: React.FC = () => {
     adminSecurityAlerts,
     dismissSecurityAlert,
     setActiveConversationId,
+    locationAlerts,
+    dismissLocationAlert,
   } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
   const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
@@ -105,6 +108,12 @@ export const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Real-time Green Location Detection Toasts */}
+      <LocationAlertToast
+        alerts={locationAlerts}
+        onDismiss={dismissLocationAlert}
+      />
 
       {/* Top Header & Brand Switcher */}
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />

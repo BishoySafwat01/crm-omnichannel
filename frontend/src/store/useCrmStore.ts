@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AdminSecurityAlert, Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
+import { AdminSecurityAlert, Conversation, Customer, FilterTab, LocationAlert, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
 import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect, messageActionsApi, teamApi, TeamMember } from '../services/api';
 import { realtimeService } from '../services/websocket';
 import { useAuthStore } from './useAuthStore';
@@ -183,6 +183,10 @@ interface CrmState {
   adminSecurityAlerts: AdminSecurityAlert[];
   dismissSecurityAlert: (id: string) => void;
 
+  locationAlerts: LocationAlert[];
+  addLocationAlert: (alert: Omit<LocationAlert, 'id' | 'timestamp'>) => void;
+  dismissLocationAlert: (id: string) => void;
+
   // Message Actions Handlers
   setReplyingToMessage: (msg: Message | null) => void;
   setEditingMessage: (msg: Message | null) => void;
@@ -226,6 +230,22 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   dismissSecurityAlert: (id) =>
     set((state) => ({
       adminSecurityAlerts: state.adminSecurityAlerts.filter((a) => a.id !== id),
+    })),
+
+  locationAlerts: [],
+  addLocationAlert: (alertData) => {
+    const alert: LocationAlert = {
+      ...alertData,
+      id: `loc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+    };
+    set((state) => ({
+      locationAlerts: [alert, ...state.locationAlerts.slice(0, 3)],
+    }));
+  },
+  dismissLocationAlert: (id) =>
+    set((state) => ({
+      locationAlerts: state.locationAlerts.filter((a) => a.id !== id),
     })),
 
   // Message Actions State Defaults
@@ -630,6 +650,27 @@ export const useCrmStore = create<CrmState>((set, get) => ({
           conversations: updatedConvs,
         };
       });
+
+      // Location Detection Notification Trigger
+      const activeConv = get().conversations.find((c) => c.id === activeConversationId);
+      const custName = activeConv?.customer_display_name || activeConv?.customer?.display_name || 'العميل';
+      const locDetected = newLoc || (persistedMsg as any)?.detected_location;
+      const locStatus = (persistedMsg as any)?.location_detection_status;
+
+      if (locDetected) {
+        get().addLocationAlert({
+          type: 'detected',
+          location: locDetected,
+          customerName: custName,
+          conversationId: activeConversationId,
+        });
+      } else if (locStatus === 'not_detected' && !activeConv?.customer?.location && text.trim().length > 3) {
+        get().addLocationAlert({
+          type: 'not_detected',
+          customerName: custName,
+          conversationId: activeConversationId,
+        });
+      }
     } catch (err: any) {
       console.warn('Outbound API send failed. Transitioning bubble to failed:', err);
 

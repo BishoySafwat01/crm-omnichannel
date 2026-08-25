@@ -12,7 +12,7 @@ import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping } = useCrmStore();
+  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping, addLocationAlert } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -132,6 +132,19 @@ export const CustomerProfileSidebar: React.FC = () => {
         location: locVal,
         country: locVal,
       });
+
+      if (locVal) {
+        addLocationAlert({
+          type: 'detected',
+          location: locVal,
+          customerName: formData.display_name.trim() || customer.display_name,
+        });
+      } else {
+        addLocationAlert({
+          type: 'not_detected',
+          customerName: formData.display_name.trim() || customer.display_name,
+        });
+      }
     }
     setIsEditing(false);
   };

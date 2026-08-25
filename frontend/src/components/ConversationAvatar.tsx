@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Store, Lock, MessageSquare } from 'lucide-react';
-import { MOCK_BRANDS } from '../services/api';
+import { MOCK_BRANDS, BRAND_IMAGES } from '../constants/brands';
 
 export interface ConversationAvatarProps {
   customerName: string;
@@ -69,17 +69,35 @@ export interface BrandObjectInfo {
   avatar: string;
   color: string;
   page_id?: string;
+  logo_url?: string;
   isDirect: boolean;
 }
 
 export const getBrandObject = (brandId?: string | null, brandName?: string | null): BrandObjectInfo => {
+  const normId = (brandId || '').toLowerCase().trim();
+  const normName = (brandName || '').toLowerCase().trim();
+
+  // Find image directly from BRAND_IMAGES dictionary
+  const imageLogo = BRAND_IMAGES[normId] || BRAND_IMAGES[normName] || undefined;
+
   if (brandId && brandId !== 'all' && brandId !== 'direct' && brandId !== 'private') {
-    const found = MOCK_BRANDS.find((b) => b.id.toLowerCase() === brandId.toLowerCase() || b.name.toLowerCase() === brandId.toLowerCase());
-    if (found && found.id !== 'all') return { ...found, isDirect: false };
+    const found = MOCK_BRANDS.find((b) => b.id.toLowerCase() === normId || b.name.toLowerCase() === normId);
+    if (found && found.id !== 'all') return { ...found, logo_url: found.logo_url || imageLogo, isDirect: false };
   }
   if (brandName && brandName.toLowerCase() !== 'all' && brandName.toLowerCase() !== 'direct' && brandName.toLowerCase() !== 'private' && brandName !== 'عام' && brandName !== 'محادثة خاصة') {
-    const found = MOCK_BRANDS.find((b) => b.name.toLowerCase() === brandName.toLowerCase() || b.id.toLowerCase() === brandName.toLowerCase());
-    if (found && found.id !== 'all') return { ...found, isDirect: false };
+    const found = MOCK_BRANDS.find((b) => b.name.toLowerCase() === normName || b.id.toLowerCase() === normName);
+    if (found && found.id !== 'all') return { ...found, logo_url: found.logo_url || imageLogo, isDirect: false };
+  }
+
+  if (imageLogo) {
+    return {
+      id: brandId || 'store',
+      name: brandName || brandId || 'متجر',
+      avatar: (brandName || brandId || 'ST').substring(0, 2).toUpperCase(),
+      color: 'from-slate-700 to-slate-900',
+      logo_url: imageLogo,
+      isDirect: false,
+    };
   }
 
   // Direct Private Message (Customer came directly, not under any store)
@@ -106,6 +124,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
   presenceStatusText = '',
 }) => {
   const [custImgError, setCustImgError] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   const brand = getBrandObject(brandId, brandName);
 
@@ -187,7 +206,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
     <div className={`relative shrink-0 flex items-center justify-center ${sizeDimensions.container} ${className}`}>
       {/* 1. Main Store Avatar Box (or DM Box if Direct) */}
       <div
-        className={`${sizeDimensions.brandBox} rounded-2xl bg-gradient-to-tr ${brand.color || 'from-slate-700 to-slate-900'} text-white font-black flex items-center justify-center shadow-xs border border-white/80 select-none tracking-wider`}
+        className={`${sizeDimensions.brandBox} rounded-2xl bg-gradient-to-tr ${brand.color || 'from-slate-700 to-slate-900'} text-white font-black flex items-center justify-center shadow-xs border border-white/80 select-none tracking-wider overflow-hidden`}
         title={brand.isDirect ? 'محادثة خاصة مباشرة' : `متجر: ${brand.name}`}
       >
         {brand.isDirect ? (
@@ -195,6 +214,13 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
             <Lock className="w-3 h-3" />
             <span>DM</span>
           </span>
+        ) : brand.logo_url && !logoError ? (
+          <img
+            src={brand.logo_url}
+            alt={brand.name}
+            className="w-full h-full object-cover rounded-2xl"
+            onError={() => setLogoError(true)}
+          />
         ) : (
           <span>{brand.avatar || brand.name.substring(0, 2).toUpperCase()}</span>
         )}

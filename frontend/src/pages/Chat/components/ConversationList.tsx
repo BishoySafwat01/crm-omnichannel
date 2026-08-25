@@ -53,6 +53,40 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
   );
 };
 
+export const isConversationLate = (conv: any): boolean => {
+  if (!conv) return false;
+
+  // 1. Closed or completed conversations are never late
+  if (conv.status === 'closed' || conv.status === 'completed' || conv.status === 'resolved') {
+    return false;
+  }
+
+  // 2. Check time elapsed since last message / activity
+  const timeStr = conv.last_customer_message_at || conv.last_message_at || conv.last_activity_at || conv.updated_at;
+  if (!timeStr) return false;
+
+  const lastTime = new Date(timeStr).getTime();
+  if (isNaN(lastTime)) return false;
+
+  const diffMinutes = (Date.now() - lastTime) / (1000 * 60);
+
+  // 3. MUST be strictly 10 minutes or more
+  return diffMinutes >= 10;
+};
+
+export const getLateDurationText = (timeStr?: string | null): string => {
+  if (!timeStr) return '+10د';
+  const lastTime = new Date(timeStr).getTime();
+  if (isNaN(lastTime)) return '+10د';
+  const diffMins = Math.floor((Date.now() - lastTime) / (1000 * 60));
+  if (diffMins < 10) return '+10د';
+  if (diffMins < 60) return `+${diffMins}د`;
+  const hours = Math.floor(diffMins / 60);
+  if (hours < 24) return `+${hours}س`;
+  const days = Math.floor(hours / 24);
+  return `+${days}ي`;
+};
+
 export const ConversationList: React.FC = () => {
   const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
@@ -173,7 +207,7 @@ export const ConversationList: React.FC = () => {
       // 3. Status Tab Filter
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
       if (activeFilterTab === 'completed' && conv.status !== 'closed' && conv.status !== 'completed') return false;
-      if (activeFilterTab === 'sla_breached' && conv.sla_status !== 'breached') return false;
+      if (activeFilterTab === 'sla_breached' && !isConversationLate(conv)) return false;
 
       // 4. Country / Location Filter
       if (selectedCountry && selectedCountry !== 'all' && selectedCountry !== 'الكل') {
@@ -228,6 +262,11 @@ export const ConversationList: React.FC = () => {
     });
   }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, selectedEmployeeObj, messages]);
 
+  const lateCount = useMemo(() => {
+    if (!conversations || !Array.isArray(conversations)) return 0;
+    return conversations.filter(isConversationLate).length;
+  }, [conversations]);
+
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     {
@@ -237,7 +276,12 @@ export const ConversationList: React.FC = () => {
       badgeCount: unreadSummary?.total_unread > 0 ? unreadSummary.total_unread : undefined,
     },
     { id: 'completed', label: 'المغلقة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
-    { id: 'sla_breached', label: 'متأخرة', icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> },
+    {
+      id: 'sla_breached',
+      label: 'متأخرة (+10د)',
+      icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />,
+      badgeCount: lateCount > 0 ? lateCount : undefined,
+    },
   ];
 
   return (
@@ -483,13 +527,24 @@ export const ConversationList: React.FC = () => {
 
                     <div className="min-w-0">
                       {/* Customer Name is the only prominent text */}
-                      <h3
-                        className={`text-xs truncate ${
-                          unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'
-                        }`}
-                      >
-                        {customerName}
-                      </h3>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <h3
+                          className={`text-xs truncate ${
+                            unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'
+                          }`}
+                        >
+                          {customerName}
+                        </h3>
+                        {isConversationLate(conv) && (
+                          <span
+                            title="رسالة متأخرة بدون رد لأكثر من 10 دقائق"
+                            className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200/90 flex items-center gap-1 shrink-0"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block" />
+                            <span>متأخرة ({getLateDurationText(conv.last_message_at)})</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

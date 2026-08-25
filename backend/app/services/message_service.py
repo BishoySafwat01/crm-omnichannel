@@ -546,6 +546,7 @@ class MessageService:
 
         # Agent Dynamic Location Override Hook
         updated_loc = None
+        location_status = "not_detected"
         if conv.customer_id and clean_text:
             try:
                 detected_country = CountryDetector.extract_country(clean_text)
@@ -556,6 +557,7 @@ class MessageService:
                         session.add(cust)
                         await session.flush()
                         updated_loc = detected_country
+                        location_status = "detected"
             except Exception as e:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
@@ -571,5 +573,7 @@ class MessageService:
             setattr(new_message, "updated_customer_location", updated_loc)
         elif conv.customer and getattr(conv.customer, "location", None):
             setattr(new_message, "updated_customer_location", conv.customer.location)
+
+        setattr(new_message, "location_detection_status", location_status)
 
         return new_message

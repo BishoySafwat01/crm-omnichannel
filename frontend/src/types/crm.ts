@@ -10,6 +10,7 @@ export interface Brand {
   avatar: string;
   color: string;
   page_id: string;
+  logo_url?: string;
 }
 
 export interface Attachment {
@@ -263,5 +264,15 @@ export interface AdminSecurityAlert {
   brand_name?: string;
   channel?: string;
   timestamp: string;
+}
+
+export interface LocationAlert {
+  id: string;
+  type: 'detected' | 'not_detected';
+  message?: string;
+  location?: string;
+  customerName?: string;
+  conversationId?: string;
+  timestamp: number;
 }
 
