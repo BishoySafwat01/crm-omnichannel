@@ -713,6 +713,7 @@ async def analyze_conversation_ai(
 async def get_conversation_ai_insights(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve existing AI insights (summary, intent, sentiment, smart replies) for a conversation."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -721,6 +722,8 @@ async def get_conversation_ai_insights(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
+    if current_user:
+        require_conversation_access(conv, current_user)
     return {
         "conversation_id": str(conv.id),
         "ai_summary": conv.ai_summary,
