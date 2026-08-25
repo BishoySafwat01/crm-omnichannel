@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { TopBar } from './components/layout/TopBar';
 import { LoginModal } from './components/common/LoginModal';
 import { IntegrationsModal } from './components/common/IntegrationsModal';
+import { AdminSecurityAlertToast } from './components/common/AdminSecurityAlertToast';
 import { ChatPage } from './pages/Chat/ChatPage';
 import { CommentsPage } from './pages/Comments/CommentsPage';
 import { AutomationPage } from './pages/Automation/AutomationPage';
@@ -13,7 +14,16 @@ import { useAuthStore } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
 
 export const App: React.FC = () => {
-  const { fetchConversations, fetchUnreadSummary, fetchAvailableCountries, fetchTeamMembers, handleRealtimeEvent } = useCrmStore();
+  const {
+    fetchConversations,
+    fetchUnreadSummary,
+    fetchAvailableCountries,
+    fetchTeamMembers,
+    handleRealtimeEvent,
+    adminSecurityAlerts,
+    dismissSecurityAlert,
+    setActiveConversationId,
+  } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
   const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
@@ -81,6 +91,20 @@ export const App: React.FC = () => {
     <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden select-none" dir="rtl">
       {!isAuthenticated && <LoginModal />}
       <IntegrationsModal />
+
+      {/* Real-time Red Admin Security Alert Toasts */}
+      {isUserAdmin && (
+        <AdminSecurityAlertToast
+          alerts={adminSecurityAlerts}
+          onDismiss={dismissSecurityAlert}
+          onNavigateToChat={(convId) => {
+            setActiveMainView('chat');
+            if (convId) {
+              setActiveConversationId(convId);
+            }
+          }}
+        />
+      )}
 
       {/* Top Header & Brand Switcher */}
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />

@@ -19,6 +19,7 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.media import router as media_router
 from app.api.v1.meta import router as meta_router
+from app.api.v1.moderation import router as moderation_router
 from app.api.v1.respond_io import router as respond_io_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
@@ -120,6 +121,7 @@ app.include_router(comments_router, prefix="/api/v1/comments")
 app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
+app.include_router(moderation_router, prefix="/api/v1")
 app.include_router(respond_io_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(ws_router)

@@ -401,4 +401,14 @@ class MetaClient:
         except Exception:
             return {}
 
+    async def delete_message(self, message_id: str) -> dict[str, Any]:
+        """Attempt to delete/unsend a message via Meta Graph API if supported."""
+        if not message_id:
+            return {}
+        try:
+            return await self._request("DELETE", f"/{message_id}")
+        except Exception as e:
+            return {"error": str(e)}
+
+
 

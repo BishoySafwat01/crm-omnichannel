@@ -164,10 +164,15 @@ class MessageResponse(MessageBase):
         pinned_at = meta_dict.get("pinned_at")
         pinned_by_name = meta_dict.get("pinned_by_name")
 
+        if is_deleted:
+            atts = []
+            url = None
+            text_val = ""
+
         if isinstance(data, dict):
             data["attachments"] = atts
             data["media_url"] = url
-            data["media_type"] = str(m_type) if m_type else None
+            data["media_type"] = str(m_type) if (m_type and not is_deleted) else None
             data["updated_customer_location"] = loc
             data.setdefault("sender_user_id", s_user_id)
             data.setdefault("sender_name", s_name)
@@ -200,7 +205,7 @@ class MessageResponse(MessageBase):
                 "sender_user_id": s_user_id,
                 "sender_name": s_name,
                 "message_type": m_type or getattr(data, "message_type"),
-                "text": getattr(data, "text", None),
+                "text": None if is_deleted else getattr(data, "text", None),
                 "metadata_": metadata,
                 "created_at": getattr(data, "created_at"),
                 "attachments": atts,

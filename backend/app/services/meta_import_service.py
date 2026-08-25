@@ -728,6 +728,27 @@ class MetaImportService:
                     except Exception as auto_err:
                         logger.error(f"[Automation Engine] Error evaluating inbound message: {auto_err}", exc_info=True)
 
+                    # Moderation & Bad Words Filter
+                    if norm_event.text:
+                        try:
+                            from app.services.moderation_service import ModerationService
+                            matched = ModerationService.scan_for_bad_words(norm_event.text)
+                            if matched:
+                                await ModerationService.handle_detected_bad_words(
+                                    session=session,
+                                    matched_words=matched,
+                                    message_text=norm_event.text,
+                                    sender_type="customer",
+                                    sender_name=customer.display_name or "العميل",
+                                    sender_id=str(customer.id),
+                                    conversation_id=conv.id,
+                                    customer_name=customer.display_name or "عميل",
+                                    brand_name=conv.brand,
+                                    channel=conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel),
+                                )
+                        except Exception as mod_err:
+                            logger.error(f"[Moderation Engine] Error scanning inbound message: {mod_err}", exc_info=True)
+
 
 
         return {
@@ -916,6 +937,25 @@ class MetaImportService:
                                         )
                                     except Exception as auto_err:
                                         logger.error("[Automation Engine] Poller message evaluation error: %s", auto_err, exc_info=True)
+
+                                    try:
+                                        from app.services.moderation_service import ModerationService
+                                        matched = ModerationService.scan_for_bad_words(new_msg.text)
+                                        if matched:
+                                            await ModerationService.handle_detected_bad_words(
+                                                session=session,
+                                                matched_words=matched,
+                                                message_text=new_msg.text,
+                                                sender_type="customer",
+                                                sender_name=customer.display_name or "العميل",
+                                                sender_id=str(customer.id),
+                                                conversation_id=conversation.id,
+                                                customer_name=customer.display_name or "عميل",
+                                                brand_name=conversation.brand,
+                                                channel=conversation.channel.value if hasattr(conversation.channel, "value") else str(conversation.channel),
+                                            )
+                                    except Exception as mod_err:
+                                        logger.error("[Moderation Engine] Poller moderation error: %s", mod_err, exc_info=True)
 
                                 # Update Preview text
                                 preview = msg_text

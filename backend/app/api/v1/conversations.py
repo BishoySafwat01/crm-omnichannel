@@ -352,7 +352,7 @@ async def send_outbound_reply(
             if ref_msg:
                 ref_sender_name = "موظف الدعم"
                 if ref_msg.sender_type == SenderTypeEnum.CUSTOMER:
-                    ref_sender_name = conv.customer_display_name or (conv.customer.display_name if conv.customer else "العميل")
+                    ref_sender_name = conv.customer.display_name if (getattr(conv, "customer", None) and conv.customer and conv.customer.display_name) else "العميل"
                 elif ref_msg.sender_user and ref_msg.sender_user.full_name:
                     ref_sender_name = ref_msg.sender_user.full_name
                 reply_to_dict = {
