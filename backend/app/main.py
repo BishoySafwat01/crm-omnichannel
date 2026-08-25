@@ -52,14 +52,55 @@ async def lifespan(app: FastAPI):
             "(/api/v1/respond-io/webhook) will REJECT all inbound payloads until it is set."
         )
 
+    # Meta Page Webhook Auto-Subscription (Non-blocking background task)
+    async def auto_subscribe_meta_page():
+        try:
+            from app.integrations.meta import MetaClient
+            meta_client = MetaClient()
+            if not meta_client.access_token or not meta_client.access_token.strip():
+                logger.info("[MetaWebhook] Auto-subscription skipped: META_PAGE_ACCESS_TOKEN is not configured.")
+                return
+            if not meta_client.page_id or not meta_client.page_id.strip():
+                logger.info("[MetaWebhook] Auto-subscription skipped: META_PAGE_ID is not configured.")
+                return
+
+            logger.info("[MetaWebhook] Initiating automated Meta Page Webhook subscription for Page ID: %s...", meta_client.page_id)
+            result = await meta_client.subscribe_page_to_app()
+            if result.get("success"):
+                logger.info("[MetaWebhook] Successfully auto-subscribed Facebook Page %s to CRM App Webhooks.", meta_client.page_id)
+            else:
+                logger.warning("[MetaWebhook] Auto-subscription failed gracefully: %s (Details: %s)", result.get("error"), result.get("details"))
+        except Exception as exc:
+            logger.warning("[MetaWebhook] Non-blocking auto-subscription encountered an error: %s", exc)
+
     async def meta_sync_loop():
-        await asyncio.sleep(5)
+        from app.integrations.meta.rate_limit import MetaRateLimitGuard
+        if not getattr(settings, "META_ENABLE_LIVE_POLLING", False):
+            logger.info(
+                "[MetaSync] Real-time Webhooks are active. Background conversation polling loop is disabled "
+                "(META_ENABLE_LIVE_POLLING=false). Enable only if webhooks are unavailable."
+            )
+            return
+
+        poll_interval = max(60, getattr(settings, "META_POLL_INTERVAL_SECONDS", 300))
+        logger.info(
+            "[MetaSync] Starting background conversation polling loop (Interval: %ds, Cooldown Guard: active)...",
+            poll_interval,
+        )
+        await asyncio.sleep(15)
         while True:
             try:
-                await meta_import_service.sync_live_conversations()
+                if MetaRateLimitGuard.is_rate_limited():
+                    rem = MetaRateLimitGuard.get_cooldown_remaining()
+                    logger.warning(
+                        "[MetaSync] Meta Graph API rate limit cooldown active (%ds remaining). Skipping polling cycle.",
+                        int(rem),
+                    )
+                else:
+                    await meta_import_service.sync_live_conversations()
             except Exception:
                 logger.exception("[MetaSync] Unhandled exception in Meta sync loop")
-            await asyncio.sleep(5)
+            await asyncio.sleep(poll_interval)
 
     async def sla_eval_loop():
         from app.services.sla_service import SlaService
@@ -72,12 +113,14 @@ async def lifespan(app: FastAPI):
                 logger.exception("[SLAEngine] Unhandled exception in SLA evaluation loop")
             await asyncio.sleep(30)
 
+    auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
     meta_task = asyncio.create_task(meta_sync_loop())
     sla_task = asyncio.create_task(sla_eval_loop())
 
     yield
 
     # Shutdown
+    auto_sub_task.cancel()
     meta_task.cancel()
     sla_task.cancel()
     await close_redis_client()

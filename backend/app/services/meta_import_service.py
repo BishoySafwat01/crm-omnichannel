@@ -15,10 +15,15 @@ from app.integrations.meta import MetaAPIError, MetaNormalizer, MetaProvider
 from app.models import (
     ChannelEnum,
     Conversation,
+    ConversationStatusEnum,
+    Customer,
+    CustomerIdentity,
     Message,
+    MessageTypeEnum,
     MigrationJob,
     MigrationStatusEnum,
     ProviderEnum,
+    SenderTypeEnum,
 )
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
@@ -44,7 +49,31 @@ class MetaImportService:
 
     @staticmethod
     async def fetch_and_cache_customer_profile(psid: str) -> dict[str, Any]:
-        if not psid or not str(psid).strip() or psid == "unknown_customer":
+        if not psid or not str(psid).strip() or psid == "unknown_customer" or psid == "system":
+            return {}
+
+        valid_page_ids = {
+            p.strip()
+            for p in [
+                settings.META_PAGE_ID,
+                settings.WHATSAPP_WABA_ID,
+                settings.WHATSAPP_PHONE_NUMBER_ID,
+                settings.INSTAGRAM_ACCOUNT_ID,
+                getattr(settings, "META_APP_ID", None),
+            ]
+            if p and p.strip()
+        }
+        if str(psid).strip() in valid_page_ids:
+            return {}
+
+        from app.integrations.meta.rate_limit import MetaRateLimitGuard
+
+        if MetaRateLimitGuard.is_rate_limited():
+            logger.debug("[Profile Enrichment] Rate limit cooldown active. Skipping profile fetch for PSID: %s", psid)
+            return {}
+
+        if MetaRateLimitGuard.is_psid_failed_recently(psid):
+            logger.debug("[Profile Enrichment] PSID %s recently failed lookup (negative cached). Skipping.", psid)
             return {}
 
         avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
@@ -52,8 +81,9 @@ class MetaImportService:
 
         url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={settings.META_PAGE_ACCESS_TOKEN}"
         try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 res = await client.get(url)
+                MetaRateLimitGuard.inspect_response(res)
                 if res.status_code == 200:
                     data = res.json()
                     pic_url = data.get("profile_pic")
@@ -76,8 +106,11 @@ class MetaImportService:
                         "profile_pic": local_avatar_url or pic_url,
                         "locale": data.get("locale"),
                     }
+                else:
+                    MetaRateLimitGuard.record_failed_psid(psid, ttl_seconds=3600)
         except Exception as e:
             logger.warning("Failed to fetch/cache avatar for PSID %s: %s", psid, e)
+            MetaRateLimitGuard.record_failed_psid(psid, ttl_seconds=1800)
         return {}
 
     @staticmethod
@@ -462,6 +495,75 @@ class MetaImportService:
                     is_echo,
                 )
 
+                sender_id_clean = str(norm_event.sender_psid or "").strip()
+                recipient_id_clean = str(norm_event.recipient_id or "").strip()
+                is_self_message = (
+                    sender_id_clean in valid_page_ids
+                    or (sender_id_clean == str(settings.META_PAGE_ID))
+                    or (sender_id_clean == str(settings.INSTAGRAM_ACCOUNT_ID))
+                    or (sender_id_clean == str(settings.WHATSAPP_PHONE_NUMBER_ID))
+                    or (sender_id_clean == str(settings.WHATSAPP_WABA_ID))
+                    or (sender_id_clean == getattr(settings, "META_APP_ID", ""))
+                )
+
+                # Early Echo & Self-Message Guard: Prevent infinite loops, self-customer creation, and profile fetching
+                if is_echo or is_self_message:
+                    target_mid = echo_mid or norm_event.external_message_id
+                    target_text = echo_text or norm_event.text
+                    target_cust_id = recipient_id_clean if (recipient_id_clean and recipient_id_clean not in valid_page_ids) else None
+
+                    logger.info(
+                        "[Webhook Echo Guard] Filtered outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
+                        target_mid,
+                        sender_id_clean,
+                        recipient_id_clean,
+                        is_echo,
+                    )
+
+                    if target_cust_id and target_mid:
+                        id_stmt = select(CustomerIdentity).where(
+                            CustomerIdentity.provider == ProviderEnum.META,
+                            CustomerIdentity.channel == norm_event.channel,
+                            CustomerIdentity.external_user_id == target_cust_id,
+                        )
+                        ident_res = await session.execute(id_stmt)
+                        identity = ident_res.scalars().first()
+                        if identity:
+                            conv_stmt = select(Conversation).where(
+                                Conversation.customer_id == identity.customer_id,
+                                Conversation.channel == norm_event.channel,
+                            )
+                            conv = (await session.execute(conv_stmt)).scalars().first()
+                            if conv:
+                                existing_by_mid = (await session.execute(
+                                    select(Message).where(Message.external_message_id == target_mid)
+                                )).scalar_one_or_none()
+
+                                if not existing_by_mid and target_text:
+                                    recent_agent_msg = (await session.execute(
+                                        select(Message)
+                                        .where(
+                                            Message.conversation_id == conv.id,
+                                            Message.sender_type == SenderTypeEnum.AGENT,
+                                            Message.text == target_text,
+                                        )
+                                        .order_by(Message.created_at.desc())
+                                        .limit(1)
+                                    )).scalar_one_or_none()
+
+                                    if recent_agent_msg:
+                                        recent_agent_msg.external_message_id = target_mid
+                                        await session.commit()
+                                        logger.info(
+                                            "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
+                                            target_mid,
+                                            recent_agent_msg.id,
+                                        )
+
+                    last_result_status = "already_processed"
+                    last_result_msg_id = target_mid
+                    continue
+
                 if not norm_event.sender_psid or not norm_event.sender_psid.strip():
                     logger.error("Meta webhook error: missing sender PSID")
                     raise ValueError("Missing sender PSID in Meta webhook event.")
@@ -499,42 +601,6 @@ class MetaImportService:
 
                 if norm_event.metadata_ and norm_event.metadata_.get("referral"):
                     logger.info("Referral attribution detected: %s", norm_event.metadata_["referral"])
-
-                # Echo handling & Deduplication
-                if is_echo:
-                    logger.info(f"[Webhook Echo] Received echo event for mid: {echo_mid} in Conv: {conv.id}")
-                    
-                    # 1. Check if message already exists with this external_message_id
-                    existing_by_mid = (await session.execute(
-                        select(Message).where(Message.external_message_id == echo_mid)
-                    )).scalar_one_or_none()
-                    
-                    if existing_by_mid:
-                        await session.commit()
-                        logger.info(f"✅ [Echo Handled] Message already exists for mid: {echo_mid}")
-                        last_result_status = "already_processed"
-                        last_result_msg_id = str(existing_by_mid.id)
-                        continue
-
-                    # 2. Check if an agent message was recently created in this conversation with identical text
-                    recent_agent_msg = (await session.execute(
-                        select(Message)
-                        .where(
-                            Message.conversation_id == conv.id,
-                            Message.sender_type == SenderTypeEnum.AGENT,
-                            Message.text == echo_text
-                        )
-                        .order_by(Message.created_at.desc())
-                        .limit(1)
-                    )).scalar_one_or_none()
-
-                    if recent_agent_msg:
-                        recent_agent_msg.external_message_id = echo_mid
-                        await session.commit()
-                        logger.info(f"✅ [Echo Deduplicated] Linked Meta MID {echo_mid} to existing message {recent_agent_msg.id}")
-                        last_result_status = "already_processed"
-                        last_result_msg_id = str(recent_agent_msg.id)
-                        continue
 
                 # 3. Idempotency Check
                 stmt = select(Message).where(
@@ -764,6 +830,13 @@ class MetaImportService:
         if not settings.META_PAGE_ACCESS_TOKEN or not settings.META_PAGE_ID:
             return
 
+        from app.integrations.meta.rate_limit import MetaRateLimitGuard
+
+        if MetaRateLimitGuard.is_rate_limited():
+            rem = MetaRateLimitGuard.get_cooldown_remaining()
+            logger.warning("[Live Poller] Meta rate limit cooldown active (%ds remaining). Skipping poll cycle.", int(rem))
+            return
+
         ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
 
         platforms = [
@@ -777,6 +850,10 @@ class MetaImportService:
         from app.models.enums import ConversationStatusEnum, MessageTypeEnum, SenderTypeEnum
 
         for plat in platforms:
+            if MetaRateLimitGuard.is_rate_limited():
+                logger.warning("[Live Poller] Rate limit triggered during platform loop. Halting cycle.")
+                break
+
             url = f"https://graph.facebook.com/v23.0{plat['endpoint']}"
             params = {
                 "fields": "id,updated_time,unread_count,participants,messages.limit(10){id,message,from,created_time,attachments}",
@@ -789,6 +866,7 @@ class MetaImportService:
             try:
                 async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                     res = await client.get(url, params=params)
+                    MetaRateLimitGuard.inspect_response(res)
                     if res.status_code != 200:
                         logger.debug("[Live Poller] Platform %s returned status %s", plat["name"], res.status_code)
                         continue

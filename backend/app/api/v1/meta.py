@@ -111,6 +111,73 @@ async def test_meta_access():
         )
 
 
+class SubscribePageRequest(BaseModel):
+    page_id: Optional[str] = Field(None, description="Optional target Facebook Page ID (defaults to configured META_PAGE_ID)")
+    subscribed_fields: Optional[list[str]] = Field(
+        None,
+        description="Optional list of webhook fields to subscribe to (defaults to messages, messaging_postbacks, feed, message_deliveries, message_reads)",
+    )
+
+
+class SubscribePageResponse(BaseModel):
+    success: bool
+    status: str
+    page_id: Optional[str] = None
+    subscribed_fields: list[str]
+    details: dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
+@router.post(
+    "/subscribe-page",
+    response_model=SubscribePageResponse,
+    summary="Subscribe Facebook Page to CRM App Webhooks (Admin Trigger)",
+)
+async def subscribe_facebook_page(
+    payload: Optional[SubscribePageRequest] = None,
+    admin_user: User = Depends(require_admin),
+):
+    """
+    On-demand manual admin trigger to subscribe or re-subscribe a Facebook Page
+    to CRM application webhooks (messages, messaging_postbacks, feed, message_deliveries, message_reads).
+    """
+    provider = MetaProvider()
+    target_page_id = payload.page_id if payload and payload.page_id else settings.META_PAGE_ID
+    target_fields = (
+        payload.subscribed_fields
+        if payload and payload.subscribed_fields
+        else ["messages", "messaging_postbacks", "feed", "message_deliveries", "message_reads"]
+    )
+
+    try:
+        result = await provider.subscribe_page_to_app(
+            page_id=target_page_id,
+            subscribed_fields=target_fields,
+        )
+        is_success = result.get("success", False)
+        err_raw = result.get("error")
+        sanitized_err = MetaImportService._sanitize_error(err_raw) if err_raw else None
+        return SubscribePageResponse(
+            success=is_success,
+            status="subscribed" if is_success else "failed",
+            page_id=target_page_id,
+            subscribed_fields=target_fields,
+            details=result.get("details", {}),
+            error=sanitized_err,
+        )
+    except Exception as exc:
+        sanitized_err = MetaImportService._sanitize_error(str(exc))
+        logger.error("[MetaWebhook] Manual subscription error: %s", sanitized_err, exc_info=True)
+        return SubscribePageResponse(
+            success=False,
+            status="error",
+            page_id=target_page_id,
+            subscribed_fields=target_fields,
+            details={},
+            error=f"Subscription failed: {sanitized_err}",
+        )
+
+
 @router.get("/conversations", summary="Fetch Meta Conversations (Read-Only Preview)")
 async def get_meta_conversations_preview():
     """Fetch normalized Messenger conversations from Meta Graph API without persisting."""

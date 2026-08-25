@@ -41,6 +41,15 @@ class MetaClient:
     ) -> dict[str, Any]:
         self._ensure_authenticated()
 
+        from app.integrations.meta.rate_limit import MetaRateLimitGuard
+
+        if MetaRateLimitGuard.is_rate_limited():
+            rem = MetaRateLimitGuard.get_cooldown_remaining()
+            raise MetaAPIError(
+                f"Meta API Error (429): Rate limit cooldown active ({int(rem)}s remaining). Please wait before retrying.",
+                status_code=429,
+            )
+
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         query_params = params.copy() if params else {}
         query_params["access_token"] = self.access_token
@@ -60,6 +69,8 @@ class MetaClient:
                 f"Meta Graph API connection error: {type(exc).__name__}",
                 status_code=502,
             )
+
+        MetaRateLimitGuard.inspect_response(response)
 
         if response.is_error:
             status_code = response.status_code
@@ -89,6 +100,108 @@ class MetaClient:
         if not target_page_id:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
         return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category"})
+
+    async def subscribe_page_to_app(
+        self,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+        subscribed_fields: Optional[list[str]] = None,
+        timeout: float = 10.0,
+    ) -> dict[str, Any]:
+        """
+        Subscribe a Facebook Page to the CRM application's webhooks.
+        Endpoint: POST https://graph.facebook.com/{version}/{page_id}/subscribed_apps
+
+        Subscribed fields:
+        ["messages", "messaging_postbacks", "feed", "message_deliveries", "message_reads"]
+
+        Returns:
+            dict: { "success": bool, "details": dict, "error": Optional[str] }
+        """
+        target_page_id = page_id or self.page_id
+        target_token = access_token or self.access_token
+
+        if not target_token or not str(target_token).strip():
+            return {
+                "success": False,
+                "details": {},
+                "error": "META_PAGE_ACCESS_TOKEN is missing or unconfigured.",
+            }
+
+        if not target_page_id or not str(target_page_id).strip():
+            return {
+                "success": False,
+                "details": {},
+                "error": "META_PAGE_ID is missing or unconfigured.",
+            }
+
+        fields_list = subscribed_fields or [
+            "messages",
+            "messaging_postbacks",
+            "feed",
+            "message_deliveries",
+            "message_reads",
+        ]
+        fields_param = ",".join(fields_list) if isinstance(fields_list, list) else str(fields_list)
+
+        url = f"{self.base_url}/{target_page_id}/subscribed_apps"
+        params = {
+            "subscribed_fields": fields_param,
+            "access_token": target_token,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url, params=params)
+
+            try:
+                resp_json = response.json()
+            except Exception:
+                resp_json = {"raw_text": response.text}
+
+            if response.is_error:
+                err_detail = (
+                    resp_json.get("error", {}).get("message", response.text)
+                    if isinstance(resp_json, dict)
+                    else response.text
+                )
+                sanitized_msg = str(err_detail)
+                if target_token:
+                    sanitized_msg = sanitized_msg.replace(target_token, "[REDACTED_TOKEN]")
+                return {
+                    "success": False,
+                    "details": resp_json if isinstance(resp_json, dict) else {"raw": str(resp_json)},
+                    "error": f"Meta API Error ({response.status_code}): {sanitized_msg}",
+                }
+
+            is_success = bool(resp_json.get("success", False)) if isinstance(resp_json, dict) else False
+            return {
+                "success": is_success,
+                "details": resp_json if isinstance(resp_json, dict) else {},
+                "error": None if is_success else "Meta API response did not indicate success.",
+            }
+
+        except httpx.TimeoutException:
+            return {
+                "success": False,
+                "details": {},
+                "error": "Meta Graph API request timed out during webhook subscription.",
+            }
+        except httpx.RequestError as exc:
+            return {
+                "success": False,
+                "details": {},
+                "error": f"Meta Graph API connection error during subscription: {type(exc).__name__}",
+            }
+        except Exception as exc:
+            sanitized_err = str(exc)
+            if target_token:
+                sanitized_err = sanitized_err.replace(target_token, "[REDACTED_TOKEN]")
+            return {
+                "success": False,
+                "details": {},
+                "error": f"Unexpected error during webhook subscription: {sanitized_err}",
+            }
 
     async def get_conversations(
         self,

@@ -41,11 +41,14 @@ class Settings(BaseSettings):
     META_PAGE_ID: str | None = "1302055352987458"
     META_PAGE_ACCESS_TOKEN: str | None = None
     META_GRAPH_API_VERSION: str = "v19.0"
+    META_APP_ID: str | None = "2591862777899310"
     META_WEBHOOK_VERIFY_TOKEN: str | None = "LUXIRA_META_WEBHOOK_VERIFY_TOKEN"
     META_APP_SECRET: str | None = None
     WHATSAPP_PHONE_NUMBER_ID: str | None = "105938472819405"
     WHATSAPP_WABA_ID: str | None = "948301847582019"
     INSTAGRAM_ACCOUNT_ID: str | None = "17841405938201948"
+    META_ENABLE_LIVE_POLLING: bool = False
+    META_POLL_INTERVAL_SECONDS: int = 300
 
     # Respond.io Integration Settings
     RESPOND_IO_API_TOKEN: str | None = None

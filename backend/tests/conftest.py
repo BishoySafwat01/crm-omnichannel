@@ -10,32 +10,26 @@ from app.core.database import AsyncSessionLocal
 from app.main import app
 from scripts.seed_superadmin import seed_superadmin
 
-# The test suite seeds a throwaway superadmin per session. Credentials are NOT
-# hardcoded: the password is randomized for every run and only lives in-process.
-TEST_SUPERADMIN_EMAIL = "admin@luxira.com"
+# Dedicated test admin to prevent modifying or resetting real admin accounts
+TEST_SUPERADMIN_EMAIL = "test_admin_ephemeral@luxira.internal"
 os.environ.setdefault("SEED_SUPERADMIN_EMAIL", TEST_SUPERADMIN_EMAIL)
 os.environ.setdefault("SEED_SUPERADMIN_PASSWORD", secrets.token_urlsafe(16))
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def cleanup_db():
+    # Only clean up test-generated ephemeral users to protect real users & data
     async with AsyncSessionLocal() as session:
-        for table in [
-            "customer_notes",
-            "customer_timeline_events",
-            "conversation_assignment_logs",
-            "user_audit_logs",
-            "messages",
-            "automation_execution_logs",
-            "automation_rules",
-            "conversations",
-            "customer_identities",
-            "customers",
-            "migration_jobs",
-            "raw_events",
-        ]:
-            await session.execute(text(f"DELETE FROM {table};"))
-        await session.execute(text("DELETE FROM users WHERE email != 'admin@luxira.com';"))
+        await session.execute(
+            text(
+                "DELETE FROM users WHERE "
+                "email LIKE '%@luxira.internal' "
+                "OR email LIKE '%@test%' "
+                "OR email LIKE '%_test@%' "
+                "OR email LIKE 'test_%' "
+                "OR email IN ('agent_test@luxira.com', 'admin_subscribe@luxira.com', 'admin_fail@luxira.com');"
+            )
+        )
         await session.commit()
 
     await seed_superadmin()
