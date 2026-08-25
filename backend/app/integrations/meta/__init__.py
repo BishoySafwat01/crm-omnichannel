@@ -6,13 +6,16 @@ from app.integrations.meta.normalizer import (
     NormalizedMessage,
 )
 from app.integrations.meta.provider import MetaProvider
+from app.integrations.meta.rate_limit import MetaRateLimitGuard
 
 __all__ = [
     "MetaClient",
     "MetaAPIError",
     "MetaNormalizer",
     "MetaProvider",
+    "MetaRateLimitGuard",
     "NormalizedCustomer",
     "NormalizedConversation",
     "NormalizedMessage",
 ]
+

@@ -32,6 +32,9 @@ class MetaHistoricalSyncService:
 
     async def _inspect_rate_limits_and_throttle(self, response: httpx.Response):
         """Inspect Meta usage headers and throttle dynamically to avoid 429/613 errors."""
+        from app.integrations.meta.rate_limit import MetaRateLimitGuard
+        MetaRateLimitGuard.inspect_response(response)
+
         usage_header = response.headers.get("x-page-usage") or response.headers.get("x-app-usage")
         if usage_header:
             try:

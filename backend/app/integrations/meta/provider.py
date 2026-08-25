@@ -22,6 +22,19 @@ class MetaProvider:
             "category": info.get("category"),
         }
 
+    async def subscribe_page_to_app(
+        self,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+        subscribed_fields: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Subscribe Facebook Page to app webhooks."""
+        return await self.client.subscribe_page_to_app(
+            page_id=page_id,
+            access_token=access_token,
+            subscribed_fields=subscribed_fields,
+        )
+
     async def get_all_conversations(
         self,
         page_id: Optional[str] = None,
