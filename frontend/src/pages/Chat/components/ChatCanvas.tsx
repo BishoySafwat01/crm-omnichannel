@@ -49,6 +49,7 @@ import { aiApi, API_BASE } from '../../../services/api';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { MessageActionsMenu } from './MessageActionsMenu';
 import { ForwardMessageModal } from './ForwardMessageModal';
+import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
 
 // Custom Inline Audio Player Component
 const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
@@ -393,6 +394,9 @@ export const ChatCanvas: React.FC = () => {
   const [inChatEmployeeFilter, setInChatEmployeeFilter] = useState<string | null>(null);
   const [isChatEmpMenuOpen, setIsChatEmpMenuOpen] = useState(false);
   const [matchedMsgIndex, setMatchedMsgIndex] = useState(0);
+  // Block Customer Modal State
+  const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  const [blockModalMode, setBlockModalMode] = useState<'block' | 'unblock'>('block');
 
   const handleOpenImagePreview = (url: string) => {
     setPreviewImage(url);
@@ -1192,7 +1196,10 @@ export const ChatCanvas: React.FC = () => {
           {/* Block / Unblock Customer Header Action */}
           {activeConv.customer?.is_blocked ? (
             <button
-              onClick={() => activeConv.customer?.id && unblockCustomer(activeConv.customer.id)}
+              onClick={() => {
+                setBlockModalMode('unblock');
+                setIsBlockModalOpen(true);
+              }}
               className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
               title="إلغاء حظر العميل"
             >
@@ -1202,13 +1209,10 @@ export const ChatCanvas: React.FC = () => {
           ) : (
             <button
               onClick={() => {
-                if (!activeConv.customer?.id) return;
-                const reason = prompt('يرجى كتابة سبب حظر هذا العميل (اختياري):', 'سبام / مخالفة');
-                if (reason !== null) {
-                  blockCustomer(activeConv.customer.id, reason.trim() || 'حظر يدوي من المشرف');
-                }
+                setBlockModalMode('block');
+                setIsBlockModalOpen(true);
               }}
-              className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition"
+              className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
               title="حظر هذا العميل (Block Customer)"
             >
               <Ban className="w-3.5 h-3.5" />
@@ -1658,7 +1662,10 @@ export const ChatCanvas: React.FC = () => {
             </div>
             <button
               type="button"
-              onClick={() => activeConv.customer?.id && unblockCustomer(activeConv.customer.id)}
+              onClick={() => {
+                setBlockModalMode('unblock');
+                setIsBlockModalOpen(true);
+              }}
               className="px-4 py-2 bg-white hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-300 transition shadow-2xs shrink-0 cursor-pointer"
             >
               فك الحظر (Unblock)
@@ -1975,6 +1982,25 @@ export const ChatCanvas: React.FC = () => {
         isOpen={isForwardModalOpen}
         message={forwardingMessage}
         onClose={() => setIsForwardModalOpen(false, null)}
+      />
+
+      {/* Block / Unblock Customer Modal */}
+      <BlockCustomerModal
+        isOpen={isBlockModalOpen}
+        mode={blockModalMode}
+        customerName={activeConv.customer_display_name || activeConv.customer?.display_name || 'العميل'}
+        brandName={activeConv.brand || activeConv.brand_name}
+        channel={activeConv.channel}
+        currentReason={activeConv.customer?.blocked_reason}
+        onClose={() => setIsBlockModalOpen(false)}
+        onConfirm={async (reason) => {
+          if (!activeConv.customer?.id) return;
+          if (blockModalMode === 'block') {
+            await blockCustomer(activeConv.customer.id, reason);
+          } else {
+            await unblockCustomer(activeConv.customer.id);
+          }
+        }}
       />
 
       {/* WhatsApp-Style Image Lightbox Popup Modal */}

@@ -185,7 +185,11 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/70 hover:bg-white text-xs font-semibold text-slate-800 border border-slate-200/60 shadow-2xs transition"
             >
-              <span className="w-2 h-2 rounded-full bg-[#1A73E8]" />
+              {selectedBrandObj?.logo_url ? (
+                <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />
+              ) : (
+                <span className="w-2 h-2 rounded-full bg-[#1A73E8]" />
+              )}
               <span>{selectedBrandObj?.name || 'كل الماركات'}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
@@ -207,7 +211,14 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                           : 'text-slate-700 hover:bg-slate-50 font-medium'
                       }`}
                     >
-                      <span>{b.name}</span>
+                      <div className="flex items-center gap-2">
+                        {b.logo_url ? (
+                          <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-slate-400" />
+                        )}
+                        <span>{b.name}</span>
+                      </div>
                       {brandUnread > 0 && (
                         <span className="bg-[#1A73E8] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
                           {brandUnread}

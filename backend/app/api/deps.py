@@ -85,7 +85,7 @@ async def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
     role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
-    if role_val != UserRole.ADMIN.value:
+    if str(role_val).lower() not in ("admin", "superadmin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin permissions required for this operation.",

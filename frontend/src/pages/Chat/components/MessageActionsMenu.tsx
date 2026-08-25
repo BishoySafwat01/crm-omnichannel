@@ -71,9 +71,8 @@ export const MessageActionsMenu: React.FC<MessageActionsMenuProps> = ({
     isAgentMessage &&
     (isOwner || isSupervisor || isSuperadminOrAdmin);
 
-  // Can Delete:
-  // Agent can delete own messages; Supervisor and Admin can delete any message.
-  const canDelete = !isDeleted && (isOwner || isSupervisor || isSuperadminOrAdmin);
+  // Can Delete: Any active message can be deleted by team members with chat access
+  const canDelete = !isDeleted;
 
   // Copy handler
   const handleCopy = async () => {
@@ -106,9 +105,7 @@ export const MessageActionsMenu: React.FC<MessageActionsMenuProps> = ({
   };
 
   const handleDelete = () => {
-    if (window.confirm('هل أنت متأكد من رغبتك في حذف هذه الرسالة؟')) {
-      deleteMessage(message.id);
-    }
+    deleteMessage(message.id);
   };
 
   const handleTogglePin = () => {

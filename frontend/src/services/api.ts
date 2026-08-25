@@ -1,4 +1,4 @@
-import { CommentAutomationRule, Conversation, Customer, Message, PaginatedResponse, SocialComment } from '../types/crm';
+import { CommentAutomationRule, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
 import { APP_CONFIG } from '../config/appConfig';
 import { MOCK_BRANDS } from '../constants/brands';
 
@@ -1204,3 +1204,43 @@ export const commentAutomationApi = {
     return res ? res.ok : false;
   },
 };
+
+export const moderationApi = {
+  async getConfig(): Promise<ModerationConfig> {
+    const res = await safeFetch('/moderation/config', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return {
+      is_active: true,
+      bad_words: [],
+      notify_admin_toast: true,
+      notify_admin_email: true,
+      admin_alert_email: 'admin@luxira.com',
+    };
+  },
+
+  async updateConfig(payload: ModerationConfig): Promise<ModerationConfig> {
+    const res = await safeFetch('/moderation/config', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في حفظ إعدادات الكلمات المحظورة' }));
+      throw new Error(err?.detail || 'فشل في حفظ إعدادات الكلمات المحظورة');
+    }
+    return await res.json();
+  },
+
+  async getAuditLogs(limit: number = 50): Promise<ModerationAuditLog[]> {
+    const res = await safeFetch(`/moderation/audit-logs?limit=${limit}`, {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) return await res.json();
+    return [];
+  },
+};
+

@@ -18,6 +18,7 @@ import {
   Play,
   Sparkles,
   MessageCircle,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   automationApi,
@@ -27,6 +28,7 @@ import {
   MOCK_BRANDS,
 } from '../../services/api';
 import { CommentAutomationRule } from '../../types/crm';
+import { BadWordsModerationModal } from './components/BadWordsModerationModal';
 
 interface MessageBlock {
   id: string;
@@ -42,6 +44,7 @@ export const AutomationsManager: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [isModerationModalOpen, setIsModerationModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
 
   const [name, setName] = useState('');
@@ -384,6 +387,14 @@ export const AutomationsManager: React.FC = () => {
                 <span>أتمتة التعليقات ({commentRules.length})</span>
               </button>
             </div>
+            <button
+              onClick={() => setIsModerationModalOpen(true)}
+              className="px-4 py-2 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition flex items-center gap-1.5 border border-rose-200 shadow-2xs cursor-pointer"
+              title="إدارة الكلمات السيئة والمحظورة وتنبيهات الأمان الفورية"
+            >
+              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <span>🛡️ الكلمات المحظورة والتنبيهات</span>
+            </button>
             {activeTab === 'messages' ? (
               <>
                 <button
@@ -758,6 +769,12 @@ export const AutomationsManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Bad Words & Live Chat Moderation Pop-up Modal */}
+      <BadWordsModerationModal
+        isOpen={isModerationModalOpen}
+        onClose={() => setIsModerationModalOpen(false)}
+      />
     </div>
   );
 };

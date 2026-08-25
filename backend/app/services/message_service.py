@@ -505,8 +505,48 @@ class MessageService:
         except Exception as audit_msg_err:
             logger.error("[AuditService] Error recording outbound message audit: %s", audit_msg_err)
 
+        # Moderation & Bad Words Check on Outbound Messages (For ALL roles: Admin, Agent, Supervisor)
+        if clean_text:
+            try:
+                chan_name = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+                sender_display_name = "موظف الدعم"
+                sender_role_str = "agent"
+                if sender_user_id:
+                    from app.models.user import User
+                    user_obj = await session.get(User, sender_user_id)
+                    if user_obj:
+                        if user_obj.full_name:
+                            sender_display_name = user_obj.full_name
+                        if hasattr(user_obj.role, "value"):
+                            sender_role_str = str(user_obj.role.value)
+                        elif user_obj.role:
+                            sender_role_str = str(user_obj.role)
+
+                from app.services.moderation_service import ModerationService
+                matched = ModerationService.scan_for_bad_words(clean_text)
+                if matched:
+                    await ModerationService.handle_detected_bad_words(
+                        session=session,
+                        matched_words=matched,
+                        message_text=clean_text,
+                        sender_type=sender_role_str,
+                        sender_name=sender_display_name,
+                        sender_id=str(sender_user_id) if sender_user_id else None,
+                        conversation_id=conv.id,
+                        customer_name=(
+                            conv.customer.display_name
+                            if (getattr(conv, "customer", None) and conv.customer and conv.customer.display_name)
+                            else "عميل"
+                        ),
+                        brand_name=getattr(conv, "brand", None),
+                        channel=chan_name,
+                    )
+            except Exception as mod_err:
+                logger.error("[Moderation Engine] Error checking outbound message: %s", mod_err, exc_info=True)
+
         # Agent Dynamic Location Override Hook
         updated_loc = None
+        location_status = "not_detected"
         if conv.customer_id and clean_text:
             try:
                 detected_country = CountryDetector.extract_country(clean_text)
@@ -517,6 +557,7 @@ class MessageService:
                         session.add(cust)
                         await session.flush()
                         updated_loc = detected_country
+                        location_status = "detected"
             except Exception as e:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
@@ -532,5 +573,7 @@ class MessageService:
             setattr(new_message, "updated_customer_location", updated_loc)
         elif conv.customer and getattr(conv.customer, "location", None):
             setattr(new_message, "updated_customer_location", conv.customer.location)
+
+        setattr(new_message, "location_detection_status", location_status)
 
         return new_message

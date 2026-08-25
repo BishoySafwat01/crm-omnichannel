@@ -10,6 +10,7 @@ export interface Brand {
   avatar: string;
   color: string;
   page_id: string;
+  logo_url?: string;
 }
 
 export interface Attachment {
@@ -186,7 +187,9 @@ export interface WebSocketEvent {
     | 'message_updated'
     | 'message_deleted'
     | 'message_reaction_updated'
-    | 'message_pin_updated';
+    | 'message_pin_updated'
+    | 'ADMIN_SECURITY_ALERT'
+    | 'admin_security_alert';
   conversation_id?: string;
   customer_id?: string;
   message?: Message;
@@ -225,5 +228,51 @@ export interface CommentAutomationRule {
   private_dm_text?: string | null;
   is_active: boolean;
   auto_hide_toxic?: boolean;
+}
+
+export interface ModerationConfig {
+  is_active: boolean;
+  bad_words: string[];
+  notify_admin_toast: boolean;
+  notify_admin_email: boolean;
+  admin_alert_email?: string;
+  updated_at?: string;
+}
+
+export interface ModerationAuditLog {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id?: string;
+  payload?: any;
+  created_at: string;
+}
+
+export interface AdminSecurityAlert {
+  id: string;
+  alert_type: 'message_deleted' | 'bad_word_detected' | 'security_warning';
+  severity: 'high' | 'warning' | 'info';
+  title: string;
+  actor_name: string;
+  actor_email?: string;
+  actor_type?: 'agent' | 'customer';
+  deleted_text?: string;
+  matched_words?: string[];
+  content_snippet?: string;
+  conversation_id: string;
+  customer_name: string;
+  brand_name?: string;
+  channel?: string;
+  timestamp: string;
+}
+
+export interface LocationAlert {
+  id: string;
+  type: 'detected' | 'not_detected';
+  message?: string;
+  location?: string;
+  customerName?: string;
+  conversationId?: string;
+  timestamp: number;
 }
 

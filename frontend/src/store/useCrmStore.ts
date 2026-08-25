@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Conversation, Customer, FilterTab, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
+import { AdminSecurityAlert, Conversation, Customer, FilterTab, LocationAlert, Message, MetaMessageTag, WebSocketEvent } from '../types/crm';
 import { apiService, customerApi, getConversationsDirect, getMessagesDirect, getUnreadSummaryDirect, markConversationReadDirect, messageActionsApi, teamApi, TeamMember } from '../services/api';
 import { realtimeService } from '../services/websocket';
 import { useAuthStore } from './useAuthStore';
@@ -180,6 +180,13 @@ interface CrmState {
   unblockCustomer: (customerId: string) => Promise<void>;
   handleRealtimeEvent: (event: WebSocketEvent) => void;
 
+  adminSecurityAlerts: AdminSecurityAlert[];
+  dismissSecurityAlert: (id: string) => void;
+
+  locationAlerts: LocationAlert[];
+  addLocationAlert: (alert: Omit<LocationAlert, 'id' | 'timestamp'>) => void;
+  dismissLocationAlert: (id: string) => void;
+
   // Message Actions Handlers
   setReplyingToMessage: (msg: Message | null) => void;
   setEditingMessage: (msg: Message | null) => void;
@@ -219,6 +226,27 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 },
     brands: {},
   },
+  adminSecurityAlerts: [],
+  dismissSecurityAlert: (id) =>
+    set((state) => ({
+      adminSecurityAlerts: state.adminSecurityAlerts.filter((a) => a.id !== id),
+    })),
+
+  locationAlerts: [],
+  addLocationAlert: (alertData) => {
+    const alert: LocationAlert = {
+      ...alertData,
+      id: `loc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+    };
+    set((state) => ({
+      locationAlerts: [alert, ...state.locationAlerts.slice(0, 3)],
+    }));
+  },
+  dismissLocationAlert: (id) =>
+    set((state) => ({
+      locationAlerts: state.locationAlerts.filter((a) => a.id !== id),
+    })),
 
   // Message Actions State Defaults
   replyingToMessage: null,
@@ -622,6 +650,27 @@ export const useCrmStore = create<CrmState>((set, get) => ({
           conversations: updatedConvs,
         };
       });
+
+      // Location Detection Notification Trigger
+      const activeConv = get().conversations.find((c) => c.id === activeConversationId);
+      const custName = activeConv?.customer_display_name || activeConv?.customer?.display_name || 'العميل';
+      const locDetected = newLoc || (persistedMsg as any)?.detected_location;
+      const locStatus = (persistedMsg as any)?.location_detection_status;
+
+      if (locDetected) {
+        get().addLocationAlert({
+          type: 'detected',
+          location: locDetected,
+          customerName: custName,
+          conversationId: activeConversationId,
+        });
+      } else if (locStatus === 'not_detected' && !activeConv?.customer?.location && text.trim().length > 3) {
+        get().addLocationAlert({
+          type: 'not_detected',
+          customerName: custName,
+          conversationId: activeConversationId,
+        });
+      }
     } catch (err: any) {
       console.warn('Outbound API send failed. Transitioning bubble to failed:', err);
 
@@ -1176,6 +1225,60 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   },
 
   handleRealtimeEvent: (event) => {
+    if (event.type === 'ADMIN_SECURITY_ALERT' || (event as any).type === 'admin_security_alert') {
+      const alertData = event as any;
+      const alertId =
+        alertData.id ||
+        `alert-${alertData.alert_type}-${alertData.conversation_id}-${alertData.deleted_text || alertData.content_snippet || Date.now()}`;
+
+      // Deduplicate: Check if an alert with identical ID or identical content in this conversation was received recently
+      const currentAlerts = get().adminSecurityAlerts;
+      const isDuplicate = currentAlerts.some((a) => {
+        if (a.id === alertId) return true;
+        if (
+          a.alert_type === alertData.alert_type &&
+          a.conversation_id === alertData.conversation_id &&
+          (a.deleted_text === alertData.deleted_text || a.content_snippet === alertData.content_snippet)
+        ) {
+          const timeDiff = Math.abs(new Date(a.timestamp).getTime() - new Date(alertData.timestamp || Date.now()).getTime());
+          if (timeDiff < 10000) return true;
+        }
+        return false;
+      });
+
+      if (isDuplicate) {
+        return;
+      }
+
+      const newAlert: AdminSecurityAlert = {
+        id: alertId,
+        alert_type: alertData.alert_type || 'security_warning',
+        severity: alertData.severity || 'high',
+        title: alertData.title || '🚨 تنبيه أمني',
+        actor_name: alertData.actor_name || alertData.deleted_by_name || 'موظف',
+        actor_email: alertData.actor_email || alertData.deleted_by_email,
+        actor_type: alertData.actor_type || 'agent',
+        deleted_text: alertData.deleted_text,
+        matched_words: alertData.matched_words,
+        content_snippet: alertData.content_snippet,
+        conversation_id: alertData.conversation_id,
+        customer_name: alertData.customer_name || 'عميل',
+        brand_name: alertData.brand_name,
+        channel: alertData.channel,
+        timestamp: alertData.timestamp || new Date().toISOString(),
+      };
+
+      set((state) => ({
+        adminSecurityAlerts: [newAlert, ...state.adminSecurityAlerts.filter((a) => a.id !== newAlert.id).slice(0, 3)],
+      }));
+
+      // Auto-dismiss after 10 seconds
+      setTimeout(() => {
+        get().dismissSecurityAlert(newAlert.id);
+      }, 10000);
+      return;
+    }
+
     if ((event as any).type === 'CONVERSATION_READ') {
       get().fetchUnreadSummary();
       return;

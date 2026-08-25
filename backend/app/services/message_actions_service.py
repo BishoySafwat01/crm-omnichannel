@@ -1,3 +1,5 @@
+import os
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -146,30 +148,53 @@ class MessageActionsService:
         if meta.get("is_deleted"):
             return msg
 
-        # RBAC: Agents can only delete their own messages. Supervisors and Admins can delete any message.
-        role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
-        if role_val == UserRole.AGENT.value:
-            if not msg.sender_user_id or msg.sender_user_id != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You are only authorized to delete your own messages.",
-                )
-
         now_utc = datetime.now(timezone.utc)
+        original_text = msg.text or ""
+        if not original_text and msg.attachments:
+            original_text = msg.attachments[0].get("title") or msg.attachments[0].get("url") or "(مرفق وسائط)"
+
+        # Fetch conversation info for rich alert & email
+        conv_stmt = (
+            select(Conversation)
+            .options(selectinload(Conversation.customer))
+            .where(Conversation.id == conversation_id)
+        )
+        conv_res = await session.execute(conv_stmt)
+        conv = conv_res.scalar_one_or_none()
+        customer_name = (
+            conv.customer.display_name
+            if (conv and conv.customer and conv.customer.display_name)
+            else "عميل"
+        )
+        brand_name = conv.brand if conv else None
+        channel_name = conv.channel.value if conv and hasattr(conv.channel, "value") else (str(conv.channel) if conv else "chat")
+
         meta["is_deleted"] = True
         meta["deleted_at"] = now_utc.isoformat()
         meta["deleted_by_user_id"] = str(user.id)
         meta["deleted_by_name"] = user.full_name
         meta["original_type"] = msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type)
+        meta["attachments"] = []
+        meta["media_url"] = None
         msg.metadata_ = meta
         msg.text = None
+
+        # Attempt deleting from Meta Messenger API if external_message_id exists
+        if msg.external_message_id:
+            try:
+                from app.integrations.meta.client import MetaClient
+                meta_client = MetaClient()
+                await meta_client.delete_message(msg.external_message_id)
+                logger.info(f"[Meta Deletion] Dispatched delete request for external message {msg.external_message_id}")
+            except Exception as meta_del_err:
+                logger.warning(f"[Meta Deletion] Meta Graph API delete attempt: {meta_del_err}")
 
         await session.commit()
         reload_stmt = select(Message).options(selectinload(Message.sender_user)).where(Message.id == message_id)
         reload_res = await session.execute(reload_stmt)
         msg = reload_res.scalar_one()
 
-        # Audit log
+        # 1. Audit log (immutably preserves what was deleted)
         await AuditService.log_action(
             session=session,
             user_id=user.id,
@@ -179,10 +204,17 @@ class MessageActionsService:
             payload={
                 "conversation_id": str(conversation_id),
                 "message_id": str(msg.id),
+                "deleted_text": original_text,
+                "deleted_by_name": user.full_name,
+                "deleted_by_email": user.email,
+                "customer_name": customer_name,
+                "brand": brand_name,
+                "channel": channel_name,
+                "deleted_at": now_utc.isoformat(),
             },
         )
 
-        # Realtime broadcast
+        # 2. Realtime broadcast (Chat update + Red Alert Toast for Admins)
         try:
             from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(msg)
@@ -191,8 +223,50 @@ class MessageActionsService:
                 "conversation_id": str(conversation_id),
                 "message": resp.model_dump(mode="json"),
             })
+
+            # Broadcast high-priority Red Alert to all logged-in Admins
+            alert_id = f"del-{msg.id}"
+            await manager.broadcast({
+                "type": "ADMIN_SECURITY_ALERT",
+                "id": alert_id,
+                "alert_type": "message_deleted",
+                "severity": "high",
+                "title": "🚨 تم حذف رسالة في المحادثة",
+                "actor_name": user.full_name,
+                "actor_email": user.email,
+                "actor_type": "agent",
+                "deleted_text": original_text or "(رسالة فارغة أو مرفق)",
+                "conversation_id": str(conversation_id),
+                "customer_name": customer_name,
+                "brand_name": brand_name,
+                "channel": channel_name,
+                "timestamp": now_utc.isoformat(),
+            })
         except Exception as ws_err:
-            logger.warning("Error broadcasting MESSAGE_DELETED: %s", ws_err)
+            logger.warning("Error broadcasting MESSAGE_DELETED / ADMIN_SECURITY_ALERT: %s", ws_err)
+
+        # 3. Asynchronous Email Alert to Admin
+        try:
+            from app.services.email_service import EmailService
+            from app.services.moderation_service import ModerationService
+            mod_cfg = ModerationService.get_config()
+            admin_email = mod_cfg.get("admin_alert_email") or os.getenv("ADMIN_ALERT_EMAIL", "luxiraholding@gmail.com")
+            if mod_cfg.get("notify_admin_email", True) and admin_email:
+                asyncio.create_task(
+                    EmailService.send_message_deletion_alert(
+                        admin_email=admin_email,
+                        deleted_by_name=user.full_name,
+                        deleted_by_email=user.email,
+                        deleted_text=original_text,
+                        conversation_id=str(conversation_id),
+                        customer_name=customer_name,
+                        brand_name=brand_name,
+                        channel=channel_name,
+                        deleted_at=now_utc,
+                    )
+                )
+        except Exception as email_err:
+            logger.error("Error dispatching email alert: %s", email_err)
 
         return msg
 

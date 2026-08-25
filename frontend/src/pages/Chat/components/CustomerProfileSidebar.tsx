@@ -9,9 +9,10 @@ import { customerApi, CustomerNote, CustomerTimelineEvent } from '../../../servi
 import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
+import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
 
 export const CustomerProfileSidebar: React.FC = () => {
-  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping } = useCrmStore();
+  const { conversations, activeConversationId, updateCustomerProfile, blockCustomer, unblockCustomer, setDraftText, isTyping, addLocationAlert } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
@@ -51,6 +52,9 @@ export const CustomerProfileSidebar: React.FC = () => {
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState<CustomerTimelineEvent[]>([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  const [blockModalMode, setBlockModalMode] = useState<'block' | 'unblock'>('block');
 
   useEffect(() => {
     if (customer) {
@@ -118,16 +122,6 @@ export const CustomerProfileSidebar: React.FC = () => {
     }
   };
 
-  if (!customer || !activeConversation) {
-    return (
-      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
-        <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-        <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
-        <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
-      </aside>
-    );
-  }
-
   const handleSaveContact = async () => {
     if (customer?.id) {
       const locVal = formData.location.trim() || undefined;
@@ -138,37 +132,31 @@ export const CustomerProfileSidebar: React.FC = () => {
         location: locVal,
         country: locVal,
       });
+
+      if (locVal) {
+        addLocationAlert({
+          type: 'detected',
+          location: locVal,
+          customerName: formData.display_name.trim() || customer.display_name,
+        });
+      } else {
+        addLocationAlert({
+          type: 'not_detected',
+          customerName: formData.display_name.trim() || customer.display_name,
+        });
+      }
     }
     setIsEditing(false);
   };
 
-  const [isBlocking, setIsBlocking] = useState(false);
-
-  const handleBlockCustomer = async () => {
-    if (!customer?.id) return;
-    const reason = prompt('يرجى كتابة سبب حظر هذا العميل (اختياري):', 'مخالفة أو سبام');
-    if (reason === null) return;
-    setIsBlocking(true);
-    try {
-      await blockCustomer(customer.id, reason.trim() || 'حظر يدوي من المشرف');
-    } catch (e: any) {
-      alert(e?.message || 'تعذر حظر العميل');
-    } finally {
-      setIsBlocking(false);
-    }
+  const openBlockModal = () => {
+    setBlockModalMode('block');
+    setIsBlockModalOpen(true);
   };
 
-  const handleUnblockCustomer = async () => {
-    if (!customer?.id) return;
-    if (!confirm('هل أنت متأكد من رغبتك في إلغاء حظر هذا العميل؟')) return;
-    setIsBlocking(true);
-    try {
-      await unblockCustomer(customer.id);
-    } catch (e: any) {
-      alert(e?.message || 'تعذر إلغاء حظر العميل');
-    } finally {
-      setIsBlocking(false);
-    }
+  const openUnblockModal = () => {
+    setBlockModalMode('unblock');
+    setIsBlockModalOpen(true);
   };
 
   const handleSelectAttribute = (key: 'skin_type' | 'tier' | 'stage', value: string) => {
@@ -176,6 +164,16 @@ export const CustomerProfileSidebar: React.FC = () => {
       updateCustomerProfile(customer.id, { [key]: value });
     }
   };
+
+  if (!customer || !activeConversation) {
+    return (
+      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
+        <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+        <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
+        <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
+      </aside>
+    );
+  }
 
   const currentSkin = customer?.skin_type || 'عادية';
   const currentTier = customer?.tier || 'درجة أولى';
@@ -374,8 +372,7 @@ export const CustomerProfileSidebar: React.FC = () => {
                 )}
                 <button
                   type="button"
-                  onClick={handleUnblockCustomer}
-                  disabled={isBlocking}
+                  onClick={openUnblockModal}
                   className="w-full py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" />
@@ -385,8 +382,7 @@ export const CustomerProfileSidebar: React.FC = () => {
             ) : (
               <button
                 type="button"
-                onClick={handleBlockCustomer}
-                disabled={isBlocking}
+                onClick={openBlockModal}
                 className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 title="حظر العميل من إرسال رسائل جديدة"
               >
@@ -501,6 +497,25 @@ export const CustomerProfileSidebar: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Block / Unblock Modal */}
+      <BlockCustomerModal
+        isOpen={isBlockModalOpen}
+        mode={blockModalMode}
+        customerName={customer.display_name || 'العميل'}
+        brandName={activeConversation?.brand || activeConversation?.brand_name}
+        channel={activeConversation?.channel}
+        currentReason={customer.blocked_reason}
+        onClose={() => setIsBlockModalOpen(false)}
+        onConfirm={async (reason) => {
+          if (!customer?.id) return;
+          if (blockModalMode === 'block') {
+            await blockCustomer(customer.id, reason);
+          } else {
+            await unblockCustomer(customer.id);
+          }
+        }}
+      />
     </aside>
   );
 };
