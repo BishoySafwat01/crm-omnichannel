@@ -15,6 +15,8 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
   const {
+    selectedProvider,
+    setSelectedProvider,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -303,6 +305,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </div>
             )}
           </div>
+
+          {/* Provider Filter Switcher */}
+          <select
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value as 'all' | 'beon' | 'meta')}
+            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
+          >
+            <option value="all">⚡ كل المزودين</option>
+            <option value="beon">🚀 مزود BeOn</option>
+            <option value="meta">🌐 ميتا مباشر</option>
+          </select>
 
           {/* Clean Channel Dropdown Selector */}
           <select

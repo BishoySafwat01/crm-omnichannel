@@ -151,9 +151,9 @@ async def mark_conversation_read(
 )
 async def list_conversations(
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Page size"),
+    page_size: int = Query(50, ge=1, le=100, description="Page size"),
     customer_id: Optional[uuid.UUID] = Query(None, description="Filter by customer ID"),
-    provider: Optional[ProviderEnum] = Query(None, description="Filter by provider"),
+    provider: Optional[str] = Query(None, description="Filter by provider: beon, meta, all"),
     channel: Optional[str] = Query(None, description="Filter by channel"),
     status_filter: Optional[ConversationStatusEnum] = Query(
         None, alias="status", description="Filter by status"
@@ -171,6 +171,23 @@ async def list_conversations(
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
     # Fallback/alias location to country if location not provided
     effective_country = country if country is not None else location
+
+    parsed_provider: Optional[ProviderEnum] = None
+    if provider:
+        if isinstance(provider, ProviderEnum):
+            parsed_provider = provider
+        elif isinstance(provider, str):
+            norm_p = provider.strip().lower()
+            if norm_p not in ["all", "none", "", "الكل"]:
+                if norm_p in ["beon", "مزود beon", "beon gateway"]:
+                    parsed_provider = ProviderEnum.BEON
+                elif norm_p in ["meta", "direct_meta", "ميتا مباشر", "direct meta"]:
+                    parsed_provider = ProviderEnum.META
+                else:
+                    try:
+                        parsed_provider = ProviderEnum(norm_p)
+                    except ValueError:
+                        parsed_provider = None
 
     parsed_channel: Optional[ChannelEnum] = None
     if channel:
@@ -205,7 +222,7 @@ async def list_conversations(
         page=page,
         page_size=page_size,
         customer_id=customer_id,
-        provider=provider,
+        provider=parsed_provider,
         channel=parsed_channel,
         status=status_filter,
         search=search,

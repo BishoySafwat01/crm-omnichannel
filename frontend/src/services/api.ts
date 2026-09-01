@@ -86,9 +86,14 @@ export const getConversationsDirect = async (
   brand_id?: string,
   channel?: string,
   country?: string,
-  assigned_agent_id?: string
+  assigned_agent_id?: string,
+  page: number = 1,
+  pageSize: number = 50,
+  provider?: string
 ): Promise<any> => {
   const params = new URLSearchParams();
+  params.set('page', String(page));
+  params.set('page_size', String(pageSize));
   if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
     params.set('brand', brand_id);
   }
@@ -100,6 +105,9 @@ export const getConversationsDirect = async (
   }
   if (assigned_agent_id && assigned_agent_id.toLowerCase() !== 'all') {
     params.set('assigned_agent_id', assigned_agent_id);
+  }
+  if (provider && provider.toLowerCase() !== 'all' && provider !== 'الكل') {
+    params.set('provider', provider);
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 

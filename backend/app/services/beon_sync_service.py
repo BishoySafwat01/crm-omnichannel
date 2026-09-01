@@ -80,8 +80,8 @@ class BeonSyncEngine:
 
         return stats
 
-    async def sync_real_beon_data(self, max_pages: int = 5, per_page: int = 50) -> dict[str, Any]:
-        """Fetch real conversations and messages directly from BeOn V3 and persist them."""
+    async def sync_real_beon_data(self, max_pages: int = 100, per_page: int = 50) -> dict[str, Any]:
+        """Fetch real conversations and messages directly from BeOn V3 and persist them exhaustively."""
         results = {
             "total_synced_conversations": 0,
             "total_synced_messages": 0,
@@ -100,6 +100,7 @@ class BeonSyncEngine:
             data_obj = resp.get("data") or {}
             records = data_obj.get("records") or []
             if not records:
+                logger.info(f"Reached end of BeOn conversations at page {page}.")
                 break
 
             for raw_conv in records:
@@ -202,14 +203,14 @@ class BeonSyncEngine:
 
                     # 4. Fetch and Sync Messages for this Conversation
                     try:
-                        msg_resp = await self.client.get_conversation_messages(ext_conv_id, per_page=50)
+                        msg_resp = await self.client.get_conversation_messages(ext_conv_id, per_page=100)
                         msg_records = (msg_resp.get("data") or {}).get("records") or []
                         for raw_msg in msg_records:
                             norm_msg = BeonNormalizer.normalize_message(raw_msg, conversation_external_id=ext_conv_id)
                             msg_ext_id = norm_msg["external_message_id"]
 
                             msg_check = await db.execute(
-                                select(Message).where(
+                                select(Message.id).where(
                                     Message.conversation_id == conversation.id,
                                     Message.external_message_id == msg_ext_id,
                                 )
@@ -234,8 +235,9 @@ class BeonSyncEngine:
                     await db.commit()
 
             meta = data_obj.get("meta") or {}
-            last_page = meta.get("last_page", 1)
-            if page >= last_page:
+            last_page = meta.get("last_page")
+            if last_page and page >= int(last_page):
+                logger.info(f"Completed sync at last page ({page}/{last_page}).")
                 break
             page += 1
 
