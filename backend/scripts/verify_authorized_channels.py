@@ -63,7 +63,7 @@ async def main():
             if not c:
                 c = Conversation(
                     customer_id=cust.id,
-                    provider=ProviderEnum.META if channel in [ChannelEnum.MESSENGER, ChannelEnum.INSTAGRAM] else ProviderEnum.RESPOND_IO,
+                    provider=ProviderEnum.META if channel in [ChannelEnum.MESSENGER, ChannelEnum.INSTAGRAM] else ProviderEnum.BEON,
                     channel=channel,
                     external_conversation_id=ext_id,
                     subject=f"Thread {brand} {channel.value}",

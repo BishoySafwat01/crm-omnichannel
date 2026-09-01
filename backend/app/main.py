@@ -20,7 +20,7 @@ from app.api.v1.customers import router as customers_router
 from app.api.v1.media import router as media_router
 from app.api.v1.meta import router as meta_router
 from app.api.v1.moderation import router as moderation_router
-from app.api.v1.respond_io import router as respond_io_router
+from app.api.v1.beon import router as beon_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
@@ -44,12 +44,6 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "[SECURITY] META_APP_SECRET is not configured — the Meta webhook endpoint "
             "(/api/v1/meta/webhook) will REJECT all inbound payloads until it is set."
-        )
-
-    if not (settings.RESPOND_IO_WEBHOOK_SECRET and settings.RESPOND_IO_WEBHOOK_SECRET.strip()):
-        logger.warning(
-            "[SECURITY] RESPOND_IO_WEBHOOK_SECRET is not configured — the Respond.io webhook endpoint "
-            "(/api/v1/respond-io/webhook) will REJECT all inbound payloads until it is set."
         )
 
     # Meta Page Webhook Auto-Subscription (Non-blocking background task)
@@ -165,7 +159,7 @@ app.include_router(conversations_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(moderation_router, prefix="/api/v1")
-app.include_router(respond_io_router, prefix="/api/v1")
+app.include_router(beon_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(ws_router)
 app.include_router(webhooks_router)

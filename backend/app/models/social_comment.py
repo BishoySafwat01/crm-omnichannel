@@ -35,6 +35,8 @@ class SocialComment(Base):
     likes_count: Mapped[int] = mapped_column(Integer, default=0)
     replies_count: Mapped[int] = mapped_column(Integer, default=0)
     is_direct_message_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_replied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
+    moderation_rule_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True

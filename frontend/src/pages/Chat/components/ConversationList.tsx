@@ -271,7 +271,16 @@ export const ConversationList: React.FC = () => {
       if (selectedBrandId && selectedBrandId.toLowerCase() !== 'all' && selectedBrandId !== 'الكل') {
         const convBrand = ((conv as any).brand || (conv as any).brand_name || (conv as any).brand_id || '').toLowerCase();
         const filterBrand = selectedBrandId.toLowerCase();
-        if (convBrand && convBrand !== filterBrand && !convBrand.includes(filterBrand)) {
+        const isMatched =
+          convBrand === filterBrand ||
+          convBrand.includes(filterBrand) ||
+          filterBrand.includes(convBrand) ||
+          (filterBrand.includes('lotus') && convBrand.includes('lotus')) ||
+          (filterBrand.includes('hayat') && convBrand.includes('hayat')) ||
+          ((filterBrand.includes('liora') || filterBrand.includes('luxira')) && (convBrand.includes('liora') || convBrand.includes('luxira'))) ||
+          (filterBrand.includes('loxx') && convBrand.includes('loxx')) ||
+          ((filterBrand.includes('lavva') || filterBrand.includes('lava')) && (convBrand.includes('lavva') || convBrand.includes('lava')));
+        if (!isMatched) {
           return false;
         }
       }

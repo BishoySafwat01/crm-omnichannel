@@ -179,9 +179,12 @@ async def update_moderation_settings(
 
 @router.get("/logs", response_model=list[ModerationLogResponse])
 async def get_moderation_logs(
+    page: int = 1,
+    page_size: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    return await CommentModerationService.get_logs(db)
+    logs, _ = await CommentModerationService.list_logs(db, page=page, page_size=page_size)
+    return logs
 
 
 @router.post("/simulate-ai", response_model=AiSimulationResponse)

@@ -54,9 +54,9 @@ async def test_conversation_and_message_services():
         conv = await ConversationService.create_conversation(
             session=session,
             customer_id=customer.id,
-            provider=ProviderEnum.RESPOND_IO,
+            provider=ProviderEnum.BEON,
             channel=ChannelEnum.WHATSAPP,
-            external_conversation_id="resp_conv_555",
+            external_conversation_id="beon_conv_555",
             subject="WhatsApp Chat",
         )
         assert conv.id is not None

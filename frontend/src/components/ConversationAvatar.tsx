@@ -73,41 +73,187 @@ export interface BrandObjectInfo {
   isDirect: boolean;
 }
 
+const STORE_GRADIENTS = [
+  'from-teal-600 to-teal-800',
+  'from-indigo-600 to-indigo-800',
+  'from-cyan-600 to-cyan-800',
+  'from-rose-600 to-rose-800',
+  'from-amber-600 to-amber-800',
+  'from-purple-600 to-purple-800',
+  'from-emerald-600 to-emerald-800',
+  'from-blue-600 to-blue-800',
+];
+
 export const getBrandObject = (brandId?: string | null, brandName?: string | null): BrandObjectInfo => {
-  const normId = (brandId || '').toLowerCase().trim();
-  const normName = (brandName || '').toLowerCase().trim();
+  const rawId = (brandId || '').trim();
+  const rawName = (brandName || '').trim();
+  const normId = rawId.toLowerCase();
+  const normName = rawName.toLowerCase();
+  const combined = `${normId} ${normName}`.trim();
 
-  // Find image directly from BRAND_IMAGES dictionary
-  const imageLogo = BRAND_IMAGES[normId] || BRAND_IMAGES[normName] || undefined;
-
-  if (brandId && brandId !== 'all' && brandId !== 'direct' && brandId !== 'private') {
-    const found = MOCK_BRANDS.find((b) => b.id.toLowerCase() === normId || b.name.toLowerCase() === normId);
-    if (found && found.id !== 'all') return { ...found, logo_url: found.logo_url || imageLogo, isDirect: false };
-  }
-  if (brandName && brandName.toLowerCase() !== 'all' && brandName.toLowerCase() !== 'direct' && brandName.toLowerCase() !== 'private' && brandName !== 'عام' && brandName !== 'محادثة خاصة') {
-    const found = MOCK_BRANDS.find((b) => b.name.toLowerCase() === normName || b.id.toLowerCase() === normName);
-    if (found && found.id !== 'all') return { ...found, logo_url: found.logo_url || imageLogo, isDirect: false };
-  }
-
-  if (imageLogo) {
+  // Explicit Direct Messages only
+  if (normId === 'direct' || normName === 'direct' || normId === 'private' || normName === 'private') {
     return {
-      id: brandId || 'store',
-      name: brandName || brandId || 'متجر',
-      avatar: (brandName || brandId || 'ST').substring(0, 2).toUpperCase(),
-      color: 'from-slate-700 to-slate-900',
-      logo_url: imageLogo,
+      id: 'direct',
+      name: 'شات مباشر / خاص',
+      avatar: 'DM',
+      color: 'from-slate-700 via-indigo-900 to-slate-900',
+      page_id: '',
+      isDirect: true,
+    };
+  }
+
+  // 1. Check known brands with fuzzy / alias recognition
+  if (combined.includes('lotus')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'LOTUS BLUE') || MOCK_BRANDS[3];
+    return {
+      id: rawName || 'Lotus Blue',
+      name: rawName || 'Lotus Blue',
+      avatar: 'LB',
+      color: 'from-cyan-600 to-cyan-700',
+      logo_url: BRAND_IMAGES['lotus blue'] || found?.logo_url,
       isDirect: false,
     };
   }
 
-  // Direct Private Message (Customer came directly, not under any store)
+  if (combined.includes('hayat')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'HAYAT') || MOCK_BRANDS[8];
+    return {
+      id: rawName || 'Hayat Cosmetics',
+      name: rawName || 'Hayat Cosmetics',
+      avatar: 'HY',
+      color: 'from-emerald-600 to-emerald-700',
+      logo_url: BRAND_IMAGES['hayat'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('liora') || combined.includes('luxira')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'LUXIRA' || b.id === 'LIORA') || MOCK_BRANDS[2];
+    return {
+      id: rawName || 'Liora',
+      name: rawName || 'Liora',
+      avatar: 'LX',
+      color: 'from-[#1A73E8] to-blue-600',
+      logo_url: BRAND_IMAGES['liora'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('loxx')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'LOXX KING') || MOCK_BRANDS[5];
+    return {
+      id: rawName || 'LOXX KING',
+      name: rawName || 'LOXX KING',
+      avatar: 'LK',
+      color: 'from-amber-600 to-amber-700',
+      logo_url: BRAND_IMAGES['loxx king'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('lavva') || combined.includes('lava')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'LAVVA') || MOCK_BRANDS[1];
+    return {
+      id: rawName || 'LAVVA',
+      name: rawName || 'LAVVA',
+      avatar: 'LV',
+      color: 'from-teal-600 to-teal-700',
+      logo_url: BRAND_IMAGES['lavva'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('flare')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'FLARE') || MOCK_BRANDS[4];
+    return {
+      id: rawName || 'FLARE',
+      name: rawName || 'FLARE',
+      avatar: 'FL',
+      color: 'from-orange-600 to-orange-700',
+      logo_url: BRAND_IMAGES['flare'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('nora') || combined.includes('moon')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'NORA' || b.id === 'MOON LIGHT') || MOCK_BRANDS[6];
+    return {
+      id: rawName || 'MOON LIGHT',
+      name: rawName || 'MOON LIGHT',
+      avatar: 'ML',
+      color: 'from-indigo-600 to-indigo-700',
+      logo_url: BRAND_IMAGES['nora'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('beauty')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'BEAUTY CENTER') || MOCK_BRANDS[7];
+    return {
+      id: rawName || 'BEAUTY CENTER',
+      name: rawName || 'BEAUTY CENTER',
+      avatar: 'BC',
+      color: 'from-rose-600 to-rose-700',
+      logo_url: BRAND_IMAGES['beauty center'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('finest')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'FINEST') || MOCK_BRANDS[10];
+    return {
+      id: rawName || 'FINEST',
+      name: rawName || 'FINEST',
+      avatar: 'FN',
+      color: 'from-amber-700 to-amber-800',
+      logo_url: BRAND_IMAGES['finest'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  if (combined.includes('aerobics')) {
+    const found = MOCK_BRANDS.find((b) => b.id === 'AEROBICS') || MOCK_BRANDS[11];
+    return {
+      id: rawName || 'AEROBICS',
+      name: rawName || 'AEROBICS',
+      avatar: 'AR',
+      color: 'from-sky-600 to-sky-700',
+      logo_url: BRAND_IMAGES['aerobics'] || found?.logo_url,
+      isDirect: false,
+    };
+  }
+
+  // 2. Direct lookup in MOCK_BRANDS
+  const matchedMock = MOCK_BRANDS.find(
+    (b) =>
+      b.id.toLowerCase() === normId ||
+      b.name.toLowerCase() === normName ||
+      b.id.toLowerCase() === normName ||
+      b.name.toLowerCase() === normId
+  );
+  if (matchedMock && matchedMock.id !== 'all') {
+    return { ...matchedMock, isDirect: false };
+  }
+
+  // 3. Clean dynamic store fallback (Never false DM 🔒)
+  const displayName = rawName || rawId || 'متجر';
+  const words = displayName.split(/\s+/).filter(Boolean);
+  const initials =
+    words.length >= 2
+      ? `${words[0][0]}${words[1][0]}`.toUpperCase()
+      : displayName.substring(0, 2).toUpperCase();
+
+  const colorIndex = Math.abs(
+    displayName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  ) % STORE_GRADIENTS.length;
+
   return {
-    id: 'direct',
-    name: 'شات مباشر / خاص',
-    avatar: 'DM',
-    color: 'from-slate-700 via-indigo-900 to-slate-900',
-    page_id: '',
-    isDirect: true,
+    id: rawId || displayName,
+    name: displayName,
+    avatar: initials,
+    color: STORE_GRADIENTS[colorIndex],
+    isDirect: false,
   };
 };
 

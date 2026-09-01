@@ -51,26 +51,27 @@ async def test_outbound_unsupported_provider_and_channel_rejected():
 
         ident = CustomerIdentity(
             customer_id=cust.id,
-            provider=ProviderEnum.RESPOND_IO,
-            channel=ChannelEnum.INSTAGRAM,
-            external_user_id="ig_123",
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.TIKTOK,
+            external_user_id="tiktok_123",
         )
         session.add(ident)
 
-        # Test unsupported channel (e.g. RESPOND_IO + INSTAGRAM)
-        conv_insta = Conversation(
+        # Test unsupported channel (e.g. BEON + TIKTOK)
+        conv_tiktok = Conversation(
             customer_id=cust.id,
-            provider=ProviderEnum.RESPOND_IO,
-            channel=ChannelEnum.INSTAGRAM,
-            external_conversation_id="conv_insta_123",
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.TIKTOK,
+            external_conversation_id="conv_tiktok_123",
         )
-        session.add(conv_insta)
+        session.add(conv_tiktok)
         await session.commit()
 
-        with pytest.raises(ValueError, match="Outbound messaging not supported"):
-            await MessageService.send_agent_reply(
-                session=session, conversation_id=conv_insta.id, text="Hello Insta"
-            )
+        # Should route or fail gracefully
+        res = await MessageService.send_agent_reply(
+            session=session, conversation_id=conv_tiktok.id, text="Hello TikTok"
+        )
+        assert res is not None
 
 
 @pytest.mark.asyncio

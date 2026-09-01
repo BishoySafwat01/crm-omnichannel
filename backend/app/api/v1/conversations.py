@@ -18,6 +18,7 @@ from app.models.conversation import Conversation
 from app.models.enums import ChannelEnum, ConversationStatusEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum, UserRole
 from app.models.message import Message
 from app.models.user import User
+from app.schemas.ai import AIAnalysisResponse, AIAnalysisResponse as AIAnalysisResult
 from app.schemas.conversation import (
     ConversationDetailResponse,
     ConversationResponse,
@@ -79,6 +80,20 @@ async def get_unread_summary(
             channels_map[ch] += cnt
 
         brands_map[conv_brand] = brands_map.get(conv_brand, 0) + cnt
+
+        # Also map to common standard aliases for seamless UI binding
+        norm_b = conv_brand.strip().lower()
+        if "lotus" in norm_b:
+            brands_map["LOTUS BLUE"] = brands_map.get("LOTUS BLUE", 0) + cnt
+        elif "hayat" in norm_b:
+            brands_map["HAYAT"] = brands_map.get("HAYAT", 0) + cnt
+        elif "liora" in norm_b or "luxira" in norm_b:
+            brands_map["LUXIRA"] = brands_map.get("LUXIRA", 0) + cnt
+            brands_map["LIORA"] = brands_map.get("LIORA", 0) + cnt
+        elif "loxx" in norm_b:
+            brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + cnt
+        elif "lavva" in norm_b or "lava" in norm_b:
+            brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + cnt
 
     channels_map["all"] = total_unread
 
@@ -684,12 +699,13 @@ async def trigger_immediate_sync(
 
 @router.post(
     "/{conversation_id}/ai-analyze",
+    response_model=AIAnalysisResponse,
     summary="Trigger AI Conversation Analysis & Insights",
 )
 async def analyze_conversation_ai(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Trigger AI analysis on a conversation to detect intent, sentiment, summary, and smart replies."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -698,8 +714,7 @@ async def analyze_conversation_ai(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     from app.services.ai_service import AIService
     result = await AIService.analyze_conversation(session=db, conversation=conv)
@@ -708,6 +723,7 @@ async def analyze_conversation_ai(
 
 @router.get(
     "/{conversation_id}/ai-insights",
+    response_model=AIAnalysisResponse,
     summary="Get AI Insights for Conversation",
 )
 async def get_conversation_ai_insights(
@@ -722,15 +738,14 @@ async def get_conversation_ai_insights(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
     return {
-        "conversation_id": str(conv.id),
+        "conversation_id": conv.id,
         "ai_summary": conv.ai_summary,
         "detected_intent": conv.detected_intent,
         "detected_sentiment": conv.detected_sentiment,
         "ai_suggested_replies": conv.ai_suggested_replies or [],
-        "priority": conv.priority,
+        "updated_priority": conv.priority or "normal",
     }
 
 

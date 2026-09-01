@@ -10,8 +10,9 @@ from app.services.comment_moderation_service import CommentModerationService
 async def test_get_or_create_default_settings():
     """Verify default moderation settings are generated properly in database."""
     async with AsyncSessionLocal() as session:
-        settings = await CommentModerationService.get_or_create_settings(session, brand="LUXIRA_TEST")
-        assert settings.brand == "LUXIRA_TEST"
+        brand_name = f"BRAND_{uuid.uuid4().hex[:8]}"
+        settings = await CommentModerationService.get_or_create_settings(session, brand=brand_name)
+        assert settings.brand == brand_name
         assert settings.auto_delete_negative is True
         assert settings.auto_reply_inquiries is True
         assert "نصابين" in settings.negative_keywords

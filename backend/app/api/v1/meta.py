@@ -36,30 +36,36 @@ async def get_meta_integrations_status():
     wa_waba_id = settings.WHATSAPP_WABA_ID
     ig_acc_id = settings.INSTAGRAM_ACCOUNT_ID
 
+    meta_pages = settings.get_meta_pages()
+    has_beon_key = bool(settings.BEON_API_KEY and settings.BEON_API_KEY.strip())
     has_page = bool(page_id and page_id.strip())
     has_token = bool(page_token and page_token.strip())
 
     return {
+        "direct_meta_enabled": bool(settings.ENABLE_DIRECT_META),
+        "active_provider": "HYBRID_META_BEON" if settings.ENABLE_DIRECT_META else "BEON",
+        "beon_connected": has_beon_key,
+        "meta_pages_count": len(meta_pages),
         "whatsapp": {
-            "connected": bool(wa_phone_id and wa_waba_id),
+            "connected": bool(wa_phone_id and wa_waba_id) or has_beon_key,
             "phone_number_id_configured": bool(wa_phone_id and wa_phone_id.strip()),
             "waba_id_configured": bool(wa_waba_id and wa_waba_id.strip()),
-            "status": "ACTIVE" if (wa_phone_id and wa_waba_id) else "UNCONFIGURED",
+            "status": "ACTIVE" if (wa_phone_id and wa_waba_id) or has_beon_key else "UNCONFIGURED",
         },
         "instagram": {
-            "connected": bool(ig_acc_id and (has_token or has_page)),
+            "connected": bool(ig_acc_id and (has_token or has_page)) or has_beon_key,
             "page_id_configured": bool(ig_acc_id and str(ig_acc_id).strip()),
             "username": "@luxira.official" if ig_acc_id else "غير مهيأ",
-            "status": "VALID" if ig_acc_id else "UNCONFIGURED",
+            "status": "VALID" if ig_acc_id or has_beon_key else "UNCONFIGURED",
         },
         "messenger": {
-            "connected": has_page,
+            "connected": has_page or has_beon_key,
             "page_id_configured": has_page,
-            "pages": ["LAVVA", "LUXIRA"],
-            "status": "SUBSCRIBED" if has_page else "UNCONFIGURED",
+            "pages": [p.get("name", "Page") for p in meta_pages.values()] if meta_pages else ["LUXIRA"],
+            "status": "SUBSCRIBED" if has_page or has_beon_key else "UNCONFIGURED",
         },
         "webhook": {
-            "url": "https://api.luxira.com/api/v1/meta/webhook",
+            "url": settings.META_WEBHOOK_URL if hasattr(settings, "META_WEBHOOK_URL") else "/api/v1/meta/webhook",
             "verify_token_configured": bool(verify_token and verify_token.strip()),
             "secured": True,
         },
@@ -205,15 +211,34 @@ async def get_meta_conversations_preview():
         )
 
 
-@router.post("/import", response_model=MigrationJobResponse, summary="Execute Meta Conversation History Import")
+@router.get("/pages", summary="List All Configured Meta Pages")
+async def get_configured_meta_pages():
+    """Returns the list of all configured Meta Pages and their connection details."""
+    pages = settings.get_meta_pages()
+    result = []
+    for pid, pdata in pages.items():
+        result.append({
+            "id": pid,
+            "name": pdata.get("name", f"Page {pid}"),
+            "category": pdata.get("category", "Business"),
+            "has_token": bool(pdata.get("access_token")),
+        })
+    return result
+
+
+@router.post("/import", summary="Execute Meta Conversation History Import")
 async def import_meta_history(
+    page_id: Optional[str] = Query(None, description="Specific page_id to import, or 'all' for batch sync across all configured pages"),
     db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin),
 ):
-    """Run historical Messenger conversation import into PostgreSQL."""
+    """Run historical Messenger conversation import into PostgreSQL for a single page or all configured pages."""
     try:
-        job = await MetaImportService.run_import(session=db)
-        return job
+        if page_id == "all":
+            jobs = await MetaImportService.sync_all_configured_pages(session=db)
+            return {"status": "success", "synced_pages_count": len(jobs), "jobs": [MigrationJobResponse.model_validate(j) for j in jobs]}
+        job = await MetaImportService.run_import(session=db, page_id=page_id)
+        return MigrationJobResponse.model_validate(job)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -414,7 +439,16 @@ async def receive_meta_webhook(
             detail="Invalid JSON payload structure.",
         )
 
-    # 3. Process Webhook Event
+    # 3. Multi-Object Webhook Acceptance Guard (page, user, instagram, whatsapp_business_account, permissions)
+    obj_type = payload.get("object")
+    valid_objects = {"page", "user", "instagram", "whatsapp_business_account", "permissions"}
+    if obj_type and obj_type not in valid_objects:
+        logger.warning(
+            "Meta webhook received unlisted object type '%s'. Proceeding with flexible normalization.",
+            obj_type,
+        )
+
+    # 4. Process Webhook Event
     try:
         res = await MetaImportService.process_inbound_webhook(
             session=db, raw_payload=payload

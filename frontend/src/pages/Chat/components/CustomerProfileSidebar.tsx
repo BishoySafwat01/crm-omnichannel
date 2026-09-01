@@ -272,17 +272,17 @@ export const CustomerProfileSidebar: React.FC = () => {
 
           {/* Centered Avatar & Status */}
           <div className="flex flex-col items-center text-center py-1">
-            <div className="mb-2">
-              <ConversationAvatar
-                customerName={customer.display_name || 'عميل'}
-                customerAvatarUrl={customer.avatar_url}
-                brandId={activeConversation?.brand_id}
-                brandName={activeConversation?.brand || activeConversation?.brand_name}
-                channel={activeConversation?.channel}
-                size="xl"
-                showPresenceDot={true}
-                presenceDotColor={presence.dotColor}
-                presenceStatusText={presence.statusText}
+            <div className="relative mb-2">
+              <UserAvatar
+                name={customer.display_name || 'عميل'}
+                avatarUrl={customer.avatar_url}
+                size="lg"
+                className="w-20 h-20 text-2xl font-bold rounded-full ring-4 ring-indigo-500/20"
+              />
+              {/* Presence Dot */}
+              <span
+                className={`absolute bottom-0 right-0 w-4 h-4 border-2 border-white rounded-full ${presence.dotColor}`}
+                title={presence.statusText}
               />
             </div>
 
