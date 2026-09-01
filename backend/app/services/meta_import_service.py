@@ -48,20 +48,24 @@ class MetaImportService:
         return err_str
 
     @staticmethod
-    async def fetch_and_cache_customer_profile(psid: str) -> dict[str, Any]:
+    async def fetch_and_cache_customer_profile(psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
         if not psid or not str(psid).strip() or psid == "unknown_customer" or psid == "system":
             return {}
 
+        configured_pages = settings.get_meta_pages()
         valid_page_ids = {
             p.strip()
-            for p in [
-                settings.META_PAGE_ID,
-                settings.WHATSAPP_WABA_ID,
-                settings.WHATSAPP_PHONE_NUMBER_ID,
-                settings.INSTAGRAM_ACCOUNT_ID,
-                getattr(settings, "META_APP_ID", None),
-            ]
-            if p and p.strip()
+            for p in (
+                list(configured_pages.keys())
+                + [
+                    settings.META_PAGE_ID,
+                    settings.WHATSAPP_WABA_ID,
+                    settings.WHATSAPP_PHONE_NUMBER_ID,
+                    settings.INSTAGRAM_ACCOUNT_ID,
+                    getattr(settings, "META_APP_ID", None),
+                ]
+            )
+            if p and str(p).strip()
         }
         if str(psid).strip() in valid_page_ids:
             return {}
@@ -79,7 +83,8 @@ class MetaImportService:
         avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
         os.makedirs(avatars_dir, exist_ok=True)
 
-        url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={settings.META_PAGE_ACCESS_TOKEN}"
+        token = settings.get_page_token(page_id)
+        url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={token}"
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 res = await client.get(url)
@@ -91,7 +96,7 @@ class MetaImportService:
                     if pic_url:
                         pic_res = await client.get(
                             pic_url,
-                            headers={"Authorization": f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"},
+                            headers={"Authorization": f"Bearer {token}"},
                         )
                         if pic_res.status_code == 200 and len(pic_res.content) > 500:
                             dest_file = f"avatar_{psid}.jpg"
@@ -119,8 +124,12 @@ class MetaImportService:
         page_id: Optional[str] = None,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
         provider_adapter: Optional[MetaProvider] = None,
+        since_days: Optional[int] = 7,
     ) -> MigrationJob:
-        adapter = provider_adapter or MetaProvider()
+        from app.integrations.meta.client import MetaClient
+
+        target_page_id = page_id or settings.META_PAGE_ID
+        adapter = provider_adapter or MetaProvider(client=MetaClient(page_id=target_page_id))
 
         # 1. Validate configuration & page access
         try:
@@ -143,7 +152,7 @@ class MetaImportService:
             )
             return job
 
-        target_page_id = page_info.get("page_id") or page_id
+        target_page_id = page_info.get("page_id") or target_page_id
 
         # 2. Create MigrationJob
         job = await MigrationService.create_migration_job(
@@ -186,7 +195,7 @@ class MetaImportService:
                 profile_info = {}
                 if cust_ext_id and cust_ext_id != "unknown_customer":
                     try:
-                        profile_info = await MetaImportService.fetch_and_cache_customer_profile(cust_ext_id)
+                        profile_info = await MetaImportService.fetch_and_cache_customer_profile(cust_ext_id, page_id=target_page_id)
                     except Exception:
                         profile_info = {}
 
@@ -220,9 +229,12 @@ class MetaImportService:
                     external_conversation_id=norm_conv.external_conversation_id,
                 )
 
+                brand_name = settings.get_page_name(target_page_id)
                 if existing_conv:
                     conv = existing_conv
                     conv.last_message_at = norm_conv.last_message_at
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+                        conv.brand = brand_name
                     await session.commit()
                 else:
                     conv = await ConversationService.create_conversation(
@@ -233,11 +245,14 @@ class MetaImportService:
                         external_conversation_id=norm_conv.external_conversation_id,
                         subject=norm_conv.subject,
                         status=norm_conv.status,
+                        brand=brand_name,
                     )
 
-                # Fetch Messages for this conversation
+                # Fetch Messages for this conversation (time-bounded to last 7 days)
                 norm_messages = await adapter.get_all_messages(
-                    conversation_id=norm_conv.external_conversation_id
+                    conversation_id=norm_conv.external_conversation_id,
+                    page_id=target_page_id,
+                    since_days=since_days,
                 )
                 job.total_messages += len(norm_messages)
                 await session.commit()
@@ -299,6 +314,86 @@ class MetaImportService:
         )
 
         return job
+
+    @classmethod
+    async def discover_and_cache_page_profile(cls, page_id: str) -> dict[str, Any]:
+        """Queries Meta Graph API for page name, category, and picture, caching the avatar locally."""
+        from app.integrations.meta.client import MetaClient
+
+        client = MetaClient(page_id=page_id)
+        metadata = await client.get_page_metadata(page_id=page_id)
+        avatar_url = metadata.get("picture_url")
+        local_avatar = None
+        if avatar_url:
+            local_avatar = await cls.download_and_cache_media(avatar_url, media_type="image")
+
+        return {
+            "page_id": metadata.get("id", page_id),
+            "name": metadata.get("name"),
+            "category": metadata.get("category"),
+            "avatar_url": local_avatar or avatar_url,
+            "raw": metadata.get("raw"),
+        }
+
+    @classmethod
+    async def subscribe_all_configured_pages(cls) -> list[dict[str, Any]]:
+        """Programmatically subscribes all configured pages to webhook events."""
+        from app.integrations.meta.client import MetaClient
+
+        pages = settings.get_meta_pages()
+        results: list[dict[str, Any]] = []
+        for pid, pdata in pages.items():
+            token = pdata.get("access_token")
+            name = pdata.get("name", f"Page {pid}")
+            client = MetaClient(page_id=pid, access_token=token)
+            sub_res = await client.subscribe_page_to_app(
+                page_id=pid,
+                access_token=token,
+                subscribed_fields=[
+                    "messages",
+                    "messaging_postbacks",
+                    "message_deliveries",
+                    "message_reads",
+                    "message_reactions",
+                    "feed",
+                ],
+            )
+            results.append(
+                {
+                    "page_id": pid,
+                    "name": name,
+                    "success": sub_res.get("success", False),
+                    "details": sub_res.get("details"),
+                    "error": sub_res.get("error"),
+                }
+            )
+        return results
+
+    @classmethod
+    async def sync_all_configured_pages(
+        cls,
+        session: AsyncSession,
+        channel: ChannelEnum = ChannelEnum.MESSENGER,
+        since_days: Optional[int] = 7,
+    ) -> list[MigrationJob]:
+        """Iterates through all pages in settings.get_meta_pages() and executes historical migration."""
+        jobs: list[MigrationJob] = []
+        pages = settings.get_meta_pages()
+        logger.info("[MetaMultiSync] Starting batch historical synchronization for %d configured page(s)...", len(pages))
+        for pid, pdata in pages.items():
+            page_name = pdata.get("name", "Page")
+            logger.info("[MetaMultiSync] Syncing page: %s (ID: %s)...", page_name, pid)
+            try:
+                job = await cls.run_import(
+                    session=session, page_id=pid, channel=channel, since_days=since_days
+                )
+                jobs.append(job)
+                logger.info("[MetaMultiSync] Page %s synced: %d convs, %d msgs (status: %s)",
+                            page_name, job.processed_conversations, job.processed_messages, job.status)
+            except Exception as exc:
+                sanitized_err = cls._sanitize_error(str(exc))
+                logger.error("[MetaMultiSync] Migration failed for page %s: %s", pid, sanitized_err)
+        return jobs
 
     @staticmethod
     async def download_and_cache_media(url: str, media_type: str = "file") -> str:
@@ -435,22 +530,29 @@ class MetaImportService:
             raise ValueError("Invalid Meta webhook payload structure.")
 
         obj_type = raw_payload.get("object")
-        valid_objects = ["page", "instagram", "whatsapp_business_account"]
+        valid_objects = ["page", "user", "instagram", "whatsapp_business_account", "permissions"]
         if obj_type not in valid_objects:
-            logger.error("Meta webhook error: object '%s' not in valid objects %s", obj_type, valid_objects)
+            logger.info(
+                "Meta webhook received object '%s' (extended beyond default %s), processing entries gracefully.",
+                obj_type,
+                valid_objects,
+            )
 
         entries = raw_payload.get("entry", [])
         if not isinstance(entries, list) or len(entries) == 0:
             logger.warning("Meta webhook: received empty entry list")
             return {"status": "processed", "message": "Ignored empty Meta webhook entry list."}
 
+        configured_pages = settings.get_meta_pages()
         valid_page_ids = {
-            p.strip() for p in [
-                settings.META_PAGE_ID,
-                settings.WHATSAPP_WABA_ID,
-                settings.WHATSAPP_PHONE_NUMBER_ID,
-                settings.INSTAGRAM_ACCOUNT_ID,
-            ] if p and p.strip()
+            p.strip() for p in (
+                list(configured_pages.keys()) + [
+                    settings.META_PAGE_ID,
+                    settings.WHATSAPP_WABA_ID,
+                    settings.WHATSAPP_PHONE_NUMBER_ID,
+                    settings.INSTAGRAM_ACCOUNT_ID,
+                ]
+            ) if p and str(p).strip()
         }
         total_processed = 0
         created_count = 0
@@ -460,8 +562,9 @@ class MetaImportService:
         for entry in entries:
             entry_page_id = str(entry.get("id", ""))
             if valid_page_ids and entry_page_id and entry_page_id.strip() not in valid_page_ids:
-                logger.warning("Meta webhook: ignoring entry for ID '%s' (valid IDs: %s)", entry_page_id, valid_page_ids)
-                continue
+                if obj_type not in ("user", "instagram", "permissions"):
+                    logger.warning("Meta webhook: ignoring entry for ID '%s' (valid IDs: %s)", entry_page_id, valid_page_ids)
+                    continue
 
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
             items = []
@@ -598,6 +701,10 @@ class MetaImportService:
                     session=session,
                     identity=identity,
                 )
+                brand_name = settings.get_page_name(entry_page_id)
+                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+                    conv.brand = brand_name
+                    await session.commit()
 
                 if norm_event.metadata_ and norm_event.metadata_.get("referral"):
                     logger.info("Referral attribution detected: %s", norm_event.metadata_["referral"])

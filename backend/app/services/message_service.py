@@ -9,8 +9,9 @@ import logging
 
 from app.core.config import settings
 from app.core.country_detector import CountryDetector
+from app.integrations.base import BaseMessagingProvider
+from app.integrations.factory import ProviderFactory
 from app.integrations.meta import MetaProvider
-from app.integrations.respond_io import RespondIoProvider
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
@@ -185,27 +186,26 @@ class MessageService:
         if conv.customer and getattr(conv.customer, "is_blocked", False):
             raise ValueError("العميل محظور حالياً من قِبل الإدارة. يرجى إلغاء الحظر أولاً لتتمكن من إرسال الرسائل.")
 
-        # Validate provider & channel and resolve adapter
-        if conv.provider == ProviderEnum.META:
-            valid_channels = [ChannelEnum.MESSENGER, ChannelEnum.INSTAGRAM, ChannelEnum.WHATSAPP]
-            if conv.channel not in valid_channels:
-                raise ValueError(
-                    f"Outbound messaging not supported for provider '{conv.provider.value}' and channel '{conv.channel.value}'."
-                )
-            adapter = provider_adapter or MetaProvider()
-            default_sender = settings.META_PAGE_ID
-        elif conv.provider == ProviderEnum.RESPOND_IO:
-            valid_channels = [ChannelEnum.WHATSAPP, ChannelEnum.MESSENGER]
-            if conv.channel not in valid_channels:
-                raise ValueError(
-                    f"Outbound messaging not supported for provider '{conv.provider.value}' and channel '{conv.channel.value}'."
-                )
-            adapter = provider_adapter or RespondIoProvider()
-            default_sender = "respond_io_agent"
-        else:
-            raise ValueError(
-                f"Outbound messaging not supported for provider '{conv.provider.value}'."
-            )
+        # Resolve page_id from conversation context
+        conv_page_id = None
+        conv_meta = getattr(conv, "metadata_", None) or getattr(conv, "metadata", None)
+        if conv_meta and isinstance(conv_meta, dict):
+            conv_page_id = conv_meta.get("page_id")
+        if not conv_page_id and getattr(conv, "sender_external_id", None):
+            conv_page_id = getattr(conv, "sender_external_id", None)
+        if not conv_page_id and conv.brand:
+            for pid, pdata in settings.get_meta_pages().items():
+                if pdata.get("name") == conv.brand:
+                    conv_page_id = pid
+                    break
+
+        # Dynamically resolve messaging adapter via ProviderFactory
+        adapter = provider_adapter or ProviderFactory.get_provider(
+            provider_name=conv.provider,
+            channel=conv.channel,
+            page_id=conv_page_id,
+        )
+        default_sender = conv_page_id or settings.META_PAGE_ID or "crm_agent"
 
         # Resolve CustomerIdentity for provider/channel
         identity_stmt = select(CustomerIdentity).where(
@@ -292,30 +292,48 @@ class MessageService:
                     if attachments:
                         attachments[0]["url"] = m4a_url
 
-            outbound_res = await adapter.send_outbound_attachment(
-                recipient_external_id=clean_recipient,
-                file_path=file_path if os.path.exists(file_path) else att_url,
-                attachment_type=att_type,
-                tag=tag,
-            )
+            try:
+                outbound_res = await adapter.send_outbound_attachment(
+                    recipient_external_id=clean_recipient,
+                    file_path=file_path if os.path.exists(file_path) else att_url,
+                    attachment_type=att_type,
+                    page_id=conv_page_id,
+                    tag=tag,
+                )
+            except TypeError:
+                outbound_res = await adapter.send_outbound_attachment(
+                    recipient_external_id=clean_recipient,
+                    file_path=file_path if os.path.exists(file_path) else att_url,
+                    attachment_type=att_type,
+                    tag=tag,
+                )
         elif provider_adapter is not None:
             if tag:
                 try:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
+                        page_id=conv_page_id,
                         tag=tag,
                     )
                 except TypeError:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
+                        tag=tag,
                     )
             else:
-                outbound_res = await adapter.send_outbound_message(
-                    recipient_external_id=clean_recipient,
-                    text=clean_text,
-                )
+                try:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                        page_id=conv_page_id,
+                    )
+                except TypeError:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                    )
         elif conv.channel == ChannelEnum.INSTAGRAM:
             from app.services.meta_instagram_service import MetaInstagramService
             outbound_res = await MetaInstagramService.send_text_message(
@@ -343,18 +361,27 @@ class MessageService:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
+                        page_id=conv_page_id,
                         tag=tag,
                     )
                 except TypeError:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
+                        tag=tag,
                     )
             else:
-                outbound_res = await adapter.send_outbound_message(
-                    recipient_external_id=clean_recipient,
-                    text=clean_text,
-                )
+                try:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                        page_id=conv_page_id,
+                    )
+                except TypeError:
+                    outbound_res = await adapter.send_outbound_message(
+                        recipient_external_id=clean_recipient,
+                        text=clean_text,
+                    )
 
         ext_msg_id = outbound_res.get("external_message_id") if isinstance(outbound_res, dict) else None
 

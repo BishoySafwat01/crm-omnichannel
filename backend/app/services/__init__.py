@@ -3,7 +3,6 @@ from app.services.customer_service import CustomerService
 from app.services.message_service import MessageService
 from app.services.meta_import_service import MetaImportService
 from app.services.migration_service import MigrationService
-from app.services.respond_io_import_service import RespondIoImportService
 
 __all__ = [
     "CustomerService",
@@ -11,5 +10,4 @@ __all__ = [
     "MessageService",
     "MigrationService",
     "MetaImportService",
-    "RespondIoImportService",
 ]

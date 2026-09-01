@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -49,11 +49,64 @@ class Settings(BaseSettings):
     INSTAGRAM_ACCOUNT_ID: str | None = "17841405938201948"
     META_ENABLE_LIVE_POLLING: bool = False
     META_POLL_INTERVAL_SECONDS: int = 300
+    META_PAGES_CONFIG: str = "{}"
 
-    # Respond.io Integration Settings
-    RESPOND_IO_API_TOKEN: str | None = None
-    RESPOND_IO_API_BASE_URL: str = "https://api.respond.io/v2"
-    RESPOND_IO_WEBHOOK_SECRET: str | None = ""
+    def get_meta_pages(self) -> dict[str, dict[str, Any]]:
+        """Parses META_PAGES_CONFIG JSON string and merges legacy META_PAGE_ID if not present."""
+        pages: dict[str, dict[str, Any]] = {}
+        if self.META_PAGES_CONFIG and self.META_PAGES_CONFIG.strip():
+            try:
+                parsed = json.loads(self.META_PAGES_CONFIG)
+                if isinstance(parsed, dict):
+                    for pid, pdata in parsed.items():
+                        if isinstance(pdata, dict):
+                            pages[str(pid).strip()] = {
+                                "name": pdata.get("name", f"Page {pid}"),
+                                "access_token": pdata.get("access_token") or pdata.get("token") or self.META_PAGE_ACCESS_TOKEN or "",
+                                "category": pdata.get("category", "Business"),
+                            }
+                        elif isinstance(pdata, str):
+                            pages[str(pid).strip()] = {
+                                "name": f"Page {pid}",
+                                "access_token": pdata or self.META_PAGE_ACCESS_TOKEN or "",
+                                "category": "Business",
+                            }
+            except Exception:
+                pass
+
+        if self.META_PAGE_ID and str(self.META_PAGE_ID).strip() not in pages:
+            pages[str(self.META_PAGE_ID).strip()] = {
+                "name": "Default Business Page",
+                "access_token": self.META_PAGE_ACCESS_TOKEN or "",
+                "category": "Business",
+            }
+        return pages
+
+    def get_page_token(self, page_id: str | None = None) -> str:
+        """Returns the specific access token for the given page_id, falling back to META_PAGE_ACCESS_TOKEN."""
+        if page_id:
+            pid = str(page_id).strip()
+            pages = self.get_meta_pages()
+            if pid in pages and pages[pid].get("access_token"):
+                return pages[pid]["access_token"]
+        return self.META_PAGE_ACCESS_TOKEN or ""
+
+    def get_page_name(self, page_id: str | None = None) -> str:
+        """Returns the page name for the given page_id."""
+        if page_id:
+            pid = str(page_id).strip()
+            pages = self.get_meta_pages()
+            if pid in pages and pages[pid].get("name"):
+                return pages[pid]["name"]
+            return f"Page {pid}"
+        return "Default Business Page"
+
+    # Provider Switching & BeOn V3 Omnichannel Settings
+    ENABLE_DIRECT_META: bool = False
+    DEFAULT_PROVIDER: str = "BEON"
+    BEON_API_KEY: str = "ZUiczQBL4Ymh7E6qjkNS"
+    BEON_API_BASE_URL: str = "https://v3.api.beon.chat/api"
+    BEON_WEBHOOK_SECRET: str | None = None
 
     # Groq AI Copilot Settings
     GROQ_API_KEY: str | None = None

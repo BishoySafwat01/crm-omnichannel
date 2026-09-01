@@ -5,6 +5,8 @@ import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
+import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
+import { getBrandObject } from '../ConversationAvatar';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
@@ -13,6 +15,8 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
   const {
+    selectedProvider,
+    setSelectedProvider,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -27,6 +31,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     setIsIntegrationsModalOpen,
     unreadSummary,
     fetchUnreadSummary,
+    conversations,
   } = useCrmStore();
   const { user, logout } = useAuthStore();
 
@@ -89,7 +94,75 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   const isUserAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
 
-  const selectedBrandObj = MOCK_BRANDS.find((b) => b.id === selectedBrandId) || MOCK_BRANDS[0];
+  const dynamicBrands = React.useMemo(() => {
+    const list: { id: string; name: string; avatar: string; logo_url?: string; color: string }[] = [
+      { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800' },
+    ];
+    const seen = new Set<string>(['all']);
+
+    // 1. Gather all active brands from unreadSummary & conversations
+    const activeBrandNames = new Set<string>();
+    if (unreadSummary?.brands) {
+      Object.keys(unreadSummary.brands).forEach((b) => {
+        if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
+      });
+    }
+    conversations.forEach((c) => {
+      const b = c.brand || c.brand_name;
+      if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
+    });
+
+    // 2. Add active brands with resolved logos
+    activeBrandNames.forEach((bName) => {
+      const norm = bName.toLowerCase();
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        const obj = getBrandObject(bName, bName);
+        list.push({
+          id: bName,
+          name: obj.name || bName,
+          avatar: obj.avatar,
+          logo_url: obj.logo_url,
+          color: obj.color,
+        });
+      }
+    });
+
+    // 3. Append remaining standard mock brands if not already present
+    MOCK_BRANDS.forEach((mb) => {
+      const norm = mb.id.toLowerCase();
+      if (!seen.has(norm) && mb.id !== 'all') {
+        seen.add(norm);
+        list.push({
+          id: mb.id,
+          name: mb.name,
+          avatar: mb.avatar,
+          logo_url: mb.logo_url,
+          color: mb.color || 'from-slate-700 to-slate-800',
+        });
+      }
+    });
+
+    return list;
+  }, [unreadSummary?.brands, conversations]);
+
+  const selectedBrandObj = React.useMemo(() => {
+    if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
+      return dynamicBrands[0];
+    }
+    const found = dynamicBrands.find(
+      (b) => b.id.toLowerCase() === selectedBrandId.toLowerCase() || b.name.toLowerCase() === selectedBrandId.toLowerCase()
+    );
+    if (found) return found;
+    const resolved = getBrandObject(selectedBrandId, selectedBrandId);
+    return {
+      id: selectedBrandId,
+      name: resolved.name || selectedBrandId,
+      avatar: resolved.avatar,
+      logo_url: resolved.logo_url,
+      color: resolved.color,
+    };
+  }, [dynamicBrands, selectedBrandId]);
 
   return (
     <header className="h-13 my-2 mx-4 px-5 bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex items-center justify-between shrink-0 relative z-30 transition-all">
@@ -195,9 +268,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             </button>
 
             {isBrandDropdownOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-48 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
-                {MOCK_BRANDS.map((b) => {
-                  const brandUnread = unreadSummary?.brands?.[b.id] || 0;
+              <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/98 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 scrollbar-none">
+                {dynamicBrands.map((b) => {
+                  const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
                   return (
                     <button
                       key={b.id}
@@ -211,16 +284,18 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                           : 'text-slate-700 hover:bg-slate-50 font-medium'
                       }`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         {b.logo_url ? (
-                          <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover" />
+                          <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
                         ) : (
-                          <span className="w-2 h-2 rounded-full bg-slate-400" />
+                          <div className={`w-4 h-4 rounded-full bg-gradient-to-tr ${b.color} text-white flex items-center justify-center text-[8px] font-bold shrink-0`}>
+                            {b.avatar?.substring(0, 2) || 'ST'}
+                          </div>
                         )}
-                        <span>{b.name}</span>
+                        <span className="truncate">{b.name}</span>
                       </div>
                       {brandUnread > 0 && (
-                        <span className="bg-[#1A73E8] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+                        <span className="bg-[#1A73E8] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0">
                           {brandUnread}
                         </span>
                       )}
@@ -230,6 +305,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </div>
             )}
           </div>
+
+          {/* Provider Filter Switcher */}
+          <select
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value as 'all' | 'beon' | 'meta')}
+            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
+          >
+            <option value="all">⚡ كل المزودين</option>
+            <option value="beon">🚀 مزود BeOn</option>
+            <option value="meta">🌐 ميتا مباشر</option>
+          </select>
 
           {/* Clean Channel Dropdown Selector */}
           <select
@@ -295,6 +381,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           <Share2 className="w-3.5 h-3.5 text-white" />
           <span>نشر منشور</span>
         </button>
+
+        {/* Provider Mode Status Badge (Embedded Authenticated Indicator) */}
+        <ProviderStatusIndicator />
 
         {/* User Profile & Logout */}
         {user && (

@@ -118,6 +118,7 @@ const areMessagesEqual = (a: Message[] | undefined, b: Message[]): boolean => {
 };
 
 interface CrmState {
+  selectedProvider: 'all' | 'beon' | 'meta';
   selectedBrandId: string;
   selectedChannel: ChannelFilterType;
   selectedCountry: string;
@@ -138,6 +139,9 @@ interface CrmState {
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
   isFetchingMore: boolean;
+  conversationsPage: number;
+  hasMoreConversations: boolean;
+  isLoadingMoreConversations: boolean;
   draftText: string;
   error: string | null;
   unreadSummary: UnreadSummary;
@@ -149,6 +153,7 @@ interface CrmState {
   forwardingMessage: Message | null;
 
   // Actions
+  setSelectedProvider: (provider: 'all' | 'beon' | 'meta') => void;
   setSelectedBrandId: (brandId: string) => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
   setSelectedCountry: (country: string) => void;
@@ -163,6 +168,7 @@ interface CrmState {
   setSelectedMetaTag: (tag: MetaMessageTag) => void;
   setDraftText: (text: string) => void;
   fetchConversations: () => Promise<void>;
+  loadMoreConversations: () => Promise<void>;
   fetchUnreadSummary: () => Promise<void>;
   markConversationAsRead: (conversationId: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
@@ -199,6 +205,7 @@ interface CrmState {
 }
 
 export const useCrmStore = create<CrmState>((set, get) => ({
+  selectedProvider: 'all',
   selectedBrandId: 'all',
   selectedChannel: 'all',
   selectedCountry: 'all',
@@ -219,6 +226,9 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   isLoadingConversations: false,
   isLoadingMessages: false,
   isFetchingMore: false,
+  conversationsPage: 1,
+  hasMoreConversations: true,
+  isLoadingMoreConversations: false,
   draftText: '',
   error: null,
   unreadSummary: {
@@ -257,6 +267,11 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   setReplyingToMessage: (msg) => set({ replyingToMessage: msg }),
   setEditingMessage: (msg) => set({ editingMessage: msg }),
   setIsForwardModalOpen: (open, msg) => set({ isForwardModalOpen: open, forwardingMessage: msg || null }),
+
+  setSelectedProvider: (provider) => {
+    set({ selectedProvider: provider });
+    get().fetchConversations();
+  },
 
   setSelectedBrandId: (brandId) => {
     set({ selectedBrandId: brandId });
@@ -397,18 +412,34 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       const selectedBrand = get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
-      const raw = await getConversationsDirect(selectedBrand, selectedChannel, selectedCountry, undefined);
+      const selectedProvider = get().selectedProvider;
+      const raw = await getConversationsDirect(
+        selectedBrand,
+        selectedChannel,
+        selectedCountry,
+        undefined,
+        1,
+        50,
+        selectedProvider
+      );
 
       let items: Conversation[] = [];
+      let total = 0;
       if (Array.isArray(raw)) {
         items = raw;
+        total = raw.length;
       } else if (raw && Array.isArray((raw as any).items)) {
         items = (raw as any).items;
+        total = (raw as any).total || (raw as any).items.length;
       } else if (raw && Array.isArray((raw as any).data)) {
         items = (raw as any).data;
+        total = (raw as any).total || (raw as any).data.length;
       } else if (raw && Array.isArray((raw as any).conversations)) {
         items = (raw as any).conversations;
+        total = (raw as any).total || (raw as any).conversations.length;
       }
+
+      const hasMore = items.length >= 50 && (total === 0 || items.length < total);
 
       if (items.length > 0) {
         const currentActive = get().activeConversationId;
@@ -437,16 +468,14 @@ export const useCrmStore = create<CrmState>((set, get) => ({
           })
         );
 
-        if (!areConversationsEqual(currentConvs, mergedItems) || get().activeConversationId !== validActive) {
-          set({
-            conversations: mergedItems,
-            isLoadingConversations: false,
-            activeConversationId: validActive,
-            error: null,
-          });
-        } else if (get().isLoadingConversations) {
-          set({ isLoadingConversations: false });
-        }
+        set({
+          conversations: mergedItems,
+          conversationsPage: 1,
+          hasMoreConversations: hasMore,
+          isLoadingConversations: false,
+          activeConversationId: validActive,
+          error: null,
+        });
 
         if (validActive) {
           get().fetchMessages(validActive);
@@ -454,6 +483,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       } else {
         set({
           conversations: [],
+          conversationsPage: 1,
+          hasMoreConversations: false,
           activeConversationId: null,
           isLoadingConversations: false,
           error: null,
@@ -461,6 +492,71 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       }
     } catch (err: any) {
       console.warn('[Store] Live fetch error, keeping existing state:', err);
+      set({ isLoadingConversations: false });
+    }
+  },
+
+  loadMoreConversations: async () => {
+    const {
+      hasMoreConversations,
+      isLoadingMoreConversations,
+      conversationsPage,
+      selectedBrandId,
+      selectedChannel,
+      selectedCountry,
+      selectedProvider,
+      conversations,
+    } = get();
+
+    if (!hasMoreConversations || isLoadingMoreConversations) return;
+
+    set({ isLoadingMoreConversations: true });
+    try {
+      const nextPage = conversationsPage + 1;
+      const raw = await getConversationsDirect(
+        selectedBrandId,
+        selectedChannel,
+        selectedCountry,
+        undefined,
+        nextPage,
+        50,
+        selectedProvider
+      );
+
+      let newItems: Conversation[] = [];
+      let total = 0;
+      if (Array.isArray(raw)) {
+        newItems = raw;
+        total = raw.length;
+      } else if (raw && Array.isArray((raw as any).items)) {
+        newItems = (raw as any).items;
+        total = (raw as any).total || (raw as any).items.length;
+      } else if (raw && Array.isArray((raw as any).data)) {
+        newItems = (raw as any).data;
+        total = (raw as any).total || (raw as any).data.length;
+      }
+
+      if (newItems.length > 0) {
+        const seenIds = new Set(conversations.map((c) => c.id));
+        const uniqueIncoming = newItems.filter((c) => !seenIds.has(c.id));
+        const combined = sortConversationsByLatest([...conversations, ...uniqueIncoming]);
+        const hasMore = newItems.length >= 50 && (total === 0 || combined.length < total);
+
+        set({
+          conversations: combined,
+          conversationsPage: nextPage,
+          hasMoreConversations: hasMore,
+          isLoadingMoreConversations: false,
+        });
+      } else {
+        set({
+          hasMoreConversations: false,
+          isLoadingMoreConversations: false,
+        });
+      }
+    } catch (err) {
+      console.warn('[Store] loadMoreConversations error:', err);
+      set({ isLoadingMoreConversations: false });
     }
   },
 
@@ -1384,25 +1480,38 @@ export const useCrmStore = create<CrmState>((set, get) => ({
           return true;
         });
 
-        const updatedConvs = sortConversationsByLatest(
-          state.conversations.map((c) =>
-            c.id === convId
-              ? {
-                  ...c,
-                  last_message_text: msg.text || 'مرفق جديد',
-                  last_message_at: msg.created_at,
-                  last_activity_at: msg.created_at,
-                  last_customer_message_at:
-                    msg.sender_type === 'customer' ? msg.created_at : c.last_customer_message_at,
-                  customer: c.customer ? { ...c.customer, last_activity_at: msg.created_at } : c.customer,
-                  unread_count:
-                    c.id === state.activeConversationId
-                      ? 0
-                      : (c.unread_count || 0) + (msg.sender_type === 'customer' ? 1 : 0),
-                }
-              : c
-          )
-        );
+        const exists = state.conversations.some((c) => c.id === convId);
+        let updatedConvs: Conversation[];
+        if (exists) {
+          updatedConvs = sortConversationsByLatest(
+            state.conversations.map((c) =>
+              c.id === convId
+                ? {
+                    ...c,
+                    last_message_text: msg.text || 'مرفق جديد',
+                    last_message_at: msg.created_at || new Date().toISOString(),
+                    last_activity_at: msg.created_at || new Date().toISOString(),
+                    last_sender_type: msg.sender_type,
+                    last_customer_message_at:
+                      msg.sender_type === 'customer'
+                        ? (msg.created_at || new Date().toISOString())
+                        : c.last_customer_message_at,
+                    customer: c.customer
+                      ? { ...c.customer, last_activity_at: msg.created_at || new Date().toISOString() }
+                      : c.customer,
+                    unread_count:
+                      c.id === state.activeConversationId
+                        ? 0
+                        : (c.unread_count || 0) + (msg.sender_type === 'customer' ? 1 : 0),
+                  }
+                : c
+            )
+          );
+        } else {
+          // Inbound message for a conversation not yet in list -> fetch fresh list
+          get().fetchConversations();
+          updatedConvs = state.conversations;
+        }
 
         return {
           messages: { ...state.messages, [convId]: updatedMsgs },

@@ -62,7 +62,7 @@ async def test_customer_multiple_identities():
         )
         identity_respond = CustomerIdentity(
             customer_id=customer.id,
-            provider=ProviderEnum.RESPOND_IO,
+            provider=ProviderEnum.BEON,
             channel=ChannelEnum.WHATSAPP,
             external_user_id="wa_contact_999",
         )
@@ -81,7 +81,7 @@ async def test_customer_multiple_identities():
         assert len(fetched_customer.identities) == 3
         providers = {ident.provider for ident in fetched_customer.identities}
         assert ProviderEnum.META in providers
-        assert ProviderEnum.RESPOND_IO in providers
+        assert ProviderEnum.BEON in providers
 
 
 @pytest.mark.asyncio
@@ -180,7 +180,7 @@ async def test_conversation_uniqueness_constraint():
 
         conv1 = Conversation(
             customer_id=c1.id,
-            provider=ProviderEnum.RESPOND_IO,
+            provider=ProviderEnum.BEON,
             channel=ChannelEnum.WHATSAPP,
             external_conversation_id="conv_unique_123",
         )
@@ -189,7 +189,7 @@ async def test_conversation_uniqueness_constraint():
 
         conv2 = Conversation(
             customer_id=c2.id,
-            provider=ProviderEnum.RESPOND_IO,
+            provider=ProviderEnum.BEON,
             channel=ChannelEnum.WHATSAPP,
             external_conversation_id="conv_unique_123",
         )
@@ -203,7 +203,7 @@ async def test_conversation_uniqueness_constraint():
 async def test_migration_job_persistence():
     async with AsyncSessionLocal() as session:
         job = MigrationJob(
-            provider=ProviderEnum.RESPOND_IO,
+            provider=ProviderEnum.BEON,
             channel=ChannelEnum.WHATSAPP,
             status=MigrationStatusEnum.PENDING,
             total_conversations=150,

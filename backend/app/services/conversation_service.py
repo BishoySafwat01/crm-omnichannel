@@ -20,6 +20,7 @@ class ConversationService:
         external_conversation_id: str,
         subject: Optional[str] = None,
         status: ConversationStatusEnum = ConversationStatusEnum.OPEN,
+        brand: Optional[str] = None,
     ) -> Conversation:
         conversation = Conversation(
             customer_id=customer_id,
@@ -28,6 +29,7 @@ class ConversationService:
             external_conversation_id=external_conversation_id,
             subject=subject,
             status=status,
+            brand=brand or "LAVVA",
         )
         session.add(conversation)
         await session.commit()
@@ -130,9 +132,26 @@ class ConversationService:
                 stmt = stmt.where(loc_filter)
                 count_stmt = count_stmt.where(loc_filter)
 
-        if brand and hasattr(Conversation, "brand") and brand.lower() not in ["all", "الكل", "none", ""]:
-            stmt = stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
-            count_stmt = count_stmt.where(func.lower(getattr(Conversation, "brand")) == brand.lower())
+        if brand and hasattr(Conversation, "brand") and brand.strip().lower() not in ["all", "الكل", "none", ""]:
+            clean_b = brand.strip().lower()
+            # Support exact match, substring match, or alias match (e.g. LUXIRA -> Liora)
+            brand_filter = (
+                (func.lower(Conversation.brand) == clean_b) |
+                Conversation.brand.ilike(f"%{clean_b}%")
+            )
+            if clean_b in ["luxira", "liora"]:
+                brand_filter = brand_filter | Conversation.brand.ilike("%liora%") | Conversation.brand.ilike("%luxira%")
+            elif "lotus" in clean_b:
+                brand_filter = brand_filter | Conversation.brand.ilike("%lotus%")
+            elif "hayat" in clean_b:
+                brand_filter = brand_filter | Conversation.brand.ilike("%hayat%")
+            elif "loxx" in clean_b:
+                brand_filter = brand_filter | Conversation.brand.ilike("%loxx%")
+            elif "lavva" in clean_b or "lava" in clean_b:
+                brand_filter = brand_filter | Conversation.brand.ilike("%lavva%") | Conversation.brand.ilike("%lava%")
+
+            stmt = stmt.where(brand_filter)
+            count_stmt = count_stmt.where(brand_filter)
 
         if sla_status and sla_status.strip():
             stmt = stmt.where(Conversation.sla_status == sla_status.strip())
@@ -161,8 +180,18 @@ class ConversationService:
             count_stmt = count_stmt.where(Conversation.status == status)
         if search and search.strip():
             term = f"%{search.strip()}%"
-            stmt = stmt.where(Conversation.subject.ilike(term))
-            count_stmt = count_stmt.where(Conversation.subject.ilike(term))
+            # Join Customer if not already joined
+            if not (target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]):
+                stmt = stmt.outerjoin(Conversation.customer)
+                count_stmt = count_stmt.outerjoin(Conversation.customer)
+            search_filter = (
+                Conversation.subject.ilike(term) |
+                Conversation.brand.ilike(term) |
+                Customer.display_name.ilike(term) |
+                Customer.phone.ilike(term)
+            )
+            stmt = stmt.where(search_filter)
+            count_stmt = count_stmt.where(search_filter)
 
         total_res = await session.execute(count_stmt)
         total = total_res.scalar() or 0

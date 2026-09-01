@@ -3,7 +3,7 @@ import enum
 
 class ProviderEnum(str, enum.Enum):
     META = "meta"
-    RESPOND_IO = "respond_io"
+    BEON = "beon"
 
 
 class ChannelEnum(str, enum.Enum):
@@ -11,6 +11,7 @@ class ChannelEnum(str, enum.Enum):
     INSTAGRAM = "instagram"
     WHATSAPP = "whatsapp"
     TIKTOK = "tiktok"
+    SMS = "sms"
 
 
 class SenderTypeEnum(str, enum.Enum):

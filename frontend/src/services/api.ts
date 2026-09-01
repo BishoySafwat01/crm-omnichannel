@@ -27,12 +27,26 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
   const targetUrl = `${API_BASE}${cleanPath}`;
 
   try {
-    return await fetch(targetUrl, reqInit);
+    const res = await fetch(targetUrl, reqInit);
+    // If local dev server proxy fails with 500/502/503/504, fallback directly to backend port 8000
+    if (
+      !res.ok &&
+      res.status >= 500 &&
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ) {
+      const directBackendUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      return await fetch(directBackendUrl, reqInit);
+    }
+    return res;
   } catch (err) {
     console.warn(`Primary fetch ${targetUrl} network error:`, err);
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      const fallbackUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
-      return await fetch(fallbackUrl, reqInit);
+    if (
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ) {
+      const directBackendUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      return await fetch(directBackendUrl, reqInit);
     }
     throw err;
   }
@@ -72,9 +86,14 @@ export const getConversationsDirect = async (
   brand_id?: string,
   channel?: string,
   country?: string,
-  assigned_agent_id?: string
+  assigned_agent_id?: string,
+  page: number = 1,
+  pageSize: number = 50,
+  provider?: string
 ): Promise<any> => {
   const params = new URLSearchParams();
+  params.set('page', String(page));
+  params.set('page_size', String(pageSize));
   if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
     params.set('brand', brand_id);
   }
@@ -86,6 +105,9 @@ export const getConversationsDirect = async (
   }
   if (assigned_agent_id && assigned_agent_id.toLowerCase() !== 'all') {
     params.set('assigned_agent_id', assigned_agent_id);
+  }
+  if (provider && provider.toLowerCase() !== 'all' && provider !== 'الكل') {
+    params.set('provider', provider);
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 
@@ -982,7 +1004,11 @@ export const commentsApi = {
     const res = await safeFetch(`/comments/${commentUuid}/reply`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ message: payload.message, private_dm: Boolean(payload.private_dm) }),
+      body: JSON.stringify({
+        reply_text: payload.message,
+        send_dm: Boolean(payload.private_dm),
+        dm_text: payload.private_dm ? payload.message : undefined,
+      }),
     });
     if (!res || !res.ok) {
       const err = await res?.json().catch(() => ({ detail: 'فشل إرسال الرد على التعليق' }));
@@ -992,10 +1018,13 @@ export const commentsApi = {
   },
 
   async toggleHideComment(commentUuid: string, is_hidden: boolean): Promise<SocialComment> {
-    const res = await safeFetch(`/comments/${commentUuid}/hide`, {
-      method: 'PATCH',
+    const res = await safeFetch(`/comments/${commentUuid}/status`, {
+      method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ is_hidden }),
+      body: JSON.stringify({
+        status: is_hidden ? 'auto_hidden' : 'active',
+        reason: is_hidden ? 'Manual hide from UI' : 'Manual unhide from UI',
+      }),
     });
     if (!res || !res.ok) {
       const err = await res?.json().catch(() => ({ detail: 'فشل تعديل حالة إخفاء التعليق' }));

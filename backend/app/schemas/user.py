@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import UserRole
 
@@ -31,7 +31,7 @@ class TokenResponse(BaseModel):
 
 
 class UserCreateRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(..., min_length=3, description="User email address")
     password: str = Field(..., min_length=6)
     full_name: str
     role: UserRole = UserRole.AGENT

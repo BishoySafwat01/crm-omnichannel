@@ -12,6 +12,8 @@ class MetaAPIError(Exception):
 
 
 class MetaClient:
+    """Async HTTP Client for interacting with the Meta Graph API (Messenger, WhatsApp, Instagram)."""
+
     def __init__(
         self,
         page_id: Optional[str] = None,
@@ -19,16 +21,17 @@ class MetaClient:
         api_version: Optional[str] = None,
         timeout: float = 30.0,
     ):
-        self.page_id = settings.META_PAGE_ID if page_id is None else page_id
-        self.access_token = settings.META_PAGE_ACCESS_TOKEN if access_token is None else access_token
+        self.page_id = page_id or settings.META_PAGE_ID
+        self.access_token = access_token or (settings.get_page_token(page_id) if page_id else settings.META_PAGE_ACCESS_TOKEN)
         self.api_version = api_version or settings.META_GRAPH_API_VERSION
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.timeout = timeout
 
-    def _ensure_authenticated(self) -> None:
-        if not self.access_token or not self.access_token.strip():
+    def _ensure_authenticated(self, token: Optional[str] = None) -> None:
+        active_token = token or self.access_token
+        if not active_token or not active_token.strip():
             raise MetaAPIError(
-                "META_PAGE_ACCESS_TOKEN is missing or unconfigured. Please configure it in .env.",
+                "META_PAGE_ACCESS_TOKEN is missing or unconfigured for the requested page.",
                 status_code=401,
             )
 
@@ -38,8 +41,11 @@ class MetaClient:
         endpoint: str,
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
     ) -> dict[str, Any]:
-        self._ensure_authenticated()
+        active_token = access_token or (settings.get_page_token(page_id) if page_id else self.access_token)
+        self._ensure_authenticated(active_token)
 
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
 
@@ -52,7 +58,7 @@ class MetaClient:
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         query_params = params.copy() if params else {}
-        query_params["access_token"] = self.access_token
+        query_params["access_token"] = active_token
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -99,7 +105,30 @@ class MetaClient:
         target_page_id = page_id or self.page_id
         if not target_page_id:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
-        return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category"})
+        return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category,picture.type(large)"}, page_id=target_page_id)
+
+    async def get_page_metadata(self, page_id: Optional[str] = None) -> dict[str, Any]:
+        target_page_id = page_id or self.page_id
+        if not target_page_id:
+            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
+        data = await self._request(
+            "GET",
+            f"/{target_page_id}",
+            params={"fields": "id,name,category,picture.type(large)"},
+            page_id=target_page_id,
+        )
+        picture_url = None
+        if isinstance(data, dict):
+            pic_obj = data.get("picture", {})
+            if isinstance(pic_obj, dict):
+                picture_url = pic_obj.get("data", {}).get("url")
+        return {
+            "id": str(data.get("id", target_page_id)),
+            "name": data.get("name", f"Page {target_page_id}"),
+            "category": data.get("category", "Business"),
+            "picture_url": picture_url,
+            "raw": data,
+        }
 
     async def subscribe_page_to_app(
         self,
@@ -214,33 +243,34 @@ class MetaClient:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
 
         params: dict[str, Any] = {
-            "fields": "id,link,updated_time,participants",
+            "fields": "id,link,updated_time,participants,unread_count",
             "limit": limit,
         }
         if after:
             params["after"] = after
 
-        return await self._request("GET", f"/{target_page_id}/conversations", params=params)
+        return await self._request("GET", f"/{target_page_id}/conversations", params=params, page_id=target_page_id)
 
     async def get_messages(
         self,
         conversation_id: str,
         limit: int = 50,
         after: Optional[str] = None,
+        page_id: Optional[str] = None,
     ) -> dict[str, Any]:
         if not conversation_id:
             raise MetaAPIError("conversation_id is required.", status_code=400)
 
         params: dict[str, Any] = {
-            "fields": "id,created_time,from,to,message,attachments",
+            "fields": "id,created_time,from,to,message,attachments,shares",
             "limit": limit,
         }
         if after:
             params["after"] = after
 
-        return await self._request("GET", f"/{conversation_id}/messages", params=params)
+        return await self._request("GET", f"/{conversation_id}/messages", params=params, page_id=page_id)
 
-    async def get_user_profile(self, psid: str) -> dict[str, Any]:
+    async def get_user_profile(self, psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
         if not psid or not str(psid).strip():
             return {}
         try:
@@ -248,6 +278,7 @@ class MetaClient:
                 "GET",
                 f"/{psid}",
                 params={"fields": "first_name,last_name,profile_pic,locale,timezone,gender"},
+                page_id=page_id,
             )
         except Exception:
             return {}
@@ -281,7 +312,7 @@ class MetaClient:
             payload["messaging_type"] = "RESPONSE"
 
         try:
-            return await self._request("POST", f"/{target_page_id}/messages", json_data=payload)
+            return await self._request("POST", f"/{target_page_id}/messages", json_data=payload, page_id=target_page_id)
         except MetaAPIError as exc:
             # If tag is unapproved on Meta App dashboard (#100), retry with RESPONSE
             if tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message):
@@ -290,7 +321,7 @@ class MetaClient:
                     "messaging_type": "RESPONSE",
                     "message": {"text": text},
                 }
-                return await self._request("POST", f"/{target_page_id}/messages", json_data=fallback_payload)
+                return await self._request("POST", f"/{target_page_id}/messages", json_data=fallback_payload, page_id=target_page_id)
             raise
 
     async def send_attachment_message(
@@ -362,7 +393,8 @@ class MetaClient:
         else:
             payload_data["messaging_type"] = "RESPONSE"
 
-        url = f"{self.base_url}/{target_page_id}/messages?access_token={self.access_token}"
+        token = settings.get_page_token(target_page_id) if target_page_id else self.access_token
+        url = f"{self.base_url}/{target_page_id}/messages?access_token={token}"
         files = {"filedata": (filename, file_bytes, mime_type)}
 
         try:

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
@@ -166,8 +166,23 @@ export const ConversationList: React.FC = () => {
     setActiveFilterTab,
     unreadSummary,
     isTyping,
+    selectedProvider,
     isLoadingConversations,
+    isLoadingMoreConversations,
+    hasMoreConversations,
+    loadMoreConversations,
   } = useCrmStore();
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+      if (scrollBottom < 120 && hasMoreConversations && !isLoadingMoreConversations) {
+        loadMoreConversations();
+      }
+    },
+    [hasMoreConversations, isLoadingMoreConversations, loadMoreConversations]
+  );
 
   const getMessagePreview = (conv: any) => {
     if (conv.last_message_text && conv.last_message_text.trim()) {
@@ -233,6 +248,12 @@ export const ConversationList: React.FC = () => {
     if (!conversations || !Array.isArray(conversations)) return [];
 
     return conversations.filter((conv) => {
+      // 0. Provider Filter
+      if (selectedProvider && selectedProvider !== 'all') {
+        const convProv = (conv.provider || 'beon').toLowerCase();
+        if (convProv !== selectedProvider.toLowerCase()) return false;
+      }
+
       // 1. Search Query Filter
       if (searchQuery && searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -271,7 +292,16 @@ export const ConversationList: React.FC = () => {
       if (selectedBrandId && selectedBrandId.toLowerCase() !== 'all' && selectedBrandId !== 'الكل') {
         const convBrand = ((conv as any).brand || (conv as any).brand_name || (conv as any).brand_id || '').toLowerCase();
         const filterBrand = selectedBrandId.toLowerCase();
-        if (convBrand && convBrand !== filterBrand && !convBrand.includes(filterBrand)) {
+        const isMatched =
+          convBrand === filterBrand ||
+          convBrand.includes(filterBrand) ||
+          filterBrand.includes(convBrand) ||
+          (filterBrand.includes('lotus') && convBrand.includes('lotus')) ||
+          (filterBrand.includes('hayat') && convBrand.includes('hayat')) ||
+          ((filterBrand.includes('liora') || filterBrand.includes('luxira')) && (convBrand.includes('liora') || convBrand.includes('luxira'))) ||
+          (filterBrand.includes('loxx') && convBrand.includes('loxx')) ||
+          ((filterBrand.includes('lavva') || filterBrand.includes('lava')) && (convBrand.includes('lavva') || convBrand.includes('lava')));
+        if (!isMatched) {
           return false;
         }
       }
@@ -524,8 +554,11 @@ export const ConversationList: React.FC = () => {
         </div>
       </div>
 
-      {/* Clean Minimalist Glass Conversation Cards (Task 6 Channel & Store UI) */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-none">
+      {/* Clean Minimalist Glass Conversation Cards with Continuous Messenger Stream */}
+      <div
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1 scrollbar-none"
+      >
         {isLoadingConversations ? (
           <div className="p-8 text-center text-xs text-slate-400 animate-pulse font-medium">
             جاري التحميل...
@@ -536,106 +569,108 @@ export const ConversationList: React.FC = () => {
             <p>لا توجد محادثات متطابقة</p>
           </div>
         ) : (
-          filteredConversations.map((conv) => {
-            const isActive = activeConversationId === conv.id;
-            const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
-            const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
-            const unreadCount = conv.unread_count || 0;
-            const isCustomerTyping = Boolean(isTyping[conv.id]);
-            const presence = formatCustomerPresence(
-              conv.last_activity_at || conv.customer?.last_activity_at || conv.last_customer_message_at || conv.last_message_at,
-              isCustomerTyping
-            );
+          <>
+            {filteredConversations.map((conv) => {
+              const isActive = activeConversationId === conv.id;
+              const customerName = conv.customer_display_name || conv.customer?.display_name || 'عميل';
+              const avatarUrl = conv.customer_avatar_url || conv.customer?.avatar_url;
+              const unreadCount = conv.unread_count || 0;
+              const isCustomerTyping = Boolean(isTyping[conv.id]);
+              const presence = formatCustomerPresence(
+                conv.last_activity_at || conv.customer?.last_activity_at || conv.last_customer_message_at || conv.last_message_at,
+                isCustomerTyping
+              );
 
-            return (
-              <div
-                key={conv.id}
-                onClick={() => setActiveConversationId(conv.id)}
-                className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
-                  isActive
-                    ? 'bg-[#E8F0FE] border-r-4 border-r-[#1A73E8] shadow-2xs font-medium'
-                    : 'bg-transparent hover:bg-white/90'
-                }`}
-              >
-                {/* 1. Top Row: Conversation Avatar (Store gradient + Customer sub-avatar + Channel badge) + Customer Name + Time */}
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <ConversationAvatar
-                      customerName={customerName}
-                      customerAvatarUrl={avatarUrl}
-                      brandId={conv.brand_id}
-                      brandName={conv.brand || conv.brand_name}
-                      channel={conv.channel}
-                      size="md"
-                      showPresenceDot={true}
-                      presenceDotColor={presence.dotColor}
-                      presenceStatusText={presence.statusText}
-                    />
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => setActiveConversationId(conv.id)}
+                  className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
+                    isActive
+                      ? 'bg-[#E8F0FE] border-r-4 border-r-[#1A73E8] shadow-2xs font-medium'
+                      : 'bg-transparent hover:bg-white/90'
+                  }`}
+                >
+                  {/* 1. Top Row: Conversation Avatar (Store gradient + Customer sub-avatar + Channel badge) + Customer Name + Time */}
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ConversationAvatar
+                        customerName={customerName}
+                        customerAvatarUrl={avatarUrl}
+                        brandId={conv.brand_id}
+                        brandName={conv.brand || conv.brand_name}
+                        channel={conv.channel}
+                        size="md"
+                        showPresenceDot={true}
+                        presenceDotColor={presence.dotColor}
+                        presenceStatusText={presence.statusText}
+                      />
 
-                    <div className="min-w-0">
-                      {/* Customer Name is the only prominent text */}
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <h3
-                          className={`text-xs truncate ${
-                            unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'
-                          }`}
-                        >
-                          {customerName}
-                        </h3>
-                        {isConversationLate(conv, messages[conv.id]) && (
-                          <span
-                            title="رسالة متأخرة بدون رد لأكثر من 10 دقائق"
-                            className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200/90 flex items-center gap-1 shrink-0"
+                      <div className="min-w-0">
+                        {/* Customer Name is the only prominent text */}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3
+                            className={`text-xs truncate ${
+                              unreadCount > 0 ? 'font-black text-slate-950' : 'font-extrabold text-slate-900'
+                            }`}
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block" />
-                            <span>متأخرة ({getLateDurationText(getCustomerUnansweredMessageTime(conv, messages[conv.id]))})</span>
+                            {customerName}
+                          </h3>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-md text-[8.5px] font-bold shrink-0 ${
+                              (conv.provider || '').toLowerCase() === 'beon'
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/80'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                            }`}
+                          >
+                            {(conv.provider || '').toLowerCase() === 'beon' ? 'BeOn' : 'Meta'}
                           </span>
-                        )}
+                          {isConversationLate(conv, messages[conv.id]) && (
+                            <span
+                              title="رسالة متأخرة بدون رد لأكثر من 10 دقائق"
+                              className="px-1.5 py-0.2 rounded-md text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200/90 flex items-center gap-1 shrink-0"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block" />
+                              <span>متأخرة ({getLateDurationText(getCustomerUnansweredMessageTime(conv, messages[conv.id]))})</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
+
+                    <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0">
+                      {formatRelativeTime(conv.last_message_at)}
+                    </span>
                   </div>
 
-                  <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap shrink-0">
-                    {formatRelativeTime(conv.last_message_at)}
-                  </span>
-                </div>
+                  {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
+                  <div className="flex items-center justify-between gap-2 pr-12">
+                    <p
+                      className={`text-xs truncate ${
+                        unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'
+                      }`}
+                    >
+                      {getMessagePreview(conv)}
+                    </p>
 
-                {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
-                <div className="flex items-center justify-between gap-2 pr-12">
-                  <p
-                    className={`text-xs truncate ${
-                      unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'
-                    }`}
-                  >
-                    {getMessagePreview(conv)}
-                  </p>
-
-                  {unreadCount > 0 && (
-                    <span className="bg-[#1A73E8] text-white text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-2xs leading-none">
-                      {unreadCount}
-                    </span>
-                  )}
+                    {unreadCount > 0 && (
+                      <span className="bg-[#1A73E8] text-white text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+
+            {isLoadingMoreConversations && (
+              <div className="py-3 text-center text-xs font-semibold text-slate-400 flex items-center justify-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#1A73E8] animate-ping inline-block" />
+                <span>جاري تحميل المزيد من المحادثات...</span>
               </div>
-            );
-          })
+            )}
+          </>
         )}
-      </div>
-
-      {/* Footer Pagination Bar */}
-      <div className="p-3 border-t border-slate-100/70 flex items-center justify-between text-xs text-slate-500 font-medium shrink-0">
-        <span>1-{filteredConversations.length} من {conversations.length} محادثة</span>
-        <div className="flex items-center gap-1">
-          <button className="w-6 h-6 rounded-full bg-slate-100/70 hover:bg-white text-slate-600 flex items-center justify-center text-xs font-bold border border-slate-200/50">
-            ‹
-          </button>
-          <span className="w-6 h-6 rounded-full bg-[#E8F0FE] text-[#1A73E8] flex items-center justify-center text-xs font-bold">
-            1
-          </span>
-          <button className="w-6 h-6 rounded-full bg-slate-100/70 hover:bg-white text-slate-600 flex items-center justify-center text-xs font-bold border border-slate-200/50">
-            ›
-          </button>
-        </div>
       </div>
     </aside>
   );
