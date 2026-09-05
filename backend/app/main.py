@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -6,8 +7,8 @@ from typing import Any
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.api.v1.admin.analytics import router as admin_analytics_router
 from app.api.v1.admin.automations import router as admin_automations_router
@@ -26,20 +27,22 @@ from app.api.webhooks import router as webhooks_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.redis import close_redis_client, get_redis_client
-import asyncio
 from app.services.meta_import_service import meta_import_service
+from app.workers.beon_worker import start_beon_polling_worker
 
-
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("app.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure upload directory exists (side-effect moved from config.py)
+    # Startup: ensure upload directory exists
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
-    # Security: warn loudly at startup if webhook signature secret is missing,
-    # because /api/v1/meta/webhook runs fail-closed and will reject all payloads.
+    # Security: warn loudly at startup if webhook signature secret is missing
     if not (settings.META_APP_SECRET and settings.META_APP_SECRET.strip()):
         logger.warning(
             "[SECURITY] META_APP_SECRET is not configured — the Meta webhook endpoint "
@@ -110,6 +113,8 @@ async def lifespan(app: FastAPI):
     auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
     meta_task = asyncio.create_task(meta_sync_loop())
     sla_task = asyncio.create_task(sla_eval_loop())
+    interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
+    beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
 
     yield
 
@@ -117,6 +122,8 @@ async def lifespan(app: FastAPI):
     auto_sub_task.cancel()
     meta_task.cancel()
     sla_task.cancel()
+    beon_task.cancel()
+    await asyncio.gather(auto_sub_task, meta_task, sla_task, beon_task, return_exceptions=True)
     await close_redis_client()
 
 
@@ -128,7 +135,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware — support localhost, Vercel deployments, and production domains
+# CORS middleware
 _cors_origins = list(settings.CORS_ORIGINS) if settings.CORS_ORIGINS else []
 app.add_middleware(
     CORSMiddleware,
@@ -139,76 +146,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static uploads directory with Range headers support
-uploads_dir = settings.UPLOAD_DIR
-os.makedirs(uploads_dir, exist_ok=True)
-try:
-    app.mount("/uploads", StaticFiles(directory=uploads_dir, html=False), name="uploads")
-except Exception:
-    pass  # Graceful degradation: upload serving skipped if directory unavailable
-
-# Routers
-app.include_router(auth_router, prefix="/api/v1")
-app.include_router(customers_router, prefix="/api/v1")
-app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
-app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
-app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
-app.include_router(admin_team_router, prefix="/api/v1/admin/team")
-app.include_router(comments_router, prefix="/api/v1/comments")
-app.include_router(conversations_router, prefix="/api/v1")
-app.include_router(media_router, prefix="/api/v1")
-app.include_router(meta_router, prefix="/api/v1")
-app.include_router(moderation_router, prefix="/api/v1")
-app.include_router(beon_router, prefix="/api/v1")
-app.include_router(ws_router, prefix="/api/v1")
-app.include_router(ws_router)
-app.include_router(webhooks_router)
+# Mount static uploads directory for serving media attachments
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {
-        "app": settings.PROJECT_NAME,
-        "environment": settings.ENVIRONMENT,
-        "status": "running",
-    }
-
-
-async def perform_health_check() -> tuple[dict[str, Any], int]:
-    postgres_status = "unhealthy"
-    redis_status = "unhealthy"
-
-    # Check PostgreSQL
+@app.get("/health", tags=["system"], summary="System health probe")
+async def health_check() -> JSONResponse:
+    pg_status = "unknown"
     try:
         async with AsyncSessionLocal() as session:
-            result = await session.execute(text("SELECT 1"))
-            if result.scalar() == 1:
-                postgres_status = "healthy"
-    except Exception as e:
-        postgres_status = f"unhealthy: {str(e)}"
+            await session.execute(text("SELECT 1"))
+        pg_status = "healthy"
+    except Exception as exc:
+        logger.error("Health check - PostgreSQL unreachable: %s", exc)
+        pg_status = "unhealthy"
 
-    # Check Redis
+    redis_status = "unknown"
     try:
-        client = await get_redis_client()
-        pong = await client.ping()
-        if pong:
-            redis_status = "healthy"
-    except Exception as e:
-        redis_status = f"unhealthy: {str(e)}"
+        r = await get_redis_client()
+        await r.ping()
+        redis_status = "healthy"
+    except Exception as exc:
+        logger.error("Health check - Redis unreachable: %s", exc)
+        redis_status = "unhealthy"
 
-    is_healthy = postgres_status == "healthy" and redis_status == "healthy"
-    status_code = status.HTTP_200_OK if is_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+    overall = "ok" if (pg_status == "healthy" and redis_status == "healthy") else "degraded"
+    http_status = status.HTTP_200_OK if overall == "ok" else status.HTTP_503_SERVICE_UNAVAILABLE
 
-    body = {
-        "status": "ok" if is_healthy else "degraded",
-        "postgres": postgres_status,
-        "redis": redis_status,
-    }
-    return body, status_code
+    return JSONResponse(
+        status_code=http_status,
+        content={
+            "status": overall,
+            "postgres": pg_status,
+            "redis": redis_status,
+        },
+    )
 
 
-@app.get("/health")
-@app.get("/api/v1/health")
-async def health_check():
-    body, status_code = await perform_health_check()
-    return JSONResponse(content=body, status_code=status_code)
+# Include Routers
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(conversations_router, prefix="/api/v1")
+app.include_router(customers_router, prefix="/api/v1")
+app.include_router(comments_router, prefix="/api/v1")
+app.include_router(media_router, prefix="/api/v1")
+app.include_router(meta_router, prefix="/api/v1")
+app.include_router(beon_router, prefix="/api/v1")
+app.include_router(moderation_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/api/v1")
+app.include_router(ws_router, prefix="/api/v1")
+
+# Admin Routers
+app.include_router(admin_analytics_router, prefix="/api/v1")
+app.include_router(admin_automations_router, prefix="/api/v1")
+app.include_router(admin_customers_router, prefix="/api/v1")
+app.include_router(admin_team_router, prefix="/api/v1")

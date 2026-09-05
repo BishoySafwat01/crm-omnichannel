@@ -114,3 +114,17 @@ async def test_meta_integrations_status_endpoint():
         assert "active_provider" in data
         assert data["beon_connected"] is True
         assert data["meta_pages_count"] >= 5
+
+
+@pytest.mark.asyncio
+async def test_beon_outbound_dispatch():
+    """Verify BeonOmnichannelProvider outbound dispatch contract."""
+    provider = BeonOmnichannelProvider()
+    res = await provider.send_outbound_message(
+        recipient_external_id="6768820",
+        text="[Automated Test] Verification Probe",
+    )
+    assert res is not None
+    assert "external_message_id" in res
+    assert res["external_message_id"].startswith("beon-")
+    assert res["recipient_id"] == "6768820"

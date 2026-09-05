@@ -118,8 +118,11 @@ const areMessagesEqual = (a: Message[] | undefined, b: Message[]): boolean => {
 };
 
 interface CrmState {
+  // State
   selectedProvider: 'all' | 'beon' | 'meta';
+  selectedBrand: string | null;
   selectedBrandId: string;
+  showArchived: boolean;
   selectedChannel: ChannelFilterType;
   selectedCountry: string;
   availableCountries: string[];
@@ -154,7 +157,9 @@ interface CrmState {
 
   // Actions
   setSelectedProvider: (provider: 'all' | 'beon' | 'meta') => void;
+  setSelectedBrand: (brand: string | null) => void;
   setSelectedBrandId: (brandId: string) => void;
+  toggleShowArchived: () => void;
   setSelectedChannel: (channel: ChannelFilterType) => void;
   setSelectedCountry: (country: string) => void;
   setSelectedEmployeeId: (employeeId: string | null) => void;
@@ -206,7 +211,9 @@ interface CrmState {
 
 export const useCrmStore = create<CrmState>((set, get) => ({
   selectedProvider: 'all',
+  selectedBrand: null,
   selectedBrandId: 'all',
+  showArchived: false,
   selectedChannel: 'all',
   selectedCountry: 'all',
   availableCountries: [],
@@ -269,22 +276,34 @@ export const useCrmStore = create<CrmState>((set, get) => ({
   setIsForwardModalOpen: (open, msg) => set({ isForwardModalOpen: open, forwardingMessage: msg || null }),
 
   setSelectedProvider: (provider) => {
-    set({ selectedProvider: provider });
+    set({ selectedProvider: provider, conversationsPage: 1 });
+    get().fetchConversations();
+  },
+
+  setSelectedBrand: (brand) => {
+    const cleanBrand = !brand || brand === 'all' || brand === 'الكل' ? null : brand;
+    set({ selectedBrand: cleanBrand, selectedBrandId: cleanBrand || 'all', conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedBrandId: (brandId) => {
-    set({ selectedBrandId: brandId });
+    const cleanBrand = !brandId || brandId === 'all' || brandId === 'الكل' ? null : brandId;
+    set({ selectedBrandId: brandId, selectedBrand: cleanBrand, conversationsPage: 1 });
+    get().fetchConversations();
+  },
+
+  toggleShowArchived: () => {
+    set((state) => ({ showArchived: !state.showArchived, conversationsPage: 1 }));
     get().fetchConversations();
   },
 
   setSelectedChannel: (channel) => {
-    set({ selectedChannel: channel });
+    set({ selectedChannel: channel, conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedCountry: (country) => {
-    set({ selectedCountry: country });
+    set({ selectedCountry: country, conversationsPage: 1 });
     get().fetchConversations();
   },
 
@@ -293,6 +312,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     set({
       selectedEmployeeId: cleanId,
       selectedAgentId: cleanId || 'all',
+      conversationsPage: 1,
     });
   },
 
@@ -301,6 +321,7 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     set({
       selectedAgentId: cleanId || 'all',
       selectedEmployeeId: cleanId,
+      conversationsPage: 1,
     });
   },
 
@@ -409,10 +430,11 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   fetchConversations: async () => {
     try {
-      const selectedBrand = get().selectedBrandId;
+      const selectedBrand = get().selectedBrand || get().selectedBrandId;
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
       const selectedProvider = get().selectedProvider;
+      const showArchived = get().showArchived;
       const raw = await getConversationsDirect(
         selectedBrand,
         selectedChannel,
@@ -420,7 +442,8 @@ export const useCrmStore = create<CrmState>((set, get) => ({
         undefined,
         1,
         50,
-        selectedProvider
+        selectedProvider,
+        showArchived
       );
 
       let items: Conversation[] = [];
@@ -501,10 +524,12 @@ export const useCrmStore = create<CrmState>((set, get) => ({
       hasMoreConversations,
       isLoadingMoreConversations,
       conversationsPage,
+      selectedBrand,
       selectedBrandId,
       selectedChannel,
       selectedCountry,
       selectedProvider,
+      showArchived,
       conversations,
     } = get();
 
@@ -513,14 +538,16 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     set({ isLoadingMoreConversations: true });
     try {
       const nextPage = conversationsPage + 1;
+      const targetBrand = selectedBrand || selectedBrandId;
       const raw = await getConversationsDirect(
-        selectedBrandId,
+        targetBrand,
         selectedChannel,
         selectedCountry,
         undefined,
         nextPage,
         50,
-        selectedProvider
+        selectedProvider,
+        showArchived
       );
 
       let newItems: Conversation[] = [];
@@ -1376,6 +1403,17 @@ export const useCrmStore = create<CrmState>((set, get) => ({
     }
 
     if ((event as any).type === 'CONVERSATION_READ') {
+      get().fetchUnreadSummary();
+      return;
+    }
+
+    if (
+      event.type === 'NEW_CONVERSATION' ||
+      event.type === 'CONVERSATION_UPDATED' ||
+      (event as any).type === 'new_conversation' ||
+      (event as any).type === 'conversation_updated'
+    ) {
+      get().fetchConversations();
       get().fetchUnreadSummary();
       return;
     }

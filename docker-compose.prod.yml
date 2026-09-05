@@ -1,11 +1,9 @@
-version: "3.8"
-
 services:
   # 1. PostgreSQL Database Container
   postgres_db:
     image: postgres:16-alpine
     container_name: crm_prod_postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
@@ -18,20 +16,26 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - crm-network
+      crm-network:
+        aliases:
+          - db
+          - postgres_db
 
   # 2. Redis Cache Container
   redis_prod:
     image: redis:7-alpine
     container_name: crm_prod_redis
-    restart: always
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - crm-network
+      crm-network:
+        aliases:
+          - redis
+          - redis_prod
 
   # 3. FastAPI Backend Application Container
   backend_api:
@@ -39,8 +43,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: crm_prod_backend
-    restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    restart: unless-stopped
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
     environment:
       ENVIRONMENT: production
       LOG_LEVEL: INFO
@@ -49,9 +53,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-crm_omnichannel}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres_password}@postgres_db:5432/${POSTGRES_DB:-crm_omnichannel}
       REDIS_HOST: redis_prod
       REDIS_PORT: 6379
-      SECRET_KEY: ${SECRET_KEY}
+      REDIS_URL: redis://redis_prod:6379/0
+      SECRET_KEY: ${SECRET_KEY:-4d71c9b69a027039bb284cdb829124970205d60a4eb031a566285cbbab984925}
       META_PAGE_ID: ${META_PAGE_ID}
       META_PAGE_ACCESS_TOKEN: ${META_PAGE_ACCESS_TOKEN}
       META_APP_SECRET: ${META_APP_SECRET}
@@ -77,7 +83,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
     container_name: crm_prod_frontend
-    restart: always
+    restart: unless-stopped
     networks:
       - crm-network
 
@@ -85,7 +91,7 @@ services:
   nginx_proxy:
     image: nginx:alpine
     container_name: crm_prod_nginx
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"

@@ -38,7 +38,15 @@ class ProviderFactory:
         channel_str = str(channel.value if isinstance(channel, ChannelEnum) else channel or "").lower().strip()
         provider_str = str(provider_name.value if isinstance(provider_name, ProviderEnum) else provider_name or "").lower().strip()
 
-        is_meta_channel = channel_str in ("messenger", "facebook") or provider_str in ("meta",)
+        if provider_str in ("beon", "beon gateway", "مزود beon"):
+            logger.debug(f"Routing provider '{provider_str}' directly to BeonOmnichannelProvider")
+            return BeonOmnichannelProvider()
+
+        if provider_str in ("meta", "direct_meta", "ميتا مباشر"):
+            logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
+            return MetaProvider(page_id=page_id)
+
+        is_meta_channel = channel_str in ("messenger", "facebook")
 
         if is_meta_channel:
             logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")

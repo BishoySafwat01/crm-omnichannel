@@ -193,3 +193,22 @@ class BeonClient:
         """Fetch existing contact tags from BeOn."""
         res = await self._request("GET", "/partner/contacts/tags")
         return res.get("data", [])
+
+    async def send_message(
+        self,
+        contact_id: int | str,
+        message: str,
+        channel_id: Optional[int | str] = None,
+    ) -> dict[str, Any]:
+        """Send an outbound agent message to a contact/conversation in BeOn."""
+        payload: dict[str, Any] = {
+            "contact_id": int(contact_id) if str(contact_id).isdigit() else contact_id,
+            "message": message,
+        }
+        if channel_id:
+            payload["channel_id"] = (
+                int(channel_id) if str(channel_id).isdigit() else channel_id
+            )
+        return await self._request(
+            "POST", "/partner/conversation/create", json_data=payload
+        )

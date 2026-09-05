@@ -176,6 +176,11 @@ export interface TagGroup {
 export interface WebSocketEvent {
   type:
     | 'NEW_MESSAGE'
+    | 'NEW_CONVERSATION'
+    | 'CONVERSATION_UPDATED'
+    | 'CONVERSATION_READ'
+    | 'new_conversation'
+    | 'conversation_updated'
     | 'MESSAGE_STATUS'
     | 'TYPING_INDICATOR'
     | 'PONG'
@@ -194,6 +199,8 @@ export interface WebSocketEvent {
   conversation_id?: string;
   customer_id?: string;
   message?: Message;
+  data?: any;
+  conversation?: any;
   status?: MessageDeliveryStatus;
   is_typing?: boolean;
   sender_psid?: string;

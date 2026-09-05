@@ -79,9 +79,10 @@ class ConversationService:
         page: int = 1,
         page_size: int = 20,
         customer_id: Optional[uuid.UUID] = None,
-        provider: Optional[ProviderEnum] = None,
+        provider: Optional[ProviderEnum | str] = None,
         channel: Optional[ChannelEnum] = None,
         status: Optional[ConversationStatusEnum] = None,
+        include_archived: bool = False,
         search: Optional[str] = None,
         brand: Optional[str] = None,
         location: Optional[str] = None,
@@ -134,7 +135,6 @@ class ConversationService:
 
         if brand and hasattr(Conversation, "brand") and brand.strip().lower() not in ["all", "الكل", "none", ""]:
             clean_b = brand.strip().lower()
-            # Support exact match, substring match, or alias match (e.g. LUXIRA -> Liora)
             brand_filter = (
                 (func.lower(Conversation.brand) == clean_b) |
                 Conversation.brand.ilike(f"%{clean_b}%")
@@ -169,18 +169,58 @@ class ConversationService:
         if customer_id:
             stmt = stmt.where(Conversation.customer_id == customer_id)
             count_stmt = count_stmt.where(Conversation.customer_id == customer_id)
-        if provider:
-            stmt = stmt.where(Conversation.provider == provider)
-            count_stmt = count_stmt.where(Conversation.provider == provider)
+
+        # Provider filtering & Deduplication
+        if provider is not None and str(provider).strip().lower() not in ["all", "none", "", "الكل"]:
+            p_val = provider.value if hasattr(provider, "value") else str(provider).strip().lower()
+            if p_val in ["beon", "مزود beon", "beon gateway"]:
+                stmt = stmt.where(Conversation.provider == ProviderEnum.BEON)
+                count_stmt = count_stmt.where(Conversation.provider == ProviderEnum.BEON)
+            elif p_val in ["meta", "direct_meta", "ميتا مباشر", "direct meta"]:
+                stmt = stmt.where(Conversation.provider == ProviderEnum.META)
+                count_stmt = count_stmt.where(Conversation.provider == ProviderEnum.META)
+            else:
+                try:
+                    p_enum = ProviderEnum(p_val)
+                    stmt = stmt.where(Conversation.provider == p_enum)
+                    count_stmt = count_stmt.where(Conversation.provider == p_enum)
+                except ValueError:
+                    pass
+        else:
+            # "ALL" Mode: Deduplicate conversations per customer using Window Function
+            subq = (
+                select(
+                    Conversation.id.label("conv_id"),
+                    func.row_number().over(
+                        partition_by=Conversation.customer_id,
+                        order_by=(
+                            Conversation.last_message_at.desc().nullslast(),
+                            Conversation.created_at.desc(),
+                            Conversation.id.desc(),
+                        )
+                    ).label("rn")
+                ).subquery()
+            )
+            stmt = stmt.join(subq, Conversation.id == subq.c.conv_id).where(subq.c.rn == 1)
+            count_stmt = count_stmt.join(subq, Conversation.id == subq.c.conv_id).where(subq.c.rn == 1)
+
         if channel:
             stmt = stmt.where(Conversation.channel == channel)
             count_stmt = count_stmt.where(Conversation.channel == channel)
-        if status:
+
+        # Archive / Status Filter
+        if status is not None:
             stmt = stmt.where(Conversation.status == status)
             count_stmt = count_stmt.where(Conversation.status == status)
+        elif not include_archived:
+            stmt = stmt.where(Conversation.status != ConversationStatusEnum.CLOSED)
+            count_stmt = count_stmt.where(Conversation.status != ConversationStatusEnum.CLOSED)
+        else:
+            stmt = stmt.where(Conversation.status == ConversationStatusEnum.CLOSED)
+            count_stmt = count_stmt.where(Conversation.status == ConversationStatusEnum.CLOSED)
+
         if search and search.strip():
             term = f"%{search.strip()}%"
-            # Join Customer if not already joined
             if not (target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]):
                 stmt = stmt.outerjoin(Conversation.customer)
                 count_stmt = count_stmt.outerjoin(Conversation.customer)

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 from typing import Any, Optional
 
@@ -68,9 +69,14 @@ class BeonOmnichannelProvider(BaseMessagingProvider):
         }
 
     async def send_outbound_message(
-        self, recipient_id: str, text: str, **kwargs: Any
+        self,
+        recipient_id: Optional[str] = None,
+        text: str = "",
+        recipient_external_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Send outbound message via BeOn."""
+        target_recipient = str(recipient_external_id or recipient_id or "").strip()
         channel = kwargs.get("channel", "whatsapp")
         template_id = kwargs.get("template_id")
         template_vars = kwargs.get("template_vars") or [text]
@@ -79,51 +85,81 @@ class BeonOmnichannelProvider(BaseMessagingProvider):
         if channel == "sms":
             if template_id:
                 res = await self.client.send_sms_template(
-                    phone_number=recipient_id,
+                    phone_number=target_recipient,
                     name=name,
                     template_id=int(template_id),
                     template_vars=template_vars,
                 )
             else:
                 res = await self.client.send_otp(
-                    phone_number=recipient_id, name=name, otp_type="sms"
+                    phone_number=target_recipient, name=name, otp_type="sms"
                 )
         else:
-            # WhatsApp or default
+            # WhatsApp, Messenger, or default
             if template_id:
                 res = await self.client.send_whatsapp_template(
-                    phone_number=recipient_id,
+                    phone_number=target_recipient,
                     name=name,
                     template_id=int(template_id),
                     template_vars=template_vars,
                 )
             else:
-                # If no explicit template_id is passed, attempt standard contact sync/dispatch
-                res = {
-                    "status": "queued",
-                    "provider": "beon",
-                    "recipient_id": recipient_id,
-                    "text": text,
-                }
+                contact_id = target_recipient
+                if not contact_id.isdigit():
+                    try:
+                        contact_res = await self.client.create_or_update_contact(
+                            phone=contact_id, name=name
+                        )
+                        contact_id = str(
+                            (contact_res.get("data") or {}).get("id") or contact_id
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not auto-create BeOn contact for {contact_id}: {e}"
+                        )
+
+                channel_id = kwargs.get("channel_id")
+                res = await self.client.send_message(
+                    contact_id=contact_id,
+                    message=text,
+                    channel_id=channel_id,
+                )
+
+        ext_msg_id = None
+        conv_id = (res.get("data") or {}).get("conversation_id")
+        if conv_id:
+            try:
+                msg_resp = await self.client.get_conversation_messages(conv_id, per_page=1)
+                records = (msg_resp.get("data") or {}).get("records") or []
+                if records:
+                    top_msg = records[0]
+                    beon_id = top_msg.get("id")
+                    ext_msg_id = top_msg.get("message_id") or (f"beon-msg-{beon_id}" if beon_id else None)
+            except Exception as e:
+                logger.warning(f"Failed to fetch newest message for BeOn conv {conv_id}: {e}")
+
+        if not ext_msg_id:
+            ext_msg_id = res.get("message_id") or res.get("id") or f"beon-{target_recipient}-{int(datetime.now(timezone.utc).timestamp())}"
 
         return {
-            "external_message_id": res.get("message_id") or res.get("id") or f"beon-{recipient_id}",
-            "recipient_id": recipient_id,
+            "external_message_id": ext_msg_id,
+            "recipient_id": target_recipient,
             "raw": res,
         }
 
     async def send_outbound_attachment(
         self,
-        recipient_id: str,
-        file_path: str,
+        recipient_id: Optional[str] = None,
+        file_path: str = "",
         attachment_type: str = "image",
+        recipient_external_id: Optional[str] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Send outbound attachment via BeOn."""
-        # Attachments route through BeOn media dispatch
+        target_recipient = str(recipient_external_id or recipient_id or "").strip()
         return {
-            "external_message_id": f"beon-att-{recipient_id}",
-            "recipient_id": recipient_id,
+            "external_message_id": f"beon-att-{target_recipient}-{int(datetime.now(timezone.utc).timestamp())}",
+            "recipient_id": target_recipient,
             "file_path": file_path,
             "attachment_type": attachment_type,
             "status": "sent",

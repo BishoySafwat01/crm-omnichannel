@@ -17,6 +17,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const {
     selectedProvider,
     setSelectedProvider,
+    selectedBrand,
+    setSelectedBrand,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -306,16 +308,42 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             )}
           </div>
 
-          {/* Provider Filter Switcher */}
-          <select
-            value={selectedProvider}
-            onChange={(e) => setSelectedProvider(e.target.value as 'all' | 'beon' | 'meta')}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
-          >
-            <option value="all">⚡ كل المزودين</option>
-            <option value="beon">🚀 مزود BeOn</option>
-            <option value="meta">🌐 ميتا مباشر</option>
-          </select>
+          {/* Segmented Provider Switcher */}
+          <div className="flex items-center bg-slate-100/80 p-0.5 rounded-full border border-slate-200/60 shadow-2xs">
+            <button
+              onClick={() => setSelectedProvider('all')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
+                selectedProvider === 'all'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="عرض كل المزودين بدون تكرار"
+            >
+              <span>⚡ الكل</span>
+            </button>
+            <button
+              onClick={() => setSelectedProvider('meta')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
+                selectedProvider === 'meta'
+                  ? 'bg-[#1877F2] text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="محادثات Meta Graph API المباشرة فقط"
+            >
+              <span>🌐 ميتا مباشر</span>
+            </button>
+            <button
+              onClick={() => setSelectedProvider('beon')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
+                selectedProvider === 'beon'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="محادثات مزود BeOn Gateway V3 فقط"
+            >
+              <span>🚀 مزود BeOn</span>
+            </button>
+          </div>
 
           {/* Clean Channel Dropdown Selector */}
           <select
