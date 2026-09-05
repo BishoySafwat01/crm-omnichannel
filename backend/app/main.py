@@ -116,6 +116,9 @@ async def lifespan(app: FastAPI):
     interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
     beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
 
+    from app.api.v1.ws import start_redis_listener
+    redis_listener_task = asyncio.create_task(start_redis_listener())
+
     yield
 
     # Shutdown
@@ -123,7 +126,10 @@ async def lifespan(app: FastAPI):
     meta_task.cancel()
     sla_task.cancel()
     beon_task.cancel()
-    await asyncio.gather(auto_sub_task, meta_task, sla_task, beon_task, return_exceptions=True)
+    redis_listener_task.cancel()
+    await asyncio.gather(
+        auto_sub_task, meta_task, sla_task, beon_task, redis_listener_task, return_exceptions=True
+    )
     await close_redis_client()
 
 
