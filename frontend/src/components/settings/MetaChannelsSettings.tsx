@@ -15,6 +15,7 @@ import {
   Loader2,
   Instagram,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { useChannelsStore } from '../../store/useChannelsStore';
@@ -31,6 +32,7 @@ export const MetaChannelsSettings: React.FC = () => {
     successMessage,
     fetchConnectedPages,
     initiateMetaConnect,
+    cancelMetaConnect,
     clearFeedback,
   } = useChannelsStore();
 
@@ -112,24 +114,38 @@ export const MetaChannelsSettings: React.FC = () => {
               />
             </button>
 
-            {/* Connect Button */}
-            <button
-              onClick={() => initiateMetaConnect()}
-              disabled={isConnecting}
-              className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-black rounded-xl shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2 border border-blue-400/30 disabled:opacity-60 active:scale-98"
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>جارٍ التحويل إلى فيسبوك...</span>
-                </>
-              ) : (
-                <>
-                  <Plug className="w-4 h-4" />
-                  <span>ربط صفحات فيسبوك (Connect Pages)</span>
-                </>
+            {/* Connect Button & Manual Cancel Action */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => initiateMetaConnect()}
+                disabled={isConnecting}
+                className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-black rounded-xl shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2 border border-blue-400/30 disabled:opacity-60 active:scale-98"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جارٍ التحويل إلى فيسبوك...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plug className="w-4 h-4" />
+                    <span>ربط صفحات فيسبوك (Connect Pages)</span>
+                  </>
+                )}
+              </button>
+
+              {isConnecting && (
+                <button
+                  type="button"
+                  onClick={() => cancelMetaConnect()}
+                  className="px-3 py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-white/10 transition flex items-center gap-1.5 shadow-sm active:scale-98"
+                  title="إلغاء وفك قفل الزر"
+                >
+                  <X className="w-3.5 h-3.5 text-rose-400" />
+                  <span>إلغاء</span>
+                </button>
               )}
-            </button>
+            </div>
           </div>
         </div>
 
@@ -226,14 +242,37 @@ export const MetaChannelsSettings: React.FC = () => {
                 الصفحات التابعة لعلاماتك التجارية.
               </p>
             </div>
-            <button
-              onClick={() => initiateMetaConnect()}
-              disabled={isConnecting}
-              className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold rounded-xl shadow-md transition inline-flex items-center gap-2"
-            >
-              <Plug className="w-4 h-4" />
-              <span>بدء عملية الربط الآن</span>
-            </button>
+            <div className="inline-flex items-center gap-2">
+              <button
+                onClick={() => initiateMetaConnect()}
+                disabled={isConnecting}
+                className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold rounded-xl shadow-md transition inline-flex items-center gap-2 disabled:opacity-60"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جارٍ التحويل إلى فيسبوك...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plug className="w-4 h-4" />
+                    <span>بدء عملية الربط الآن</span>
+                  </>
+                )}
+              </button>
+
+              {isConnecting && (
+                <button
+                  type="button"
+                  onClick={() => cancelMetaConnect()}
+                  className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition inline-flex items-center gap-1.5 shadow-xs"
+                  title="إلغاء وفك قفل الزر"
+                >
+                  <X className="w-3.5 h-3.5 text-rose-500" />
+                  <span>إلغاء</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

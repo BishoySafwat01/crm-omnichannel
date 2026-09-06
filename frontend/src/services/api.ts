@@ -29,14 +29,14 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
 
   try {
     const res = await fetch(targetUrl, reqInit);
-    // If local dev server proxy fails with 500/502/503/504, fallback directly to backend port 8000
+    // If local dev server proxy fails with 500/502/503/504, fallback directly to backend port 8001
     if (
       !res.ok &&
       res.status >= 500 &&
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
+      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8001/api/v1${cleanPath}`;
       return await fetch(directBackendUrl, reqInit);
     }
     return res;
@@ -46,7 +46,7 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
+      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8001/api/v1${cleanPath}`;
       return await fetch(directBackendUrl, reqInit);
     }
     throw err;

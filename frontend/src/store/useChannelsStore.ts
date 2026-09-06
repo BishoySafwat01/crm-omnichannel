@@ -12,6 +12,7 @@ interface ChannelsState {
 
   fetchConnectedPages: () => Promise<void>;
   initiateMetaConnect: (customRedirectUri?: string) => Promise<void>;
+  cancelMetaConnect: () => void;
   handleOAuthCallback: (
     code: string,
     state: string,
@@ -44,6 +45,14 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
   initiateMetaConnect: async (customRedirectUri?: string) => {
     set({ isConnecting: true, error: null, successMessage: null });
+
+    // 12-second safety watchdog: automatically release connecting state if navigation stalls or is blocked
+    const watchdog = setTimeout(() => {
+      if (get().isConnecting) {
+        set({ isConnecting: false });
+      }
+    }, 12000);
+
     try {
       const redirectUri =
         customRedirectUri ||
@@ -61,15 +70,21 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           window.location.href = res.authorization_url;
         }
       } else {
+        clearTimeout(watchdog);
         throw new Error('لم يتم استلام رابط تصريح Meta');
       }
     } catch (err: any) {
+      clearTimeout(watchdog);
       console.error('[ChannelsStore] Failed to initiate Meta OAuth:', err);
       set({
         isConnecting: false,
         error: err.message || 'فشل في بدء عملية الربط مع Meta',
       });
     }
+  },
+
+  cancelMetaConnect: () => {
+    set({ isConnecting: false });
   },
 
   handleOAuthCallback: async (
@@ -123,3 +138,10 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
   clearFeedback: () => set({ error: null, successMessage: null }),
 }));
+
+// Unlock connecting state if restored via browser back/forward cache (bfcache)
+if (typeof window !== 'undefined') {
+  window.addEventListener('pageshow', () => {
+    useChannelsStore.setState({ isConnecting: false });
+  });
+}

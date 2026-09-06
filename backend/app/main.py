@@ -210,10 +210,10 @@ app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 
 # Admin Routers
-app.include_router(admin_analytics_router, prefix="/api/v1")
-app.include_router(admin_automations_router, prefix="/api/v1")
-app.include_router(admin_customers_router, prefix="/api/v1")
-app.include_router(admin_team_router, prefix="/api/v1")
+app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
+app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
+app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
+app.include_router(admin_team_router, prefix="/api/v1/admin/team")
 
 # Public Legal & Compliance Routers (Meta App Review Compliance)
 app.include_router(legal_router)
