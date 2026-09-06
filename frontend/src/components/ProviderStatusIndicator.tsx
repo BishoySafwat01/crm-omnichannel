@@ -70,15 +70,11 @@ export const ProviderStatusIndicator: React.FC = () => {
 
   return (
     <div className="relative inline-flex items-center text-right select-none font-sans" dir="ltr" ref={dropdownRef}>
-      {/* Sleek Compact Badge Trigger */}
+      {/* Sleek Enterprise Pill Trigger */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all duration-200 border cursor-pointer ${
-          isHybrid || isDirectMeta
-            ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-300'
-            : 'bg-indigo-50/80 hover:bg-indigo-100/80 border-indigo-200 text-indigo-800 dark:bg-indigo-950/40 dark:border-indigo-800/60 dark:text-indigo-300'
-        }`}
+        className="group flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100/80 border border-slate-200/70 text-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
         title={
           isHybrid
             ? 'Messenger via Graph API v23.0 | Channels via BeOn V3'
@@ -88,38 +84,25 @@ export const ProviderStatusIndicator: React.FC = () => {
         }
       >
         {/* Pulsing Status Dot */}
-        <span className="relative flex h-2 w-2 shrink-0">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
           <span
             className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
               isHybrid || isDirectMeta ? 'bg-emerald-400' : 'bg-indigo-400'
             }`}
           />
           <span
-            className={`relative inline-flex rounded-full h-2 w-2 ${
-              isHybrid || isDirectMeta ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.8)]'
+            className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+              isHybrid || isDirectMeta ? 'bg-emerald-500' : 'bg-indigo-500'
             }`}
           />
         </span>
 
-        {/* Icon & Label */}
-        {isHybrid ? (
-          <>
-            <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="tracking-tight">Hybrid (Meta + BeOn)</span>
-          </>
-        ) : isDirectMeta ? (
-          <>
-            <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="tracking-tight">Meta Direct</span>
-          </>
-        ) : (
-          <>
-            <Globe className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="tracking-tight">BeOn Gateway</span>
-          </>
-        )}
+        {/* Text */}
+        <span className="tracking-tight">
+          {isHybrid ? 'Hybrid (Meta + BeOn)' : isDirectMeta ? 'Meta Direct' : 'BeOn Gateway'}
+        </span>
 
-        <ChevronDown className={`w-3 h-3 opacity-50 group-hover:opacity-100 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3 h-3 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover Dropdown Details */}

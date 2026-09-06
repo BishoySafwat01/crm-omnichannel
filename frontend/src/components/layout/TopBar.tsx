@@ -17,6 +17,7 @@ import {
   Bell,
   SlidersHorizontal,
   Globe,
+  Layers,
 } from 'lucide-react';
 import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
@@ -122,7 +123,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         link: formattedLink,
       });
 
-      setPublishSuccess(`تم نشر المنشور بنجاح على صفحة فيسبوك ✨ (ID: ${data.post_id || 'تم'})`);
+      setPublishSuccess(`تم نشر المنشور بنجاح على صفحة فيسبوك (ID: ${data.post_id || 'تم'})`);
       setPostMessage('');
       setPostLink('');
       setTimeout(() => {
@@ -225,10 +226,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   ];
 
   return (
-    <header className="sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs z-30 px-5 py-2.5 flex items-center justify-between shrink-0 select-none transition-all duration-200 ease-out">
+    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-4 py-2 flex items-center justify-between select-none">
       {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark + Primary Navigation */}
       <div className="flex items-center gap-4">
-        {/* LUXIRA HOLDING Brand Mark (Height 36px) & Typographic Branding */}
+        {/* LUXIRA HOLDING Brand Mark & Typographic Branding */}
         <div className="flex items-center gap-2.5 shrink-0 group cursor-default">
           <div className="h-9 w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105">
             <img
@@ -258,7 +259,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
                     isActive
                       ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-xl px-3.5 py-1.5 font-medium'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium rounded-xl px-3.5 py-1.5 transition-colors'
                   }`}
                 >
                   <span className={isActive ? 'text-white' : 'text-slate-500'}>
@@ -281,7 +282,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition duration-200 ease-out shadow-xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
                 title="تصفية المحادثات حسب الماركة"
               >
                 {selectedBrandObj?.logo_url ? (
@@ -339,7 +340,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition duration-200 ease-out shadow-xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
                 title="تصفية المحادثات حسب القناة"
               >
                 <Radio className="w-3.5 h-3.5 text-teal-600" />
@@ -371,43 +372,45 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               )}
             </div>
 
-            {/* 3. Segmented Provider Controller (Teal Harmonized Palette) */}
-            <div className="flex items-center bg-slate-50 border border-slate-200/80 p-0.5 rounded-xl shadow-xs">
+            {/* 3. Segmented Provider Controller (No Emojis, Pure SVGs & Typography) */}
+            <div className="flex items-center bg-slate-100/70 p-0.5 rounded-xl border border-slate-200/60 shadow-2xs">
               <button
                 type="button"
                 onClick={() => setSelectedProvider('all')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
                   selectedProvider === 'all'
-                    ? 'bg-teal-600 text-white shadow-xs'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="عرض كل المزودين بدون تكرار"
+                title="عرض كل المزودين"
               >
-                <span>⚡ الكل</span>
+                <span>الكل</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedProvider('meta')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
                   selectedProvider === 'meta'
-                    ? 'bg-teal-700 text-white shadow-xs'
+                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="محادثات Meta Graph API المباشرة فقط"
+                title="محادثات Meta Graph API المباشرة"
               >
-                <span>🌐 ميتا مباشر</span>
+                <Globe className={`w-3.5 h-3.5 ${selectedProvider === 'meta' ? 'text-teal-600' : 'text-slate-400'}`} />
+                <span>ميتا مباشر</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedProvider('beon')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
                   selectedProvider === 'beon'
-                    ? 'bg-emerald-600 text-white shadow-xs'
+                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="محادثات مزود BeOn Gateway V3 فقط"
+                title="محادثات مزود BeOn Gateway V3"
               >
-                <span>🚀 مزود BeOn</span>
+                <Layers className={`w-3.5 h-3.5 ${selectedProvider === 'beon' ? 'text-teal-600' : 'text-slate-400'}`} />
+                <span>مزود BeOn</span>
               </button>
             </div>
 
@@ -416,16 +419,16 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsSecondaryOpen(!isSecondaryOpen)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition duration-200 ease-out shadow-xs cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors shadow-2xs cursor-pointer ${
                   isSecondaryOpen || (selectedCountry && selectedCountry !== 'all')
                     ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
-                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                    : 'bg-slate-50/80 text-slate-700 border-slate-200/70 hover:bg-slate-100'
                 }`}
                 title="خيارات إضافية (الموقع الجغرافي والنشر)"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
                 <span className="hidden xl:inline text-[11px]">
-                  {selectedCountry && selectedCountry !== 'all' ? `📍 ${selectedCountry}` : 'أدوات إضافية'}
+                  {selectedCountry && selectedCountry !== 'all' ? selectedCountry : 'أدوات إضافية'}
                 </span>
                 <ChevronDown className="w-3 h-3 text-slate-400" />
               </button>
@@ -448,13 +451,13 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                       onChange={(e) => setSelectedCountry(e.target.value)}
                       className="w-full bg-slate-50 hover:bg-slate-100/80 text-slate-800 text-xs font-medium rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition duration-150 cursor-pointer"
                     >
-                      <option value="all">🌍 كل المواقع والدول</option>
+                      <option value="all">كل المواقع والدول</option>
                       {(availableCountries || []).map((c) => (
                         <option key={c} value={c}>
-                          📍 {c}
+                          {c}
                         </option>
                       ))}
-                      <option value="unspecified">⚪ غير محدد</option>
+                      <option value="unspecified">غير محدد</option>
                     </select>
                   </div>
 
@@ -493,7 +496,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         <div className="relative" ref={notifDropdownRef}>
           <button
             onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/80 bg-slate-50 shadow-xs hover:ring-2 hover:ring-teal-500/20 transition duration-200 ease-out relative cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/70 bg-slate-50 shadow-2xs hover:ring-2 hover:ring-teal-500/20 transition duration-150 relative cursor-pointer"
             title="التنبيهات والرسائل غير المقروءة"
           >
             <Bell className="w-4 h-4" />
@@ -529,30 +532,31 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   })}
                 </div>
               ) : (
-                <p className="text-[11px] text-slate-400 text-center py-2">لا توجد رسائل غير مقروءة حالياً ✨</p>
+                <p className="text-[11px] text-slate-400 text-center py-2">لا توجد رسائل غير مقروءة حالياً</p>
               )}
             </div>
           )}
         </div>
 
-        {/* Clean User Avatar Pill: Bishoy Safwat | Admin */}
+        {/* User Profile Chip */}
         {user && (
-          <div className="flex items-center gap-2 pr-2 border-r border-slate-200/80">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-xs text-xs transition duration-200 ease-out">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-teal-600 to-emerald-500 text-white flex items-center justify-center text-[11px] font-black shadow-xs">
-                {user.full_name?.charAt(0) || 'U'}
+          <div className="flex items-center gap-2 pr-2 border-r border-slate-200/60">
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50/80 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 text-xs transition-colors">
+              <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold">
+                {user.full_name
+                  ? user.full_name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+                  : 'BS'}
               </div>
               <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-extrabold text-slate-900 truncate max-w-[110px]">{user.full_name || 'Bishoy Safwat'}</span>
-                <span className="text-slate-300">|</span>
-                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-md border border-teal-200/60">
+                <span className="font-semibold text-slate-800 truncate max-w-[110px]">{user.full_name || 'Bishoy Safwat'}</span>
+                <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md border border-slate-200/50">
                   {user.role === 'admin' || user.role === 'superadmin' ? 'Admin' : 'Agent'}
                 </span>
               </div>
             </div>
             <button
               onClick={logout}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 hover:ring-2 hover:ring-rose-100 transition duration-200 ease-out cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
               title="تسجيل الخروج"
             >
               <LogOut className="w-4 h-4" />
