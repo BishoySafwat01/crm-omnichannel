@@ -19,7 +19,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        SAEnum(UserRole, native_enum=False),
+        SAEnum(UserRole, native_enum=False, values_callable=lambda x: [e.value for e in x]),
         default=UserRole.AGENT,
         nullable=False,
         index=True,

@@ -1,5 +1,6 @@
 from app.models.audit import ConversationAssignmentLog, UserAuditLog
 from app.models.automation import AutomationExecutionLog, AutomationRule
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.customer_note import CustomerNote
@@ -21,6 +22,7 @@ from app.models.social_comment import CommentModerationLog, CommentModerationSet
 from app.models.user import User
 
 __all__ = [
+    "ConnectedPage",
     "Customer",
     "CustomerIdentity",
     "CustomerNote",

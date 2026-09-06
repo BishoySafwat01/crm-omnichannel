@@ -1,0 +1,247 @@
+import logging
+import urllib.parse
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from fastapi import HTTPException, status
+import httpx
+import jwt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.security import encrypt_token
+from app.models.connected_page import ConnectedPage
+
+logger = logging.getLogger("app.services.meta_oauth")
+
+DEFAULT_SCOPES = [
+    "pages_show_list",
+    "pages_read_engagement",
+    "pages_manage_metadata",
+    "pages_messaging",
+    "instagram_basic",
+    "instagram_manage_messages",
+]
+
+
+class MetaOAuthService:
+    """OAuth 2.0 Service for Meta (Facebook & Instagram) Multi-Page Onboarding."""
+
+    @staticmethod
+    def generate_oauth_state(user_id: uuid.UUID) -> str:
+        """Generate a tamper-proof, signed JWT CSRF state token for the OAuth handshake."""
+        payload = {
+            "sub": str(user_id),
+            "type": "meta_oauth_csrf",
+            "iat": datetime.now(timezone.utc),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        }
+        return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+
+    @staticmethod
+    def verify_oauth_state(state: str, expected_user_id: Optional[uuid.UUID] = None) -> dict[str, Any]:
+        """Verify the authenticity and freshness of the OAuth state token."""
+        try:
+            payload = jwt.decode(state, settings.SECRET_KEY, algorithms=["HS256"])
+            if payload.get("type") != "meta_oauth_csrf":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid OAuth state parameter type.",
+                )
+            if expected_user_id and payload.get("sub") != str(expected_user_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="OAuth state user identity mismatch.",
+                )
+            return payload
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OAuth session state has expired. Please initiate login again.",
+            )
+        except jwt.PyJWTError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or tampered OAuth state parameter.",
+            )
+
+    @classmethod
+    def get_authorization_url(cls, state: str, redirect_uri: Optional[str] = None) -> str:
+        """Build the Meta OAuth dialog authorization URL."""
+        app_id = settings.META_APP_ID
+        if not app_id or not str(app_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Meta App ID is not configured on this server.",
+            )
+
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        base_url = f"https://www.facebook.com/{version}/dialog/oauth"
+
+        params = {
+            "client_id": str(app_id).strip(),
+            "state": state,
+            "scope": ",".join(DEFAULT_SCOPES),
+            "response_type": "code",
+        }
+        if redirect_uri:
+            params["redirect_uri"] = redirect_uri
+
+        encoded_params = urllib.parse.urlencode(params)
+        return f"{base_url}?{encoded_params}"
+
+    @classmethod
+    async def exchange_code_for_user_token(cls, code: str, redirect_uri: str) -> str:
+        """Exchange the authorization code for a short-lived user token and upgrade to a 60-day long-lived token."""
+        app_id = settings.META_APP_ID
+        app_secret = settings.META_APP_SECRET
+        if not app_id or not app_secret:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Meta App ID or App Secret is not configured.",
+            )
+
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        token_endpoint = f"https://graph.facebook.com/{version}/oauth/access_token"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Step 1: Exchange code for short-lived User Token
+            params_short = {
+                "client_id": str(app_id).strip(),
+                "client_secret": str(app_secret).strip(),
+                "redirect_uri": redirect_uri,
+                "code": code,
+            }
+            logger.info("Exchanging authorization code for short-lived user token...")
+            resp_short = await client.get(token_endpoint, params=params_short)
+            if resp_short.status_code != 200:
+                err_data = resp_short.json().get("error", {}) if resp_short.content else {}
+                err_msg = err_data.get("message", resp_short.text)
+                logger.error("Failed to exchange code for user token: %s", err_msg)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Meta token exchange error: {err_msg}",
+                )
+
+            short_token = resp_short.json().get("access_token")
+            if not short_token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Meta response did not contain an access_token.",
+                )
+
+            # Step 2: Upgrade to long-lived (60-day) User Token
+            params_long = {
+                "grant_type": "fb_exchange_token",
+                "client_id": str(app_id).strip(),
+                "client_secret": str(app_secret).strip(),
+                "fb_exchange_token": short_token,
+            }
+            logger.info("Upgrading to 60-day long-lived user token...")
+            resp_long = await client.get(token_endpoint, params=params_long)
+            if resp_long.status_code != 200:
+                logger.warning(
+                    "Could not upgrade to long-lived token (%s), falling back to short-lived token.",
+                    resp_long.text,
+                )
+                return short_token
+
+            long_token = resp_long.json().get("access_token")
+            return long_token or short_token
+
+    @classmethod
+    async def fetch_user_pages(cls, long_lived_user_token: str) -> list[dict[str, Any]]:
+        """Fetch all managed Facebook Pages and linked Instagram accounts for the authenticated user."""
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        url = f"https://graph.facebook.com/{version}/me/accounts"
+        params = {
+            "fields": "id,name,category,access_token,instagram_business_account",
+            "access_token": long_lived_user_token,
+            "limit": 100,
+        }
+
+        pages: list[dict[str, Any]] = []
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while url:
+                resp = await client.get(url, params=params if "?" not in url else None)
+                if resp.status_code != 200:
+                    err_data = resp.json().get("error", {}) if resp.content else {}
+                    err_msg = err_data.get("message", resp.text)
+                    logger.error("Failed to query /me/accounts: %s", err_msg)
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Meta accounts fetch error: {err_msg}",
+                    )
+
+                body = resp.json()
+                data = body.get("data", [])
+                pages.extend(data)
+
+                # Check for next page
+                paging = body.get("paging", {})
+                url = paging.get("next")
+                params = {}  # URL already includes query parameters
+
+        logger.info("Successfully fetched %d Facebook Pages from /me/accounts.", len(pages))
+        return pages
+
+    @classmethod
+    async def save_or_update_pages(
+        cls,
+        pages: list[dict[str, Any]],
+        user_id: uuid.UUID,
+        db: AsyncSession,
+    ) -> list[ConnectedPage]:
+        """Upsert fetched pages into connected_pages table with encrypted page tokens."""
+        saved_records: list[ConnectedPage] = []
+
+        for pdata in pages:
+            page_id = str(pdata.get("id", "")).strip()
+            if not page_id:
+                continue
+
+            name = pdata.get("name") or f"Page {page_id}"
+            category = pdata.get("category")
+            raw_token = pdata.get("access_token") or ""
+            encrypted_token = encrypt_token(raw_token)
+
+            ig_account = pdata.get("instagram_business_account")
+            ig_id = None
+            if ig_account:
+                ig_id = str(ig_account.get("id")) if isinstance(ig_account, dict) else str(ig_account)
+
+            stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
+            result = await db.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.name = name
+                existing.encrypted_access_token = encrypted_token
+                existing.category = category
+                existing.instagram_business_account_id = ig_id
+                existing.status = "ACTIVE"
+                existing.connected_by_user_id = user_id
+                existing.updated_at = datetime.now(timezone.utc)
+                saved_records.append(existing)
+            else:
+                new_page = ConnectedPage(
+                    page_id=page_id,
+                    name=name,
+                    encrypted_access_token=encrypted_token,
+                    category=category,
+                    instagram_business_account_id=ig_id,
+                    status="ACTIVE",
+                    is_webhook_subscribed=False,
+                    connected_by_user_id=user_id,
+                )
+                db.add(new_page)
+                saved_records.append(new_page)
+
+        await db.commit()
+        for record in saved_records:
+            await db.refresh(record)
+
+        logger.info("Successfully saved/updated %d ConnectedPage records.", len(saved_records))
+        return saved_records
