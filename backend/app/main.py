@@ -187,7 +187,13 @@ async def perform_health_check() -> tuple[dict[str, Any], int]:
     }, http_status
 
 
+@app.get("/", tags=["system"], summary="Root service status probe")
+async def root_probe() -> dict[str, str]:
+    return {"app": settings.PROJECT_NAME, "status": "running"}
+
+
 @app.get("/health", tags=["system"], summary="System health probe")
+@app.get("/api/v1/health", tags=["system"], summary="System health probe (API v1)")
 async def health_check() -> JSONResponse:
     content, http_status = await perform_health_check()
     return JSONResponse(

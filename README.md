@@ -1,13 +1,13 @@
 # CRM Omnichannel V1.6
 
-Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynamic Integration Engine**, multi-provider routing (Meta Direct Graph API & BeOn Gateway V3), real-time WebSocket messaging, and automated Webhook subscription synchronization.
+Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynamic Integration Engine**, multi-provider routing (Meta Direct Graph API & BeOn Gateway V3), real-time WebSocket messaging, automated Webhook subscription synchronization, and isolated multi-service runtime architecture.
 
 ---
 
 ## 🚀 Key Features in V1.6
 
 ### 1. Meta Dynamic Integration Engine
-- **OAuth 2.0 Page Onboarding**: Superadmin and Admin users can authenticate with Meta to dynamically onboard managed Facebook Pages and linked Instagram Business Accounts.
+- **OAuth 2.0 Page Onboarding**: Superadmin and Admin users authenticate with Meta to dynamically onboard managed Facebook Pages and linked Instagram Business Accounts.
 - **Fernet Symmetrical Encryption**: Page access tokens are encrypted before persistence to the database (`connected_pages` table) and decrypted strictly in transient memory. Raw tokens are never logged, stored in plain text, or exposed to the frontend.
 - **Database-First Dynamic Token Resolution**: Outbound messaging (`MetaClient`, `MetaProvider`) dynamically resolves active access tokens from `connected_pages` with backward-compatible fallback to `.env` configuration.
 - **Automated Webhook Subscriptions**: Upon onboarding, each page is automatically subscribed to application webhooks (`POST /{page_id}/subscribed_apps`) with `messages`, `messaging_postbacks`, `message_reads`, and `message_deliveries` fields.
@@ -21,6 +21,19 @@ Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynami
   - Page cards with quick copy for Page ID, linked Instagram accounts, live status indicators, and webhook subscription badges.
   - Direct test ping tools for WhatsApp Cloud, Instagram Direct, and Messenger.
 
+### 3. Realigned Admin API & Team Hierarchy
+- **Realigned Admin Endpoints**:
+  - `GET /api/v1/admin/customers`: Customer management with unified search, pagination, and channel metrics.
+  - `GET /api/v1/admin/team/members`: Full team roster and role breakdown.
+- **4-Tier Operational Roles**:
+  - Full support for `superadmin`, `admin`, `supervisor`, and `agent` profiles with granular inbox and settings permissions.
+
+### 4. Public Legal & Compliance Router
+- **Meta App Review Ready Endpoints**:
+  - `GET /privacy-policy`: Public HTML Privacy Policy for LUXIRA CRM.
+  - `GET /terms-of-service`: Public HTML Terms of Service.
+  - `GET /data-deletion`: Self-service instructions and callback URL for Meta user data deletion.
+
 ---
 
 ## 🛠 Isolated Runtime Architecture (V1.6 Topology)
@@ -29,7 +42,7 @@ Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynami
 | :--- | :---: | :--- | :--- |
 | **Backend API (FastAPI)** | `8001` | `crm_omnichannel_v16` | Async SQLAlchemy 2.0, Uvicorn ASGI daemon, Redis Pub/Sub listener |
 | **Frontend UI (Vite / React)** | `5174` | `http://127.0.0.1:8001/api/v1` | TailwindCSS, Zustand stores, Glassmorphism UI |
-| **PostgreSQL 16** | `5432` | `crm_omnichannel_v16` | Dedicated isolated database with Alembic migration chaining |
+| **PostgreSQL 16** | `5432` | `crm_omnichannel_v16` | Dedicated isolated database with Alembic migration chaining (`dbceb4858689`) |
 | **Redis 7** | `6379` | `DB 1` (`redis://127.0.0.1:6379/1`) | Pub/Sub real-time event bus and session store |
 
 ---
@@ -37,7 +50,7 @@ Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynami
 ## 🔒 Security & RBAC Guardrails
 
 1. **Token Hygiene**:
-   - Access tokens are stored encrypted using Fernet symmetric encryption.
+   - Access tokens are stored encrypted using Fernet symmetric encryption (`ENCRYPTION_KEY`).
    - Decryption occurs in transient memory during API dispatch and is never serialized in API responses or displayed in the DOM.
 2. **CSRF State Security**:
    - OAuth state parameters are signed JWTs encoding user identity and expiration timestamps to prevent cross-site request forgery and user hijacking.
@@ -46,7 +59,7 @@ Production-ready, decoupled omnichannel CRM platform featuring the **Meta Dynami
 
 ---
 
-## 🧪 Quick Health Checks
+## 🧪 Quick Health Checks & Smoke Probes
 
 ```bash
 # Backend Health Probe
@@ -54,6 +67,14 @@ curl -s http://127.0.0.1:8001/health
 
 # Guarded Meta Connected Pages Endpoint (Challenge expected: 401 Unauthorized)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/api/v1/meta/connected-pages
+
+# Protected Admin Team Members Endpoint (Challenge expected: 401 Unauthorized)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/api/v1/admin/team/members
+
+# Public Compliance Endpoints (Expected: 200 OK)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/privacy-policy
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/terms-of-service
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/data-deletion
 
 # Frontend Dev Server Readiness
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5174/
