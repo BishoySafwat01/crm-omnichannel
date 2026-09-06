@@ -1324,9 +1324,63 @@ export const getConnectedPages = async (): Promise<ConnectedPage[]> => {
   return await res.json();
 };
 
+export const updateConnectedPageStatus = async (pageId: string, status: 'ACTIVE' | 'INACTIVE'): Promise<ConnectedPage> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}/status`, {
+    method: 'PATCH',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ status }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث حالة الصفحة' }));
+    throw new Error(err?.detail || 'فشل في تحديث حالة الصفحة');
+  }
+  return await res.json();
+};
+
+export const deleteConnectedPage = async (pageId: string): Promise<{ status: string; message: string }> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في إلغاء ربط الصفحة' }));
+    throw new Error(err?.detail || 'فشل في إلغاء ربط الصفحة');
+  }
+  return await res.json();
+};
+
+export const subscribeConnectedPage = async (pageId: string): Promise<ConnectedPage> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}/subscribe`, {
+    method: 'POST',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في تفعيل اشتراك الويب هـوك' }));
+    throw new Error(err?.detail || 'فشل في تفعيل اشتراك الويب هـوك');
+  }
+  return await res.json();
+};
+
+export const syncConnectedPageHistory = async (pageId: string): Promise<any> => {
+  const res = await safeFetch(`/meta/import?page_id=${encodeURIComponent(pageId)}`, {
+    method: 'POST',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في بدء مزامنة محادثات الصفحة' }));
+    throw new Error(err?.detail || 'فشل في بدء مزامنة محادثات الصفحة');
+  }
+  return await res.json();
+};
+
 export const metaOAuthApi = {
   getMetaLoginUrl,
   submitMetaOAuthCallback,
   getConnectedPages,
+  updateConnectedPageStatus,
+  deleteConnectedPage,
+  subscribeConnectedPage,
+  syncConnectedPageHistory,
 };
+
 

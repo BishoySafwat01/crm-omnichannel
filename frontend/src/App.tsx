@@ -10,6 +10,7 @@ import { AutomationPage } from './pages/Automation/AutomationPage';
 import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { TeamPage } from './pages/Team/TeamPage';
+import { ChannelsPage } from './pages/Channels/ChannelsPage';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
@@ -29,7 +30,7 @@ export const App: React.FC = () => {
     dismissLocationAlert,
   } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
-  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
+  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(wsConnected);
@@ -121,7 +122,9 @@ export const App: React.FC = () => {
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
 
       {/* Main View Area (Feature / Page-Based Routing) */}
-      {isUserAdmin && activeMainView === 'comments' ? (
+      {isUserAdmin && activeMainView === 'channels' ? (
+        <ChannelsPage />
+      ) : isUserAdmin && activeMainView === 'comments' ? (
         <CommentsPage />
       ) : isUserAdmin && activeMainView === 'automations' ? (
         <AutomationPage />

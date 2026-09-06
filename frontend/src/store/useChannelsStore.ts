@@ -7,6 +7,7 @@ interface ChannelsState {
   isLoadingPages: boolean;
   isConnecting: boolean;
   isProcessingCallback: boolean;
+  actionLoadingMap: Record<string, boolean>;
   error: string | null;
   successMessage: string | null;
 
@@ -17,7 +18,11 @@ interface ChannelsState {
     code: string,
     state: string,
     customRedirectUri?: string
-  ) => Promise<{ success: boolean; count?: number; error?: string }>;
+  ) => Promise<{ success: boolean; count?: number; pages?: ConnectedPage[]; error?: string }>;
+  subscribePageWebhook: (pageId: string) => Promise<boolean>;
+  togglePageStatus: (pageId: string, currentStatus: string) => Promise<boolean>;
+  disconnectPage: (pageId: string) => Promise<boolean>;
+  syncPageHistory: (pageId: string) => Promise<boolean>;
   clearFeedback: () => void;
 }
 
@@ -26,6 +31,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   isLoadingPages: false,
   isConnecting: false,
   isProcessingCallback: false,
+  actionLoadingMap: {},
   error: null,
   successMessage: null,
 
@@ -46,12 +52,66 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   initiateMetaConnect: async (customRedirectUri?: string) => {
     set({ isConnecting: true, error: null, successMessage: null });
 
-    // 12-second safety watchdog: automatically release connecting state if navigation stalls or is blocked
-    const watchdog = setTimeout(() => {
+    // Calculate centered popup coordinates
+    const width = 650;
+    const height = 750;
+    let left = 200;
+    let top = 100;
+    if (typeof window !== 'undefined') {
+      left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+      top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+    }
+    const popupFeatures = `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=yes,resizable=yes`;
+
+    // Open popup immediately on click to prevent browser popup blockers
+    let popup: Window | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        popup = window.open('about:blank', 'meta_oauth_popup', popupFeatures);
+        if (popup) {
+          popup.document.write(`
+            <!DOCTYPE html>
+            <html dir="rtl">
+            <head>
+              <meta charset="utf-8">
+              <title>Meta OAuth - LUXIRA</title>
+              <style>
+                body { font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
+                .spinner { width: 36px; height: 36px; border: 3px solid #334155; border-top: 3px solid #1877f2; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                h3 { margin: 0 0 6px 0; font-size: 16px; font-weight: 700; }
+                p { margin: 0; font-size: 12px; color: #94a3b8; }
+              </style>
+            </head>
+            <body>
+              <div class="spinner"></div>
+              <h3>جارٍ الاتصال بـ Meta...</h3>
+              <p>يرجى الانتظار لتجهيز نافذة المصادقة الموثقة</p>
+            </body>
+            </html>
+          `);
+        }
+      } catch {
+        // popup fallback handled below
+      }
+    }
+
+    // Safety watchdog: reset state if popup closed or navigation stalls
+    const popupWatcher = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(popupWatcher);
+        if (get().isConnecting) {
+          set({ isConnecting: false });
+        }
+      }
+    }, 1000);
+
+    const safetyWatchdog = setTimeout(() => {
+      clearInterval(popupWatcher);
       if (get().isConnecting) {
         set({ isConnecting: false });
       }
-    }, 12000);
+    }, 60000);
 
     try {
       const redirectUri =
@@ -66,15 +126,23 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
       const res = await metaOAuthApi.getMetaLoginUrl(redirectUri);
       if (res && res.authorization_url) {
-        if (typeof window !== 'undefined') {
+        if (popup && !popup.closed) {
+          popup.location.href = res.authorization_url;
+          popup.focus();
+        } else if (typeof window !== 'undefined') {
+          // Fallback if popup blocker completely disallowed window.open
           window.location.href = res.authorization_url;
         }
       } else {
-        clearTimeout(watchdog);
-        throw new Error('لم يتم استلام رابط تصريح Meta');
+        if (popup && !popup.closed) popup.close();
+        clearInterval(popupWatcher);
+        clearTimeout(safetyWatchdog);
+        throw new Error('لم يتم استلام رابط تصريح Meta من الخادم');
       }
     } catch (err: any) {
-      clearTimeout(watchdog);
+      if (popup && !popup.closed) popup.close();
+      clearInterval(popupWatcher);
+      clearTimeout(safetyWatchdog);
       console.error('[ChannelsStore] Failed to initiate Meta OAuth:', err);
       set({
         isConnecting: false,
@@ -118,10 +186,11 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       set({
         connectedPages: savedPages,
         isProcessingCallback: false,
+        isConnecting: false,
         successMessage: `تم بنجاح ربط ${savedPages.length} صفحة من صفحات فيسبوك وتفعيل اشتراك الويب هـوك تلقائياً ✨`,
       });
 
-      return { success: true, count: savedPages.length };
+      return { success: true, count: savedPages.length, pages: savedPages };
     } catch (err: any) {
       console.error('[ChannelsStore] Failed to complete Meta OAuth callback:', err);
       if (typeof window !== 'undefined') {
@@ -130,17 +199,140 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       const errMsg = err.message || 'فشل في استكمال الربط مع حساب فيسبوك';
       set({
         isProcessingCallback: false,
+        isConnecting: false,
         error: errMsg,
       });
       return { success: false, error: errMsg };
     }
   },
 
+  subscribePageWebhook: async (pageId: string) => {
+    set((state) => ({
+      actionLoadingMap: { ...state.actionLoadingMap, [`sub_${pageId}`]: true },
+      error: null,
+      successMessage: null,
+    }));
+    try {
+      const updatedPage = await metaOAuthApi.subscribeConnectedPage(pageId);
+      set((state) => ({
+        connectedPages: state.connectedPages.map((p) =>
+          p.page_id === pageId ? { ...p, is_webhook_subscribed: updatedPage.is_webhook_subscribed } : p
+        ),
+        actionLoadingMap: { ...state.actionLoadingMap, [`sub_${pageId}`]: false },
+        successMessage: updatedPage.is_webhook_subscribed
+          ? `تم بنجاح تفعيل اشتراك الويب هـوك للصفحة (${updatedPage.name}) ✨`
+          : `تعذر تفعيل الاشتراك التلقائي للصفحة (${updatedPage.name})`,
+      }));
+      return true;
+    } catch (err: any) {
+      set((state) => ({
+        actionLoadingMap: { ...state.actionLoadingMap, [`sub_${pageId}`]: false },
+        error: err.message || 'فشل في تحديث اشتراك الويب هـوك',
+      }));
+      return false;
+    }
+  },
+
+  togglePageStatus: async (pageId: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    set((state) => ({
+      actionLoadingMap: { ...state.actionLoadingMap, [`status_${pageId}`]: true },
+      error: null,
+      successMessage: null,
+    }));
+    try {
+      const updatedPage = await metaOAuthApi.updateConnectedPageStatus(pageId, nextStatus);
+      set((state) => ({
+        connectedPages: state.connectedPages.map((p) =>
+          p.page_id === pageId ? { ...p, status: updatedPage.status } : p
+        ),
+        actionLoadingMap: { ...state.actionLoadingMap, [`status_${pageId}`]: false },
+        successMessage: `تم تحديث حالة الصفحة (${updatedPage.name}) إلى: ${updatedPage.status === 'ACTIVE' ? 'نشط 🟢' : 'معطل ⚪'}`,
+      }));
+      return true;
+    } catch (err: any) {
+      set((state) => ({
+        actionLoadingMap: { ...state.actionLoadingMap, [`status_${pageId}`]: false },
+        error: err.message || 'فشل في تغيير حالة الصفحة',
+      }));
+      return false;
+    }
+  },
+
+  disconnectPage: async (pageId: string) => {
+    set((state) => ({
+      actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: true },
+      error: null,
+      successMessage: null,
+    }));
+    try {
+      await metaOAuthApi.deleteConnectedPage(pageId);
+      set((state) => ({
+        connectedPages: state.connectedPages.filter((p) => p.page_id !== pageId),
+        actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: false },
+        successMessage: 'تم بنجاح إلغاء ربط الصفحة وحذفها من النظام 🗑️',
+      }));
+      return true;
+    } catch (err: any) {
+      set((state) => ({
+        actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: false },
+        error: err.message || 'فشل في إلغاء ربط الصفحة',
+      }));
+      return false;
+    }
+  },
+
+  syncPageHistory: async (pageId: string) => {
+    set((state) => ({
+      actionLoadingMap: { ...state.actionLoadingMap, [`sync_${pageId}`]: true },
+      error: null,
+      successMessage: null,
+    }));
+    try {
+      await metaOAuthApi.syncConnectedPageHistory(pageId);
+      set((state) => ({
+        actionLoadingMap: { ...state.actionLoadingMap, [`sync_${pageId}`]: false },
+        successMessage: 'تم تشغيل مهمة سحب ومزامنة محادثات الصفحة من فيسبوك بنجاح 🔄',
+      }));
+      return true;
+    } catch (err: any) {
+      set((state) => ({
+        actionLoadingMap: { ...state.actionLoadingMap, [`sync_${pageId}`]: false },
+        error: err.message || 'فشل في بدء مزامنة محادثات الصفحة',
+      }));
+      return false;
+    }
+  },
+
   clearFeedback: () => set({ error: null, successMessage: null }),
 }));
 
-// Unlock connecting state if restored via browser back/forward cache (bfcache)
+// Global Window Event Listeners (PostMessage & BFCache)
 if (typeof window !== 'undefined') {
+  // Listen for OAuth completion from popup window
+  window.addEventListener('message', (event) => {
+    // Only accept messages from same origin
+    if (event.origin !== window.location.origin) return;
+
+    if (event.data?.type === 'META_OAUTH_SUCCESS') {
+      const pages = event.data.pages || [];
+      useChannelsStore.setState({
+        connectedPages: pages.length > 0 ? pages : useChannelsStore.getState().connectedPages,
+        isConnecting: false,
+        isProcessingCallback: false,
+        successMessage: `تم بنجاح ربط ${pages.length} صفحة من صفحات فيسبوك وتفعيل اشتراك الويب هـوك تلقائياً ✨`,
+      });
+      useChannelsStore.getState().fetchConnectedPages();
+    } else if (event.data?.type === 'META_OAUTH_ERROR') {
+      useChannelsStore.setState({
+        isConnecting: false,
+        isProcessingCallback: false,
+        error: event.data.error || 'فشل في استكمال الربط مع حساب فيسبوك',
+      });
+    }
+  });
+
+  // Unlock connecting state if restored via browser back/forward cache (bfcache)
   window.addEventListener('pageshow', () => {
     useChannelsStore.setState({ isConnecting: false });
   });

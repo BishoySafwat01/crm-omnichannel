@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
+import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin, Radio } from 'lucide-react';
 import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
@@ -9,8 +9,8 @@ import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
-  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team') => void;
+  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
+  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
@@ -247,6 +247,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <Users className="w-3.5 h-3.5 text-[#1A73E8]" />
               <span>الفريق</span>
             </button>
+            <button
+              onClick={() => setActiveMainView('channels')}
+              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
+                activeMainView === 'channels'
+                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5 text-[#1A73E8]" />
+              <span>القنوات</span>
+            </button>
           </nav>
         )}
       </div>
@@ -389,20 +400,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         </div>
       )}
 
-      {/* Left Section (RTL End): Integrations Modal, Profile & Quick Post Action */}
+      {/* Left Section (RTL End): Profile & Quick Post Action */}
       <div className="flex items-center gap-2">
-        {/* Omnichannel Integrations Hub Trigger Button (RBAC: Admins Only) */}
-        {isUserAdmin && (
-          <button
-            onClick={() => setIsIntegrationsModalOpen(true)}
-            className="px-3 py-1 rounded-full bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] text-xs font-bold border border-[#1A73E8]/20 transition flex items-center gap-1.5 shadow-2xs"
-            title="ربط القنوات والويب هـوك"
-          >
-            <Plug className="w-3.5 h-3.5 text-[#1A73E8]" />
-            <span>ربط القنوات</span>
-          </button>
-        )}
-
         {/* Quick Post Publisher Action */}
         <button
           onClick={() => setIsPostModalOpen(true)}

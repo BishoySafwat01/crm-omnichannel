@@ -117,3 +117,92 @@ async def list_connected_pages(
     result = await db.execute(stmt)
     pages = result.scalars().all()
     return [ConnectedPageResponse.model_validate(p) for p in pages]
+
+
+class UpdatePageStatusRequest(BaseModel):
+    status: str = Field(..., pattern="^(ACTIVE|INACTIVE)$", description="New status: ACTIVE or INACTIVE")
+
+
+@router.patch(
+    "/connected-pages/{page_id}/status",
+    response_model=ConnectedPageResponse,
+    summary="Update Connected Page Status (Active/Inactive)",
+)
+async def update_connected_page_status(
+    page_id: str,
+    payload: UpdatePageStatusRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ConnectedPageResponse:
+    """Toggle page operational status between ACTIVE and INACTIVE (Admin only)."""
+    stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
+    res = await db.execute(stmt)
+    page = res.scalar_one_or_none()
+    if not page:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connected page with ID {page_id} not found.",
+        )
+    page.status = payload.status
+    await db.commit()
+    await db.refresh(page)
+    logger.info("Admin %s updated page %s status to %s", current_user.email, page_id, payload.status)
+    return ConnectedPageResponse.model_validate(page)
+
+
+@router.delete(
+    "/connected-pages/{page_id}",
+    summary="Disconnect/Delete Connected Facebook Page",
+)
+async def delete_connected_page(
+    page_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disconnect and remove an onboarded Facebook Page record from the system (Admin only)."""
+    stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
+    res = await db.execute(stmt)
+    page = res.scalar_one_or_none()
+    if not page:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connected page with ID {page_id} not found.",
+        )
+    page_name = page.name
+    await db.delete(page)
+    await db.commit()
+    logger.info("Admin %s disconnected page %s (%s)", current_user.email, page_id, page_name)
+    return {"status": "success", "message": f"تم إلغاء ربط الصفحة {page_name} بنجاح.", "page_id": page_id}
+
+
+@router.post(
+    "/connected-pages/{page_id}/subscribe",
+    response_model=ConnectedPageResponse,
+    summary="Subscribe / Re-subscribe Connected Page to App Webhooks",
+)
+async def subscribe_connected_page(
+    page_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ConnectedPageResponse:
+    """Manually trigger Meta Graph API Webhook subscription for a specific connected page (Admin only)."""
+    stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
+    res = await db.execute(stmt)
+    page = res.scalar_one_or_none()
+    if not page:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connected page with ID {page_id} not found.",
+        )
+    
+    token = page.decrypted_access_token
+    subscribed = await MetaOAuthService.subscribe_page_to_webhooks(
+        page_id=page.page_id,
+        page_token=token,
+    )
+    page.is_webhook_subscribed = subscribed
+    await db.commit()
+    await db.refresh(page)
+    logger.info("Admin %s subscribed page %s to webhooks: %s", current_user.email, page_id, subscribed)
+    return ConnectedPageResponse.model_validate(page)
+
