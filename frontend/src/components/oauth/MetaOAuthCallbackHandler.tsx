@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Loader2, CheckCircle2, AlertCircle, X, Facebook, ShieldCheck } from 'lucide-react';
-import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
+import { useAuthStore, isAdminUser, User } from '../../store/useAuthStore';
 import { useChannelsStore } from '../../store/useChannelsStore';
 import { useCrmStore } from '../../store/useCrmStore';
+import { authApi } from '../../services/api';
 
 export const MetaOAuthCallbackHandler: React.FC = () => {
   const { user, isAuthenticated } = useAuthStore();
@@ -68,39 +69,120 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
       // Clean URL query parameters immediately to avoid re-triggering on accidental reload
       window.history.replaceState({}, document.title, window.location.pathname);
 
-      // Verify user permissions
-      if (!isAuthenticated) {
-        const authErr = 'يجب تسجيل الدخول كمسؤول للنظام لإتمام عملية ربط القنوات.';
-        if (isPopup) {
+      (async () => {
+        // 1. Resolve tokens and users across popup, opener, and local storage
+        let activeToken =
+          useAuthStore.getState().token ||
+          (typeof window !== 'undefined' ? localStorage.getItem('auth_token') || localStorage.getItem('token') : null);
+
+        let activeUser: User | null =
+          useAuthStore.getState().user ||
+          (() => {
+            if (typeof window === 'undefined') return null;
+            try {
+              const cached = localStorage.getItem('auth_user');
+              return cached ? JSON.parse(cached) : null;
+            } catch {
+              return null;
+            }
+          })();
+
+        // If inside popup window, sync credentials from opener
+        if (isPopup && (!activeToken || !activeUser)) {
           try {
-            window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: authErr }, window.location.origin);
-          } catch {}
-          setTimeout(() => window.close(), 800);
+            const opener = window.opener as any;
+            if (opener) {
+              const openerToken =
+                opener.useAuthStore?.getState?.()?.token ||
+                opener.__CRM_AUTH_TOKEN__ ||
+                opener.localStorage?.getItem('auth_token') ||
+                opener.localStorage?.getItem('token') ||
+                opener.sessionStorage?.getItem('auth_token');
+
+              const openerUser =
+                opener.useAuthStore?.getState?.()?.user ||
+                opener.__CRM_AUTH_USER__ ||
+                (() => {
+                  try {
+                    const raw = opener.localStorage?.getItem('auth_user') || opener.sessionStorage?.getItem('auth_user');
+                    return raw ? JSON.parse(raw) : null;
+                  } catch {
+                    return null;
+                  }
+                })();
+
+              if (openerToken) {
+                activeToken = openerToken;
+                localStorage.setItem('auth_token', openerToken);
+              }
+              if (openerUser) {
+                activeUser = openerUser;
+                localStorage.setItem('auth_user', JSON.stringify(openerUser));
+              }
+              if (openerToken) {
+                useAuthStore.getState().setAuth(openerToken, activeUser);
+              }
+            }
+          } catch (e) {
+            console.warn('[Popup] Opener auth sync notice:', e);
+          }
+        }
+
+        // 2. If token exists but user profile is null, fetch /auth/me before evaluating permissions
+        if (activeToken && !activeUser) {
+          setNotification({
+            type: 'loading',
+            message: 'جارٍ التحقق من صلاحيات مدير النظام وتأكيد جلسة المصادقة...',
+          });
+          try {
+            activeUser = await authApi.getMe(activeToken);
+            if (activeUser) {
+              localStorage.setItem('auth_user', JSON.stringify(activeUser));
+              useAuthStore.getState().setAuth(activeToken, activeUser);
+            }
+          } catch (profileErr) {
+            console.warn('[OAuthCallback] Failed to fetch current user profile:', profileErr);
+          }
+        }
+
+        // 3. Verify user authentication
+        if (!activeToken) {
+          const authErr = 'يجب تسجيل الدخول كمسؤول للنظام لإتمام عملية ربط القنوات.';
+          if (isPopup) {
+            try {
+              window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: authErr }, window.location.origin);
+            } catch {}
+            setNotification({ type: 'error', message: authErr });
+            setTimeout(() => window.close(), 1200);
+            return;
+          }
+          setNotification({ type: 'error', message: authErr });
           return;
         }
-        setNotification({ type: 'error', message: authErr });
-        return;
-      }
 
-      if (!isAdminUser(user)) {
-        const permErr = 'صلاحيات غير كافية: ربط صفحات فيسبوك يتطلب دور مدير النظام (Admin / Superadmin).';
-        if (isPopup) {
-          try {
-            window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: permErr }, window.location.origin);
-          } catch {}
-          setTimeout(() => window.close(), 800);
+        // 4. Verify admin permissions
+        if (!isAdminUser(activeUser)) {
+          const permErr = 'صلاحيات غير كافية: ربط صفحات فيسبوك يتطلب دور مدير النظام (Admin / Superadmin).';
+          if (isPopup) {
+            try {
+              window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: permErr }, window.location.origin);
+            } catch {}
+            setNotification({ type: 'error', message: permErr });
+            setTimeout(() => window.close(), 1500);
+            return;
+          }
+          setNotification({ type: 'error', message: permErr });
           return;
         }
-        setNotification({ type: 'error', message: permErr });
-        return;
-      }
 
-      setNotification({
-        type: 'loading',
-        message: 'جارٍ استكمال مصادقة Meta OAuth وتشفير المفاتيح وتفعيل الويب هـوك تلقائياً...',
-      });
+        // 5. Proceed with callback submission
+        setNotification({
+          type: 'loading',
+          message: 'جارٍ استكمال مصادقة Meta OAuth وتشفير المفاتيح وتفعيل الويب هـوك تلقائياً...',
+        });
 
-      handleOAuthCallback(code, state).then((result) => {
+        const result = await handleOAuthCallback(code, state, undefined, activeToken);
+
         if (isPopup) {
           if (result.success) {
             setNotification({
@@ -119,7 +201,7 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             } catch (e) {
               console.warn('[Popup] Failed to postMessage success to opener:', e);
             }
-            setTimeout(() => window.close(), 600);
+            setTimeout(() => window.close(), 800);
           } else {
             setNotification({
               type: 'error',
@@ -136,7 +218,7 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             } catch (e) {
               console.warn('[Popup] Failed to postMessage error to opener:', e);
             }
-            setTimeout(() => window.close(), 800);
+            setTimeout(() => window.close(), 1500);
           }
           return;
         }
@@ -157,7 +239,7 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             message: result.error || 'فشل في استكمال الربط مع حساب فيسبوك.',
           });
         }
-      });
+      })();
     }
   }, [isAuthenticated, user]);
 

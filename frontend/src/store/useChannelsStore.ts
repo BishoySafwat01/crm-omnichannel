@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ConnectedPage } from '../types/crm';
 import { metaOAuthApi } from '../services/api';
+import { useAuthStore } from './useAuthStore';
 
 interface ChannelsState {
   connectedPages: ConnectedPage[];
@@ -17,7 +18,8 @@ interface ChannelsState {
   handleOAuthCallback: (
     code: string,
     state: string,
-    customRedirectUri?: string
+    customRedirectUri?: string,
+    tokenOverride?: string
   ) => Promise<{ success: boolean; count?: number; pages?: ConnectedPage[]; error?: string }>;
   subscribePageWebhook: (pageId: string) => Promise<boolean>;
   togglePageStatus: (pageId: string, currentStatus: string) => Promise<boolean>;
@@ -51,6 +53,28 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
   initiateMetaConnect: async (customRedirectUri?: string) => {
     set({ isConnecting: true, error: null, successMessage: null });
+
+    // Pre-cache authenticated credentials for popup access
+    const authState = useAuthStore.getState();
+    const token =
+      authState.token ||
+      (typeof window !== 'undefined' ? localStorage.getItem('auth_token') || localStorage.getItem('token') : null);
+    const user = authState.user;
+
+    if (typeof window !== 'undefined') {
+      if (token) {
+        (window as any).__CRM_AUTH_TOKEN__ = token;
+        try {
+          sessionStorage.setItem('auth_token', token);
+        } catch {}
+      }
+      if (user) {
+        (window as any).__CRM_AUTH_USER__ = user;
+        try {
+          sessionStorage.setItem('auth_user', JSON.stringify(user));
+        } catch {}
+      }
+    }
 
     // Calculate centered popup coordinates
     const width = 650;
@@ -158,7 +182,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   handleOAuthCallback: async (
     code: string,
     state: string,
-    customRedirectUri?: string
+    customRedirectUri?: string,
+    tokenOverride?: string
   ) => {
     set({ isProcessingCallback: true, error: null, successMessage: null });
     try {
@@ -173,11 +198,38 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           ? `${window.location.origin}${window.location.pathname}`
           : '');
 
-      const savedPages = await metaOAuthApi.submitMetaOAuthCallback({
-        code,
-        state,
-        redirect_uri: redirectUri,
-      });
+      // Resolve active bearer token with opener fallback
+      let activeToken = tokenOverride;
+      if (!activeToken && typeof window !== 'undefined') {
+        activeToken =
+          useAuthStore.getState().token ||
+          localStorage.getItem('auth_token') ||
+          localStorage.getItem('token') ||
+          (window as any).__CRM_AUTH_TOKEN__ ||
+          sessionStorage.getItem('auth_token') ||
+          undefined;
+
+        if (!activeToken && window.opener && window.opener !== window) {
+          try {
+            const opener = window.opener as any;
+            activeToken =
+              opener.useAuthStore?.getState?.()?.token ||
+              opener.__CRM_AUTH_TOKEN__ ||
+              opener.localStorage?.getItem('auth_token') ||
+              opener.localStorage?.getItem('token') ||
+              undefined;
+          } catch {}
+        }
+      }
+
+      const savedPages = await metaOAuthApi.submitMetaOAuthCallback(
+        {
+          code,
+          state,
+          redirect_uri: redirectUri,
+        },
+        activeToken
+      );
 
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('meta_oauth_redirect_uri');

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Optional, Union, Any
 import jwt
@@ -10,6 +11,8 @@ from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.enums import UserRole, ChannelEnum
 from app.models.user import User
+
+logger = logging.getLogger("app.api.deps")
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",
@@ -24,10 +27,15 @@ async def get_current_user(
 ) -> User:
     auth_header = request.headers.get("Authorization")
     if not token and auth_header:
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1].strip()
+        if auth_header.startswith("Bearer ") or auth_header.startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
 
     if not token:
+        # Fallback to query parameter 'token' if present (e.g. OAuth popup / callback redirects)
+        token = request.query_params.get("token")
+
+    if not token:
+        logger.warning("Authentication failed: Missing Bearer token or query param 'token' on %s %s", request.method, request.url.path)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token required.",
@@ -86,6 +94,12 @@ async def require_admin(
 ) -> User:
     role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
     if str(role_val).lower() not in ("admin", "superadmin"):
+        logger.warning(
+            "require_admin access forbidden: user_id=%s, email=%s, role=%s",
+            current_user.id,
+            current_user.email,
+            role_val,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin permissions required for this operation.",

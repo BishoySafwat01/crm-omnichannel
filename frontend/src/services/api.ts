@@ -13,8 +13,48 @@ export const API_BASE = rawApiUrl
 export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || '/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
   const headers: Record<string, string> = { ...customHeaders };
+  if (headers['Authorization'] || headers['authorization']) {
+    return headers;
+  }
+
+  let token: string | null = null;
+  if (typeof window !== 'undefined') {
+    // 1. Check active Zustand auth store
+    try {
+      const store = (window as any).useAuthStore;
+      if (store && typeof store.getState === 'function') {
+        token = store.getState().token;
+      }
+    } catch {}
+
+    // 2. Check localStorage keys
+    if (!token) {
+      token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    }
+
+    // 3. Check sessionStorage / global window fallback
+    if (!token) {
+      token = (window as any).__CRM_AUTH_TOKEN__ || sessionStorage.getItem('auth_token') || sessionStorage.getItem('token');
+    }
+
+    // 4. Check opener window if running inside an OAuth popup
+    if (!token && window.opener && window.opener !== window) {
+      try {
+        const opener = window.opener as any;
+        token =
+          opener.useAuthStore?.getState?.()?.token ||
+          opener.__CRM_AUTH_TOKEN__ ||
+          opener.localStorage?.getItem('auth_token') ||
+          opener.localStorage?.getItem('token') ||
+          opener.sessionStorage?.getItem('auth_token') ||
+          null;
+      } catch (e) {
+        // Cross-origin restriction guard
+      }
+    }
+  }
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -1295,14 +1335,24 @@ export const getMetaLoginUrl = async (redirectUri?: string): Promise<{ authoriza
   return await res.json();
 };
 
-export const submitMetaOAuthCallback = async (payload: {
-  code: string;
-  state: string;
-  redirect_uri: string;
-}): Promise<ConnectedPage[]> => {
+export const submitMetaOAuthCallback = async (
+  payload: {
+    code: string;
+    state: string;
+    redirect_uri: string;
+  },
+  tokenOverride?: string
+): Promise<ConnectedPage[]> => {
+  const customHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+  if (tokenOverride) {
+    customHeaders['Authorization'] = `Bearer ${tokenOverride}`;
+  }
   const res = await safeFetch('/meta/oauth/callback', {
     method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    headers: getAuthHeaders(customHeaders),
     body: JSON.stringify(payload),
   });
   if (!res || !res.ok) {
@@ -1376,6 +1426,7 @@ export const syncConnectedPageHistory = async (pageId: string): Promise<any> => 
 export const metaOAuthApi = {
   getMetaLoginUrl,
   submitMetaOAuthCallback,
+  submitCallback: submitMetaOAuthCallback,
   getConnectedPages,
   updateConnectedPageStatus,
   deleteConnectedPage,
