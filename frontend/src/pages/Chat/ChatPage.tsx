@@ -5,7 +5,7 @@ import { CustomerProfileSidebar } from './components/CustomerProfileSidebar';
 
 export const ChatPage: React.FC = () => {
   return (
-    <div className="flex-1 flex min-h-0 w-full overflow-hidden relative gap-3 px-4 pb-3">
+    <div className="flex-1 flex min-h-0 w-full overflow-hidden relative gap-2 px-2.5 pb-2.5">
       {/* Right Sidebar: Inbox & Conversations Queue */}
       <ConversationList />
 

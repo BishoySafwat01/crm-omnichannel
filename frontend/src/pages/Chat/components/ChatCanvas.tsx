@@ -980,7 +980,7 @@ export const ChatCanvas: React.FC = () => {
 
   if (!activeConv) {
     return (
-      <main className="flex-1 bg-gradient-to-b from-slate-50 to-slate-100/50 flex items-center justify-center p-6 dir-rtl text-right">
+      <main className="flex-1 bg-gradient-to-b from-slate-50 to-slate-100/50 flex items-center justify-center p-6 dir-rtl text-right h-full min-h-0 rounded-2xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)]">
         <div className="bg-white/80 backdrop-blur-xl border border-white/80 shadow-xl rounded-3xl p-8 max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#1A73E8]/10 to-teal-500/10 text-[#1A73E8] flex items-center justify-center mx-auto shadow-inner border border-[#1A73E8]/20">
             <Sparkles className="w-8 h-8" />
@@ -1003,9 +1003,9 @@ export const ChatCanvas: React.FC = () => {
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
 
   return (
-    <main className="flex-1 bg-white/75 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col h-[calc(100vh-80px)] relative z-10 overflow-hidden">
-      {/* Sleek 56px Google Glass Chat Header Bar */}
-      <header className="h-14 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-6 flex items-center justify-between shrink-0 z-20">
+    <main className="flex-1 bg-white/75 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col h-full min-h-0 relative z-10 overflow-hidden">
+      {/* Sleek Google Glass Chat Header Bar */}
+      <header className="h-13 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-4 flex items-center justify-between shrink-0 z-20">
         {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
         <div className="flex items-center gap-3">
           <ConversationAvatar

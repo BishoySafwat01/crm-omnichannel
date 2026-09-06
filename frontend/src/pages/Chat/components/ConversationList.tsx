@@ -362,7 +362,7 @@ export const ConversationList: React.FC = () => {
   ];
 
   return (
-    <aside className="w-80 md:w-96 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-[calc(100vh-80px)] relative z-10 overflow-hidden">
+    <aside className="w-72 xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-full min-h-0 relative z-10 overflow-hidden">
       {/* Header Search & Filter Toolbar */}
       <div className="p-3 border-b border-slate-100/70 space-y-2.5">
         <div className="flex items-center gap-1.5">

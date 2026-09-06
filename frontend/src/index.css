@@ -3,6 +3,34 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* High-resolution desktops (1080p, 1440p) */
+  @media (min-width: 1536px) {
+    html {
+      font-size: 13.5px;
+    }
+  }
+
+  /* Ultra-wide / 2K / 4K displays */
+  @media (min-width: 2560px) {
+    html {
+      font-size: 15px;
+    }
+  }
+
+  /* Compact laptops / standard displays (1366px and below) */
+  @media (max-width: 1366px) {
+    html {
+      font-size: 12.5px;
+    }
+  }
+
   body {
     background-color: #F8FAFC;
     color: #0F172A;
