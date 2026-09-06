@@ -172,11 +172,11 @@ class MetaClient:
         except Exception:
             raise MetaAPIError("Failed to parse Meta API response JSON", status_code=500)
 
-    async def get_page_info(self, page_id: Optional[str] = None) -> dict[str, Any]:
+    async def get_page_info(self, page_id: Optional[str] = None, db: Optional[AsyncSession] = None) -> dict[str, Any]:
         target_page_id = page_id or self.page_id
         if not target_page_id:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
-        return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category,picture.type(large)"}, page_id=target_page_id)
+        return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category,picture.type(large)"}, page_id=target_page_id, db=db)
 
     async def get_page_metadata(self, page_id: Optional[str] = None) -> dict[str, Any]:
         target_page_id = page_id or self.page_id

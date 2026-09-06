@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
 
     CORS_ORIGINS: Union[list[str], str] = [
+        "https://webluxira.com",
+        "http://webluxira.com",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",

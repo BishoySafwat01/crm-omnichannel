@@ -230,7 +230,16 @@ class MetaImportService:
                     external_conversation_id=norm_conv.external_conversation_id,
                 )
 
-                brand_name = settings.get_page_name(target_page_id)
+                brand_name = None
+                if target_page_id:
+                    cp_res = await session.execute(
+                        select(ConnectedPage).where(ConnectedPage.page_id == str(target_page_id).strip())
+                    )
+                    cp_row = cp_res.scalar_one_or_none()
+                    if cp_row and cp_row.name:
+                        brand_name = cp_row.name
+                if not brand_name:
+                    brand_name = settings.get_page_name(target_page_id)
                 if existing_conv:
                     conv = existing_conv
                     conv.last_message_at = norm_conv.last_message_at

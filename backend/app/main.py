@@ -144,10 +144,24 @@ app = FastAPI(
 )
 
 # CORS middleware
+_default_cors = [
+    "https://webluxira.com",
+    "http://webluxira.com",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 _cors_origins = list(settings.CORS_ORIGINS) if settings.CORS_ORIGINS else []
+for origin in _default_cors:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else ["*"],
+    allow_origins=_cors_origins,
     allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],

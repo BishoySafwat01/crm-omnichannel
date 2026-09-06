@@ -10,6 +10,7 @@ const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
 export const API_BASE = rawApiUrl
   ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
   : APP_CONFIG.API_BASE || '/api/v1';
+export const API_BASE_URL = API_BASE;
 export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || '/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
@@ -69,26 +70,9 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
 
   try {
     const res = await fetch(targetUrl, reqInit);
-    // If local dev server proxy fails with 500/502/503/504, fallback directly to backend port 8001
-    if (
-      !res.ok &&
-      res.status >= 500 &&
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8001/api/v1${cleanPath}`;
-      return await fetch(directBackendUrl, reqInit);
-    }
     return res;
   } catch (err) {
     console.warn(`Primary fetch ${targetUrl} network error:`, err);
-    if (
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8001/api/v1${cleanPath}`;
-      return await fetch(directBackendUrl, reqInit);
-    }
     throw err;
   }
 }
