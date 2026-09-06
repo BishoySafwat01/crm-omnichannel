@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { authApi } from '../services/api';
 
-export type UserRole = 'admin' | 'agent' | 'supervisor';
+export type UserRole = 'admin' | 'superadmin' | 'agent' | 'supervisor';
+
+export const isAdminUser = (user: User | null): boolean => {
+  if (!user) return false;
+  const role = String(user.role).toLowerCase();
+  return role === 'admin' || role === 'superadmin';
+};
 
 export interface User {
   id: string;

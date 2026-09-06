@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
 import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
 import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
@@ -94,7 +94,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     }
   };
 
-  const isUserAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
+  const isUserAdmin = isAdminUser(user);
 
   const dynamicBrands = React.useMemo(() => {
     const list: { id: string; name: string; avatar: string; logo_url?: string; color: string }[] = [
@@ -391,15 +391,17 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
       {/* Left Section (RTL End): Integrations Modal, Profile & Quick Post Action */}
       <div className="flex items-center gap-2">
-        {/* Omnichannel Integrations Hub Trigger Button */}
-        <button
-          onClick={() => setIsIntegrationsModalOpen(true)}
-          className="px-3 py-1 rounded-full bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] text-xs font-bold border border-[#1A73E8]/20 transition flex items-center gap-1.5 shadow-2xs"
-          title="ربط القنوات والويب هـوك"
-        >
-          <Plug className="w-3.5 h-3.5 text-[#1A73E8]" />
-          <span>ربط القنوات</span>
-        </button>
+        {/* Omnichannel Integrations Hub Trigger Button (RBAC: Admins Only) */}
+        {isUserAdmin && (
+          <button
+            onClick={() => setIsIntegrationsModalOpen(true)}
+            className="px-3 py-1 rounded-full bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] text-xs font-bold border border-[#1A73E8]/20 transition flex items-center gap-1.5 shadow-2xs"
+            title="ربط القنوات والويب هـوك"
+          >
+            <Plug className="w-3.5 h-3.5 text-[#1A73E8]" />
+            <span>ربط القنوات</span>
+          </button>
+        )}
 
         {/* Quick Post Publisher Action */}
         <button

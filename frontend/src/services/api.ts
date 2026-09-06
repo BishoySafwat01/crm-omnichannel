@@ -1,4 +1,5 @@
-import { CommentAutomationRule, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
+import { CommentAutomationRule, ConnectedPage, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
+export type { ConnectedPage };
 import { APP_CONFIG } from '../config/appConfig';
 import { MOCK_BRANDS } from '../constants/brands';
 
@@ -1279,5 +1280,53 @@ export const moderationApi = {
     if (res && res.ok) return await res.json();
     return [];
   },
+};
+
+export const getMetaLoginUrl = async (redirectUri?: string): Promise<{ authorization_url: string; state: string }> => {
+  const query = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : '';
+  const res = await safeFetch(`/meta/oauth/login-url${query}`, {
+    method: 'GET',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في إنشاء رابط تسجيل الدخول إلى فيسبوك' }));
+    throw new Error(err?.detail || 'فشل في إنشاء رابط تسجيل الدخول إلى فيسبوك');
+  }
+  return await res.json();
+};
+
+export const submitMetaOAuthCallback = async (payload: {
+  code: string;
+  state: string;
+  redirect_uri: string;
+}): Promise<ConnectedPage[]> => {
+  const res = await safeFetch('/meta/oauth/callback', {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في استكمال ربط صفحات فيسبوك' }));
+    throw new Error(err?.detail || 'فشل في استكمال ربط صفحات فيسبوك');
+  }
+  return await res.json();
+};
+
+export const getConnectedPages = async (): Promise<ConnectedPage[]> => {
+  const res = await safeFetch('/meta/connected-pages', {
+    method: 'GET',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في جلب الصفحات المتصلة' }));
+    throw new Error(err?.detail || 'فشل في جلب الصفحات المتصلة');
+  }
+  return await res.json();
+};
+
+export const metaOAuthApi = {
+  getMetaLoginUrl,
+  submitMetaOAuthCallback,
+  getConnectedPages,
 };
 

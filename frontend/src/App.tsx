@@ -11,8 +11,9 @@ import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { TeamPage } from './pages/Team/TeamPage';
 import { useCrmStore } from './store/useCrmStore';
-import { useAuthStore } from './store/useAuthStore';
+import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
+import { MetaOAuthCallbackHandler } from './components/oauth/MetaOAuthCallbackHandler';
 
 export const App: React.FC = () => {
   const {
@@ -88,12 +89,13 @@ export const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
-  const isUserAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
+  const isUserAdmin = isAdminUser(user);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden select-none" dir="rtl">
       {!isAuthenticated && <LoginModal />}
       <IntegrationsModal />
+      <MetaOAuthCallbackHandler />
 
       {/* Real-time Red Admin Security Alert Toasts */}
       {isUserAdmin && (

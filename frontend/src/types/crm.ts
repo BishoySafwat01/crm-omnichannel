@@ -284,3 +284,16 @@ export interface LocationAlert {
   timestamp: number;
 }
 
+export interface ConnectedPage {
+  id: string;
+  page_id: string;
+  name: string;
+  category?: string | null;
+  instagram_business_account_id?: string | null;
+  status: string;
+  is_webhook_subscribed: boolean;
+  connected_by_user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
