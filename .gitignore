@@ -37,6 +37,8 @@ wheels/
 htmlcov/
 scratch/
 backend/scratch/
+probe_results.json
+backend/probe_results.json
 
 # Node / Frontend
 node_modules/
