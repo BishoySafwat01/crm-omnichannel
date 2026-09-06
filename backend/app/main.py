@@ -25,6 +25,7 @@ from app.api.v1.moderation import router as moderation_router
 from app.api.v1.beon import router as beon_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
+from app.api.legal import router as legal_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.redis import close_redis_client, get_redis_client
@@ -213,3 +214,7 @@ app.include_router(admin_analytics_router, prefix="/api/v1")
 app.include_router(admin_automations_router, prefix="/api/v1")
 app.include_router(admin_customers_router, prefix="/api/v1")
 app.include_router(admin_team_router, prefix="/api/v1")
+
+# Public Legal & Compliance Routers (Meta App Review Compliance)
+app.include_router(legal_router)
+app.include_router(legal_router, prefix="/api/v1")
