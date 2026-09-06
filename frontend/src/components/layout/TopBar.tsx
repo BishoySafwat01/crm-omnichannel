@@ -1,6 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin, Radio } from 'lucide-react';
+import {
+  MessageSquare,
+  MessageCircle,
+  Layers,
+  Share2,
+  X,
+  Send,
+  Check,
+  LogOut,
+  User as UserIcon,
+  Bot,
+  BarChart3,
+  Database,
+  Users,
+  ChevronDown,
+  Radio,
+} from 'lucide-react';
 import { MOCK_BRANDS } from '../../constants/brands';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
@@ -17,8 +33,6 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const {
     selectedProvider,
     setSelectedProvider,
-    selectedBrand,
-    setSelectedBrand,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -26,11 +40,6 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     selectedCountry,
     setSelectedCountry,
     availableCountries,
-    selectedAgentId,
-    setSelectedAgentId,
-    teamMembers,
-    fetchTeamMembers,
-    setIsIntegrationsModalOpen,
     unreadSummary,
     fetchUnreadSummary,
     conversations,
@@ -44,13 +53,27 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  // Dropdown states for compact header controls
+  // Dropdown state for brand selector with outside click detection
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchUnreadSummary();
-    fetchTeamMembers();
   }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+        setIsBrandDropdownOpen(false);
+      }
+    };
+    if (isBrandDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isBrandDropdownOpen]);
 
   const channels: { id: ChannelFilterType; label: string }[] = [
     { id: 'all', label: 'كل القنوات' },
@@ -96,7 +119,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   const isUserAdmin = isAdminUser(user);
 
-  const dynamicBrands = React.useMemo(() => {
+  const dynamicBrands = useMemo(() => {
     const list: { id: string; name: string; avatar: string; logo_url?: string; color: string }[] = [
       { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800' },
     ];
@@ -148,7 +171,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     return list;
   }, [unreadSummary?.brands, conversations]);
 
-  const selectedBrandObj = React.useMemo(() => {
+  const selectedBrandObj = useMemo(() => {
     if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
       return dynamicBrands[0];
     }
@@ -166,10 +189,24 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [dynamicBrands, selectedBrandId]);
 
+  const navItems: {
+    id: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    { id: 'chat', label: 'الشات المباشر', icon: <MessageSquare className="w-3.5 h-3.5" /> },
+    { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+    { id: 'automations', label: 'الأتمتة', icon: <Bot className="w-3.5 h-3.5" /> },
+    { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
+    { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
+    { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
+    { id: 'channels', label: 'القنوات', icon: <Radio className="w-3.5 h-3.5" /> },
+  ];
+
   return (
-    <header className="h-13 my-2 mx-4 px-5 bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex items-center justify-between shrink-0 relative z-30 transition-all">
-      {/* Right Section (RTL Start): Logo & 6-Way Main View Switcher */}
-      <div className="flex items-center gap-5">
+    <header className="h-14 my-2.5 mx-4 px-4 sm:px-5 bg-white/90 backdrop-blur-xl border border-slate-200/70 shadow-[0_2px_12px_-2px_rgba(15,23,42,0.04)] rounded-2xl flex items-center justify-between shrink-0 relative z-30 transition-all">
+      {/* Right Section (RTL Start): Logo & 7-Way Primary Navigation Bar */}
+      <div className="flex items-center gap-4">
         {/* Brand Identity Mark */}
         <div className="flex items-center gap-2 shrink-0">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#1A73E8] to-teal-500 text-white flex items-center justify-center font-bold shadow-xs">
@@ -178,110 +215,53 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           <span className="text-sm font-extrabold text-slate-900 tracking-tight hidden sm:inline">LUXIRA</span>
         </div>
 
-        {/* 6-Way View Navigation Tabs */}
+        {/* Primary View Navigation Tabs (Admin Restricted) */}
         {isUserAdmin && setActiveMainView && (
-          <nav className="flex items-center gap-1 bg-slate-100/60 p-1 rounded-full border border-slate-200/50 backdrop-blur-md">
-            <button
-              onClick={() => setActiveMainView('chat')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'chat'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الشات المباشر</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('comments')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'comments'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>التعليقات</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('automations')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'automations'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الأتمتة</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('dashboard')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'dashboard'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>التحليلات</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('database')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'database'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>العملاء</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('team')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'team'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الفريق</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('channels')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'channels'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>القنوات</span>
-            </button>
+          <nav className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-full border border-slate-200/50 backdrop-blur-md">
+            {navItems.map((item) => {
+              const isActive = activeMainView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveMainView(item.id)}
+                  className={`px-3 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 select-none ${
+                    isActive
+                      ? 'bg-white text-[#1A73E8] font-bold shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
+                  }`}
+                >
+                  <span className={isActive ? 'text-[#1A73E8]' : 'text-slate-500'}>
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
         )}
       </div>
 
-      {/* Center Section: Compact Inline Brand, Channel & Dynamic Location Selectors */}
+      {/* Center Section: Streamlined Contextual Filter Bar (Active in Chat View) */}
       {activeMainView === 'chat' && (
         <div className="flex items-center gap-2">
-          {/* Brand Switcher Pill Dropdown */}
-          <div className="relative">
+          {/* 1. Brand Switcher Pill Dropdown */}
+          <div className="relative" ref={brandDropdownRef}>
             <button
               onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/70 hover:bg-white text-xs font-semibold text-slate-800 border border-slate-200/60 shadow-2xs transition"
+              title="تصفية المحادثات حسب الماركة"
             >
               {selectedBrandObj?.logo_url ? (
                 <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />
               ) : (
                 <span className="w-2 h-2 rounded-full bg-[#1A73E8]" />
               )}
-              <span>{selectedBrandObj?.name || 'كل الماركات'}</span>
+              <span className="max-w-[85px] truncate">{selectedBrandObj?.name || 'كل الماركات'}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
             {isBrandDropdownOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/98 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 scrollbar-none">
+              <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/98 backdrop-blur-xl rounded-2xl shadow-xl border border-slate-200/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 scrollbar-none">
                 {dynamicBrands.map((b) => {
                   const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
                   return (
@@ -319,7 +299,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             )}
           </div>
 
-          {/* Segmented Provider Switcher */}
+          {/* 2. Segmented Provider Switcher */}
           <div className="flex items-center bg-slate-100/80 p-0.5 rounded-full border border-slate-200/60 shadow-2xs">
             <button
               onClick={() => setSelectedProvider('all')}
@@ -356,11 +336,11 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             </button>
           </div>
 
-          {/* Clean Channel Dropdown Selector */}
+          {/* 3. Channel Filter Dropdown */}
           <select
             value={selectedChannel}
             onChange={(e) => setSelectedChannel(e.target.value as ChannelFilterType)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
+            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer transition"
           >
             {channels.map((ch) => (
               <option key={ch.id} value={ch.id}>
@@ -369,11 +349,11 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             ))}
           </select>
 
-          {/* Dynamic Database-Driven Location Dropdown Selector */}
+          {/* 4. Location Filter Dropdown */}
           <select
             value={selectedCountry}
             onChange={(e) => setSelectedCountry(e.target.value)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
+            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer transition"
           >
             <option value="all">🌍 كل المواقع</option>
             {(availableCountries || []).map((c) => (
@@ -383,43 +363,36 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             ))}
             <option value="unspecified">⚪ غير محدد</option>
           </select>
-
-          {/* Dynamic Team Member / Agent Dropdown Selector */}
-          <select
-            value={selectedAgentId}
-            onChange={(e) => setSelectedAgentId(e.target.value)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
-          >
-            <option value="all">👥 كل الموظفين</option>
-            {(teamMembers || []).map((m) => (
-              <option key={m.id} value={m.id}>
-                👤 {m.full_name} {m.role === 'admin' ? '(مدير)' : ''}
-              </option>
-            ))}
-          </select>
         </div>
       )}
 
-      {/* Left Section (RTL End): Profile & Quick Post Action */}
-      <div className="flex items-center gap-2">
+      {/* Left Section (RTL End): Quick Post, Provider Indicator, Profile & Logout */}
+      <div className="flex items-center gap-2.5">
         {/* Quick Post Publisher Action */}
         <button
           onClick={() => setIsPostModalOpen(true)}
-          className="px-3.5 py-1 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+          className="px-3.5 py-1 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold shadow-xs hover:shadow-blue-500/20 transition flex items-center gap-1.5 active:scale-98 cursor-pointer"
         >
           <Share2 className="w-3.5 h-3.5 text-white" />
           <span>نشر منشور</span>
         </button>
 
-        {/* Provider Mode Status Badge (Embedded Authenticated Indicator) */}
+        {/* Provider Mode Status Badge */}
         <ProviderStatusIndicator />
 
-        {/* User Profile & Logout */}
+        {/* User Profile & Role Chip */}
         {user && (
-          <div className="flex items-center gap-2 pr-2 border-r border-slate-100">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 rounded-xl border border-slate-200/70 text-xs font-semibold text-slate-800">
-              <UserIcon className="w-3.5 h-3.5 text-teal-600" />
-              <span className="truncate max-w-[100px]">{user.full_name}</span>
+          <div className="flex items-center gap-2 pr-2 border-r border-slate-200/80">
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 text-xs transition">
+              <div className="w-5 h-5 rounded-lg bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold">
+                <UserIcon className="w-3.5 h-3.5" />
+              </div>
+              <div className="flex flex-col items-start leading-none">
+                <span className="font-extrabold text-slate-900 truncate max-w-[100px]">{user.full_name}</span>
+                <span className="text-[9px] text-slate-400 font-medium">
+                  {user.role === 'admin' || user.role === 'superadmin' ? 'مدير نظام' : 'موظف دعم'}
+                </span>
+              </div>
             </div>
             <button
               onClick={logout}
@@ -432,7 +405,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         )}
       </div>
 
-      {/* Quick Post Publisher Modal (Rendered with Portal for Perfect Viewport Centering) */}
+      {/* Quick Post Publisher Modal (Rendered with Portal for Viewport Centering) */}
       {isPostModalOpen &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -530,3 +503,4 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     </header>
   );
 };
+export default TopBar;
