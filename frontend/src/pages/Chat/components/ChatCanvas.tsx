@@ -1082,7 +1082,7 @@ export const ChatCanvas: React.FC = () => {
                   </button>
 
                   {isChatEmpMenuOpen && (
-                    <div className="absolute top-full left-0 mt-2 w-52 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 text-right">
+                    <div className="absolute top-full left-0 mt-2 w-52 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 text-right">
                       <div className="px-2 py-1 text-[10px] font-bold text-slate-400 border-b border-slate-100">
                         تصفية الردود حسب الموظف
                       </div>
@@ -1093,10 +1093,10 @@ export const ChatCanvas: React.FC = () => {
                           setSelectedEmployeeId(null);
                           setIsChatEmpMenuOpen(false);
                         }}
-                        className="w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                        className="w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors duration-150 hover:bg-slate-50 text-slate-700 flex items-center justify-between"
                       >
                         <span>كل الموظفين (All)</span>
-                        {!activeEmpFilterId && <Check className="w-3.5 h-3.5 text-[#1A73E8]" />}
+                        {!activeEmpFilterId && <Check className="w-3.5 h-3.5 text-teal-600" />}
                       </button>
                       {chatEmployees.map((emp) => (
                         <button
@@ -1106,8 +1106,8 @@ export const ChatCanvas: React.FC = () => {
                             setInChatEmployeeFilter(emp.id);
                             setIsChatEmpMenuOpen(false);
                           }}
-                          className={`w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between ${
-                            activeEmpFilterId === emp.id ? 'bg-blue-50 text-[#1A73E8] font-bold' : 'hover:bg-slate-50 text-slate-700'
+                          className={`w-full text-right px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors duration-150 flex items-center justify-between ${
+                            activeEmpFilterId === emp.id ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50' : 'hover:bg-slate-50 text-slate-700'
                           }`}
                         >
                           <span className="truncate">{emp.name}</span>
@@ -1184,10 +1184,10 @@ export const ChatCanvas: React.FC = () => {
             </button>
 
             {isAiPopoverOpen && (
-              <div className="absolute top-full left-0 mt-2 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-100 text-right">
+              <div className="absolute top-full left-0 mt-2 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-100 text-right">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#1A73E8]" />
+                    <Sparkles className="w-3.5 h-3.5 text-teal-600" />
                     تحليلات الذكاء الاصطناعي
                   </span>
                   <button
