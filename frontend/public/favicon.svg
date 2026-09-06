@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="luxFavGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D9488" />
+      <stop offset="45%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="luxFavTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#14B8A6" />
+      <stop offset="50%" stop-color="#2DD4BF" />
+      <stop offset="100%" stop-color="#5EEAD4" />
+    </linearGradient>
+    <linearGradient id="luxFavRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F766E" />
+      <stop offset="100%" stop-color="#042F2E" />
+    </linearGradient>
+    <linearGradient id="luxFavStar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#F0FDFA" />
+      <stop offset="70%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    <filter id="luxFavGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Deep luxury slate-teal rounded base container -->
+  <rect width="128" height="128" rx="30" fill="#041D1A" />
+  <rect width="124" height="124" x="2" y="2" rx="28" fill="none" stroke="url(#luxFavGrad1)" stroke-width="2" stroke-opacity="0.5" />
+
+  <!-- Geometric 'L' Monogram with Starburst Accents -->
+  <g transform="translate(10, 8)">
+    <!-- Isometric Top Facet (Vertical Stem Top) -->
+    <polygon points="30,28 47,15 67,15 50,28" fill="url(#luxFavTop)" />
+
+    <!-- Isometric Right Outer Facet (Vertical Stem Right) -->
+    <polygon points="50,28 67,15 67,68 50,81" fill="url(#luxFavRight)" />
+
+    <!-- Isometric Front Face (Vertical Stem Front) -->
+    <polygon points="30,28 50,28 50,81 30,81" fill="url(#luxFavGrad1)" />
+
+    <!-- Isometric Base Foot Front -->
+    <polygon points="30,81 50,81 88,81 88,103 30,103" fill="url(#luxFavGrad1)" />
+
+    <!-- Isometric Base Foot Top Step -->
+    <polygon points="50,81 67,68 105,68 88,81" fill="url(#luxFavTop)" />
+
+    <!-- Isometric Base Foot Right Outer Facet -->
+    <polygon points="88,81 105,68 105,90 88,103" fill="url(#luxFavRight)" />
+
+    <!-- Sharp Bevel Edge Highlights -->
+    <line x1="30" y1="28" x2="30" y2="103" stroke="#5EEAD4" stroke-width="1.5" stroke-opacity="0.8" />
+    <line x1="30" y1="103" x2="88" y2="103" stroke="#5EEAD4" stroke-width="1.5" stroke-opacity="0.8" />
+    <line x1="30" y1="28" x2="50" y2="28" stroke="#FFFFFF" stroke-width="1.2" stroke-opacity="0.9" />
+    <line x1="50" y1="81" x2="88" y2="81" stroke="#FFFFFF" stroke-width="1.2" stroke-opacity="0.9" />
+
+    <!-- Primary Starburst (Upper Right of Vertical Stem) -->
+    <g transform="translate(74, 19)" filter="url(#luxFavGlow)">
+      <path d="M 0,-17 Q 0,-3.5 14,0 Q 0,3.5 0,17 Q 0,3.5 -14,0 Q 0,-3.5 0,-17 Z" fill="url(#luxFavStar)" />
+      <circle cx="0" cy="0" r="2.8" fill="#FFFFFF" />
+      <path d="M -7,-7 L 7,7 M -7,7 L 7,-7" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.7" />
+    </g>
+
+    <!-- Secondary Starburst Accent -->
+    <g transform="translate(98, 45)" filter="url(#luxFavGlow)" opacity="0.9">
+      <path d="M 0,-10 Q 0,-2 8,0 Q 0,2 0,10 Q 0,2 -8,0 Q 0,-2 0,-10 Z" fill="url(#luxFavStar)" />
+      <circle cx="0" cy="0" r="1.5" fill="#FFFFFF" />
+    </g>
+
+    <!-- Subtle Accent Sparkle (Left Stem Base) -->
+    <g transform="translate(21, 40)" opacity="0.85">
+      <path d="M 0,-5 Q 0,-1 4,0 Q 0,1 0,5 Q 0,1 -4,0 Q 0,-1 0,-5 Z" fill="#5EEAD4" />
+      <circle cx="0" cy="0" r="1" fill="#FFFFFF" />
+    </g>
+  </g>
+</svg>

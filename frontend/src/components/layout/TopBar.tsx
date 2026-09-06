@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   MessageSquare,
   MessageCircle,
-  Layers,
   Share2,
   X,
   Send,
@@ -25,6 +24,7 @@ import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
 import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
+import luxiraLogo from '../../assets/luxira-logo.png';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
@@ -209,48 +209,56 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [dynamicBrands, selectedBrandId]);
 
+  // Main navigation tabs ordered by workflow priority
   const navItems: {
-    id: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
+    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments';
     label: string;
     icon: React.ReactNode;
   }[] = [
     { id: 'chat', label: 'الشات المباشر', icon: <MessageSquare className="w-3.5 h-3.5" /> },
-    { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+    { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
+    { id: 'channels', label: 'القنوات', icon: <Radio className="w-3.5 h-3.5" /> },
     { id: 'automations', label: 'الأتمتة', icon: <Bot className="w-3.5 h-3.5" /> },
     { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
-    { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
     { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
-    { id: 'channels', label: 'القنوات', icon: <Radio className="w-3.5 h-3.5" /> },
+    { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
   ];
 
   return (
-    <header className="sticky top-0 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800 shadow-xs z-30 px-5 py-2.5 flex items-center justify-between shrink-0 select-none">
-      {/* Right Cluster (RTL Start): Branding & Segmented Primary Navigation */}
+    <header className="sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs z-30 px-5 py-2.5 flex items-center justify-between shrink-0 select-none transition-all duration-200 ease-out">
+      {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark + Primary Navigation */}
       <div className="flex items-center gap-4">
-        {/* Crisp Workspace Badge: LUXIRA */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-600 to-emerald-500 text-white flex items-center justify-center font-bold shadow-xs shadow-teal-500/20">
-            <Layers className="w-4 h-4" />
+        {/* LUXIRA HOLDING Brand Mark (Height 36px) & Typographic Branding */}
+        <div className="flex items-center gap-2.5 shrink-0 group cursor-default">
+          <div className="h-9 w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105">
+            <img
+              src={luxiraLogo}
+              alt="LUXIRA HOLDING"
+              className="h-7 w-7 object-contain drop-shadow-xs"
+            />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-black text-slate-900 tracking-tight leading-none">LUXIRA</span>
-            <span className="text-[9px] font-bold text-teal-600 tracking-wider">OMNICHANNEL</span>
+            <div className="flex items-center gap-1 leading-none">
+              <span className="text-sm font-black text-slate-900 tracking-tight">LUXIRA</span>
+              <span className="text-xs font-bold text-teal-600 tracking-wide">HOLDING</span>
+            </div>
+            <span className="text-[8px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">OMNICHANNEL CRM</span>
           </div>
         </div>
 
         {/* Primary Navigation Strip (Admin Restricted) */}
         {isUserAdmin && setActiveMainView && (
-          <nav className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/50 backdrop-blur-md">
+          <nav className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60 backdrop-blur-md">
             {navItems.map((item) => {
               const isActive = activeMainView === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setActiveMainView(item.id)}
-                  className={`text-xs flex items-center gap-1.5 select-none cursor-pointer ${
+                  className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
                     isActive
-                      ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5 transition-all'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 rounded-xl px-3.5 py-1.5 font-medium transition-colors'
+                      ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-xl px-3.5 py-1.5 font-medium'
                   }`}
                 >
                   <span className={isActive ? 'text-white' : 'text-slate-500'}>
@@ -264,7 +272,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         )}
       </div>
 
-      {/* Middle Cluster: Contextual Filters & Provider Indicator */}
+      {/* Middle Side: Compact, Sleek Contextual Filter Triggers */}
       <div className="flex items-center gap-2">
         {activeMainView === 'chat' && (
           <>
@@ -273,7 +281,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-2xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition duration-200 ease-out shadow-xs cursor-pointer"
                 title="تصفية المحادثات حسب الماركة"
               >
                 {selectedBrandObj?.logo_url ? (
@@ -286,7 +294,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </button>
 
               {isBrandDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 scrollbar-none">
+                <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-none">
                   {dynamicBrands.map((b) => {
                     const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
                     const isSelected = selectedBrandId === b.id || (!selectedBrandId && b.id === 'all');
@@ -331,7 +339,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-2xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-700 hover:bg-slate-100 transition duration-200 ease-out shadow-xs cursor-pointer"
                 title="تصفية المحادثات حسب القناة"
               >
                 <Radio className="w-3.5 h-3.5 text-teal-600" />
@@ -340,7 +348,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </button>
 
               {isChannelDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1.5 w-44 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute top-full right-0 mt-1.5 w-44 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
                   {channels.map((ch) => (
                     <button
                       key={ch.id}
@@ -363,14 +371,14 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               )}
             </div>
 
-            {/* 3. Segmented Provider Controller */}
-            <div className="flex items-center bg-slate-100/70 p-0.5 rounded-xl border border-slate-200/60 shadow-2xs">
+            {/* 3. Segmented Provider Controller (Teal Harmonized Palette) */}
+            <div className="flex items-center bg-slate-50 border border-slate-200/80 p-0.5 rounded-xl shadow-xs">
               <button
                 type="button"
                 onClick={() => setSelectedProvider('all')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
                   selectedProvider === 'all'
-                    ? 'bg-white text-slate-900 shadow-2xs'
+                    ? 'bg-teal-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title="عرض كل المزودين بدون تكرار"
@@ -380,9 +388,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setSelectedProvider('meta')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
                   selectedProvider === 'meta'
-                    ? 'bg-[#1877F2] text-white shadow-2xs'
+                    ? 'bg-teal-700 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title="محادثات Meta Graph API المباشرة فقط"
@@ -392,9 +400,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setSelectedProvider('beon')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition duration-150 flex items-center gap-1 cursor-pointer ${
                   selectedProvider === 'beon'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    ? 'bg-emerald-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title="محادثات مزود BeOn Gateway V3 فقط"
@@ -408,9 +416,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               <button
                 type="button"
                 onClick={() => setIsSecondaryOpen(!isSecondaryOpen)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition shadow-2xs cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition duration-200 ease-out shadow-xs cursor-pointer ${
                   isSecondaryOpen || (selectedCountry && selectedCountry !== 'all')
-                    ? 'bg-teal-50 text-teal-800 border-teal-200 ring-2 ring-teal-500/20'
+                    ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
                     : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                 }`}
                 title="خيارات إضافية (الموقع الجغرافي والنشر)"
@@ -423,7 +431,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               </button>
 
               {isSecondaryOpen && (
-                <div className="absolute top-full right-0 mt-1.5 w-72 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-100 space-y-3 text-right">
+                <div className="absolute top-full right-0 mt-1.5 w-72 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-3 text-right">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-slate-400">
                     <span className="text-[11px] font-bold text-slate-600">إجراءات وأدوات ثانوية</span>
                     <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
@@ -438,7 +446,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                     <select
                       value={selectedCountry}
                       onChange={(e) => setSelectedCountry(e.target.value)}
-                      className="w-full bg-slate-50 hover:bg-slate-100/80 text-slate-800 text-xs font-medium rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition cursor-pointer"
+                      className="w-full bg-slate-50 hover:bg-slate-100/80 text-slate-800 text-xs font-medium rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition duration-150 cursor-pointer"
                     >
                       <option value="all">🌍 كل المواقع والدول</option>
                       {(availableCountries || []).map((c) => (
@@ -461,7 +469,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                       className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100/80 text-teal-800 text-xs font-bold transition duration-150 border border-teal-200/70 cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-2xs">
+                        <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
                           <Share2 className="w-3 h-3" />
                         </div>
                         <span>نشر منشور على الفيسبوك</span>
@@ -474,18 +482,18 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             </div>
           </>
         )}
-
-        {/* Inline Ambient Provider Status Indicator */}
-        <ProviderStatusIndicator />
       </div>
 
-      {/* Left Cluster (RTL End): Agent Identity & Actions */}
-      <div className="flex items-center gap-2.5">
+      {/* Left Side (RTL End): Provider Status, Notification Bell, Agent Profile & Logout */}
+      <div className="flex items-center gap-3">
+        {/* Provider Status Indicator (Hybrid Meta + BeOn) */}
+        <ProviderStatusIndicator />
+
         {/* Notification Bell Dropdown */}
         <div className="relative" ref={notifDropdownRef}>
           <button
             onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/70 bg-white/70 backdrop-blur-md shadow-2xs hover:ring-2 hover:ring-slate-200/60 transition relative cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/80 bg-slate-50 shadow-xs hover:ring-2 hover:ring-teal-500/20 transition duration-200 ease-out relative cursor-pointer"
             title="التنبيهات والرسائل غير المقروءة"
           >
             <Bell className="w-4 h-4" />
@@ -497,7 +505,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           </button>
 
           {isNotifOpen && (
-            <div className="absolute top-full left-0 mt-2 w-64 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 text-right animate-in fade-in zoom-in-95 duration-100">
+            <div className="absolute top-full left-0 mt-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 text-right animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
                 <span className="text-xs font-black text-slate-900">ملخص الرسائل غير المقروءة</span>
                 <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full border border-teal-200/50">
@@ -527,23 +535,24 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           )}
         </div>
 
-        {/* Clean User Avatar Pill & Role Chip */}
+        {/* Clean User Avatar Pill: Bishoy Safwat | Admin */}
         {user && (
           <div className="flex items-center gap-2 pr-2 border-r border-slate-200/80">
-            <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-2xs text-xs transition">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/80 shadow-xs text-xs transition duration-200 ease-out">
               <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-teal-600 to-emerald-500 text-white flex items-center justify-center text-[11px] font-black shadow-xs">
                 {user.full_name?.charAt(0) || 'U'}
               </div>
-              <div className="flex flex-col items-start leading-tight">
-                <span className="font-extrabold text-slate-900 truncate max-w-[100px]">{user.full_name || 'Bishoy Safwat'}</span>
-                <span className="text-[9px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded-md border border-teal-100/80">
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="font-extrabold text-slate-900 truncate max-w-[110px]">{user.full_name || 'Bishoy Safwat'}</span>
+                <span className="text-slate-300">|</span>
+                <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-md border border-teal-200/60">
                   {user.role === 'admin' || user.role === 'superadmin' ? 'Admin' : 'Agent'}
                 </span>
               </div>
             </div>
             <button
               onClick={logout}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 hover:ring-2 hover:ring-rose-100 transition cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 hover:ring-2 hover:ring-rose-100 transition duration-200 ease-out cursor-pointer"
               title="تسجيل الخروج"
             >
               <LogOut className="w-4 h-4" />

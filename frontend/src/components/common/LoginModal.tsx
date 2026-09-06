@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Layers, Lock, Mail, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import luxiraLogo from '../../assets/luxira-logo.png';
 
 export const LoginModal: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuthStore();
@@ -20,12 +21,15 @@ export const LoginModal: React.FC = () => {
       <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-slate-100 space-y-6 animate-in fade-in zoom-in-95 duration-200">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-teal-600 to-teal-700 text-white flex items-center justify-center shadow-lg shadow-teal-600/20">
-            <Layers className="w-8 h-8" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-950 to-slate-900 p-2.5 flex items-center justify-center shadow-xl shadow-teal-900/20 border border-teal-500/30">
+            <img src={luxiraLogo} alt="LUXIRA HOLDING" className="w-11 h-11 object-contain drop-shadow-md" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-900 tracking-tight">LUXIRA HOLDING CRM</h2>
-            <p className="text-xs text-slate-500 font-medium mt-1">نظام إدارة المحادثات والعملاء الموحد</p>
+            <div className="flex items-center justify-center gap-1.5">
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">LUXIRA</h2>
+              <span className="text-xl font-bold text-teal-600 tracking-wide">HOLDING</span>
+            </div>
+            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Omnichannel CRM System</p>
           </div>
         </div>
 
