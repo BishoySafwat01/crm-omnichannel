@@ -157,8 +157,7 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
-@app.get("/health", tags=["system"], summary="System health probe")
-async def health_check() -> JSONResponse:
+async def perform_health_check() -> tuple[dict[str, Any], int]:
     pg_status = "unknown"
     try:
         async with AsyncSessionLocal() as session:
@@ -180,13 +179,19 @@ async def health_check() -> JSONResponse:
     overall = "ok" if (pg_status == "healthy" and redis_status == "healthy") else "degraded"
     http_status = status.HTTP_200_OK if overall == "ok" else status.HTTP_503_SERVICE_UNAVAILABLE
 
+    return {
+        "status": overall,
+        "postgres": pg_status,
+        "redis": redis_status,
+    }, http_status
+
+
+@app.get("/health", tags=["system"], summary="System health probe")
+async def health_check() -> JSONResponse:
+    content, http_status = await perform_health_check()
     return JSONResponse(
         status_code=http_status,
-        content={
-            "status": overall,
-            "postgres": pg_status,
-            "redis": redis_status,
-        },
+        content=content,
     )
 
 

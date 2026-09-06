@@ -1,7 +1,12 @@
+import logging
 from typing import Any, Optional
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+
+logger = logging.getLogger("app.integrations.meta.client")
 
 
 class MetaAPIError(Exception):
@@ -20,12 +25,69 @@ class MetaClient:
         access_token: Optional[str] = None,
         api_version: Optional[str] = None,
         timeout: float = 30.0,
+        db: Optional[AsyncSession] = None,
     ):
-        self.page_id = page_id or settings.META_PAGE_ID
-        self.access_token = access_token or (settings.get_page_token(page_id) if page_id else settings.META_PAGE_ACCESS_TOKEN)
+        self.page_id = page_id if page_id is not None else settings.META_PAGE_ID
+        self.access_token = access_token
         self.api_version = api_version or settings.META_GRAPH_API_VERSION
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.timeout = timeout
+        self.db = db
+
+    @classmethod
+    async def get_token_for_page(
+        cls,
+        page_id: Optional[str],
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[str]:
+        """
+        Database-First Dynamic Token Resolution:
+        1. If db session is available, query ConnectedPage where page_id == page_id and status == 'ACTIVE'.
+        2. If found, return page.decrypted_access_token.
+        3. If not found or db is None, fall back to settings.get_page_token(page_id).
+        """
+        if not page_id or not str(page_id).strip():
+            return settings.META_PAGE_ACCESS_TOKEN or None
+
+        pid = str(page_id).strip()
+
+        # 1. DB-First Resolution via provided session
+        if db is not None:
+            try:
+                from app.models.connected_page import ConnectedPage
+                stmt = select(ConnectedPage).where(
+                    ConnectedPage.page_id == pid,
+                    ConnectedPage.status == "ACTIVE",
+                )
+                result = await db.execute(stmt)
+                page = result.scalar_one_or_none()
+                if page and page.encrypted_access_token:
+                    return page.decrypted_access_token
+            except Exception as exc:
+                logger.warning("Failed to resolve token from ConnectedPage for page_id %s: %s", pid, exc)
+        else:
+            # Ephemeral session fallback attempt before .env fallback
+            try:
+                from app.core.database import AsyncSessionLocal
+                from app.models.connected_page import ConnectedPage
+                async with AsyncSessionLocal() as session:
+                    stmt = select(ConnectedPage).where(
+                        ConnectedPage.page_id == pid,
+                        ConnectedPage.status == "ACTIVE",
+                    )
+                    result = await session.execute(stmt)
+                    page = result.scalar_one_or_none()
+                    if page and page.encrypted_access_token:
+                        return page.decrypted_access_token
+            except Exception as exc:
+                logger.debug("Ephemeral db session lookup for page_id %s failed: %s", pid, exc)
+
+        # 2. Backward compatibility fallback to settings / .env
+        fallback = settings.get_page_token(pid)
+        if fallback and fallback.strip():
+            return fallback.strip()
+
+        return settings.META_PAGE_ACCESS_TOKEN or None
 
     def _ensure_authenticated(self, token: Optional[str] = None) -> None:
         active_token = token or self.access_token
@@ -43,8 +105,17 @@ class MetaClient:
         json_data: Optional[dict[str, Any]] = None,
         page_id: Optional[str] = None,
         access_token: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, Any]:
-        active_token = access_token or (settings.get_page_token(page_id) if page_id else self.access_token)
+        target_page_id = page_id or self.page_id
+        active_token = access_token
+        if active_token is None and self.access_token is not None:
+            active_token = self.access_token
+        elif not active_token:
+            active_token = await self.get_token_for_page(target_page_id, db=db or self.db)
+            if not active_token:
+                active_token = self.access_token
+
         self._ensure_authenticated(active_token)
 
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
@@ -289,6 +360,7 @@ class MetaClient:
         text: str,
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, Any]:
         target_page_id = page_id or self.page_id
         if not target_page_id:
@@ -311,8 +383,18 @@ class MetaClient:
         else:
             payload["messaging_type"] = "RESPONSE"
 
+        active_db = db or self.db
+        token = await self.get_token_for_page(target_page_id, db=active_db)
+
         try:
-            return await self._request("POST", f"/{target_page_id}/messages", json_data=payload, page_id=target_page_id)
+            return await self._request(
+                "POST",
+                f"/{target_page_id}/messages",
+                json_data=payload,
+                page_id=target_page_id,
+                access_token=token,
+                db=active_db,
+            )
         except MetaAPIError as exc:
             # If tag is unapproved on Meta App dashboard (#100), retry with RESPONSE
             if tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message):
@@ -321,8 +403,32 @@ class MetaClient:
                     "messaging_type": "RESPONSE",
                     "message": {"text": text},
                 }
-                return await self._request("POST", f"/{target_page_id}/messages", json_data=fallback_payload, page_id=target_page_id)
+                return await self._request(
+                    "POST",
+                    f"/{target_page_id}/messages",
+                    json_data=fallback_payload,
+                    page_id=target_page_id,
+                    access_token=token,
+                    db=active_db,
+                )
             raise
+
+    async def send_text_message(
+        self,
+        recipient_id: str,
+        text: str,
+        page_id: Optional[str] = None,
+        tag: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, Any]:
+        """Send outbound text message via Meta Graph API (alias for send_message)."""
+        return await self.send_message(
+            recipient_id=recipient_id,
+            text=text,
+            page_id=page_id,
+            tag=tag,
+            db=db,
+        )
 
     async def send_attachment_message(
         self,
@@ -331,6 +437,7 @@ class MetaClient:
         attachment_type: str = "audio",
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> dict[str, Any]:
         import json
         import os
@@ -393,9 +500,12 @@ class MetaClient:
         else:
             payload_data["messaging_type"] = "RESPONSE"
 
-        token = settings.get_page_token(target_page_id) if target_page_id else self.access_token
+        active_db = db or self.db
+        token = await self.get_token_for_page(target_page_id, db=active_db) or self.access_token
+        self._ensure_authenticated(token)
         url = f"{self.base_url}/{target_page_id}/messages?access_token={token}"
         files = {"filedata": (filename, file_bytes, mime_type)}
+
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

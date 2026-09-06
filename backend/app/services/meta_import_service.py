@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.integrations.meta import MetaAPIError, MetaNormalizer, MetaProvider
 from app.models import (
     ChannelEnum,
+    ConnectedPage,
     Conversation,
     ConversationStatusEnum,
     Customer,
@@ -543,10 +544,17 @@ class MetaImportService:
             logger.warning("Meta webhook: received empty entry list")
             return {"status": "processed", "message": "Ignored empty Meta webhook entry list."}
 
+        # Milestone 3: Query active ConnectedPages from database
+        stmt_connected = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+        res_connected = await session.execute(stmt_connected)
+        active_connected_pages: dict[str, ConnectedPage] = {
+            cp.page_id: cp for cp in res_connected.scalars().all()
+        }
+
         configured_pages = settings.get_meta_pages()
         valid_page_ids = {
             p.strip() for p in (
-                list(configured_pages.keys()) + [
+                list(configured_pages.keys()) + list(active_connected_pages.keys()) + [
                     settings.META_PAGE_ID,
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
@@ -701,8 +709,21 @@ class MetaImportService:
                     session=session,
                     identity=identity,
                 )
-                brand_name = settings.get_page_name(entry_page_id)
-                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+                # Milestone 3: Dynamic Inbound Webhook Identity Resolution
+                connected_page = active_connected_pages.get(entry_page_id)
+                if not connected_page:
+                    cp_single = (await session.execute(
+                        select(ConnectedPage).where(ConnectedPage.page_id == entry_page_id)
+                    )).scalar_one_or_none()
+                    if cp_single:
+                        connected_page = cp_single
+
+                if connected_page and connected_page.name:
+                    brand_name = connected_page.name
+                else:
+                    brand_name = settings.get_page_name(entry_page_id)
+
+                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page", f"Page {entry_page_id}")):
                     conv.brand = brand_name
                     await session.commit()
 

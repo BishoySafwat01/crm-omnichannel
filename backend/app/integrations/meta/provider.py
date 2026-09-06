@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.integrations.base import BaseMessagingProvider
 from app.integrations.meta.client import MetaClient
 from app.integrations.meta.normalizer import (
@@ -12,12 +14,19 @@ from app.models.enums import ChannelEnum
 
 
 class MetaProvider(BaseMessagingProvider):
-    def __init__(self, client: Optional[MetaClient] = None, page_id: Optional[str] = None):
-        self.client = client or MetaClient(page_id=page_id)
+    def __init__(
+        self,
+        client: Optional[MetaClient] = None,
+        page_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ):
+        self.db = db
+        self.client = client or MetaClient(page_id=page_id, db=db)
         self.page_id = page_id or self.client.page_id
 
-    async def validate_credentials(self) -> dict[str, Any]:
-        info = await self.client.get_page_info(page_id=self.page_id)
+    async def validate_credentials(self, db: Optional[AsyncSession] = None) -> dict[str, Any]:
+        active_db = db or self.db
+        info = await self.client.get_page_info(page_id=self.page_id, db=active_db)
         return {
             "valid": True,
             "provider": "meta",
@@ -171,12 +180,16 @@ class MetaProvider(BaseMessagingProvider):
         text: str,
         page_id: Optional[str] = None,
         tag: Optional[str] = "HUMAN_AGENT",
+        db: Optional[AsyncSession] = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
+        active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
         res = await self.client.send_message(
             recipient_id=recipient_external_id,
             text=text,
-            page_id=page_id,
+            page_id=page_id or self.page_id,
             tag=tag,
+            db=active_db,
         )
         return {
             "external_message_id": res.get("message_id") or res.get("id"),
@@ -191,16 +204,21 @@ class MetaProvider(BaseMessagingProvider):
         attachment_type: str = "audio",
         page_id: Optional[str] = None,
         tag: Optional[str] = "HUMAN_AGENT",
+        db: Optional[AsyncSession] = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
+        active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
         res = await self.client.send_attachment_message(
             recipient_id=recipient_external_id,
             file_path=file_path,
             attachment_type=attachment_type,
-            page_id=page_id,
+            page_id=page_id or self.page_id,
             tag=tag,
+            db=active_db,
         )
         return {
             "external_message_id": res.get("message_id") or res.get("id"),
             "recipient_id": res.get("recipient_id") or recipient_external_id,
             "raw": res,
         }
+

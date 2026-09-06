@@ -52,3 +52,9 @@ class ConnectedPage(Base):
     def decrypted_access_token(self) -> str:
         from app.core.security import decrypt_token
         return decrypt_token(self.encrypted_access_token)
+
+    @decrypted_access_token.setter
+    def decrypted_access_token(self, value: str) -> None:
+        from app.core.security import encrypt_token
+        self.encrypted_access_token = encrypt_token(value)
+

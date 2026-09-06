@@ -188,13 +188,58 @@ class MetaOAuthService:
         return pages
 
     @classmethod
+    async def subscribe_page_to_webhooks(cls, page_id: str, page_token: str) -> bool:
+        """
+        Autonomous Webhook App Subscription:
+        Sends POST https://graph.facebook.com/v23.0/{page_id}/subscribed_apps
+        with subscribed_fields=messages,messaging_postbacks,message_reads,message_deliveries
+        using Bearer page_token. Returns True on success, handles Meta errors cleanly without crashing.
+        """
+        if not page_id or not page_token:
+            return False
+
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        url = f"https://graph.facebook.com/{version}/{page_id}/subscribed_apps"
+        payload = {
+            "subscribed_fields": "messages,messaging_postbacks,message_reads,message_deliveries",
+            "access_token": page_token,
+        }
+        headers = {
+            "Authorization": f"Bearer {page_token}",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(url, data=payload, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    success = bool(data.get("success", False)) if isinstance(data, dict) else False
+                    if success:
+                        logger.info("Successfully subscribed page %s to webhooks.", page_id)
+                    else:
+                        logger.warning("Page %s webhook subscription returned non-true response: %s", page_id, data)
+                    return success
+                else:
+                    err_msg = resp.text
+                    logger.warning(
+                        "Failed to subscribe page %s to webhooks (HTTP %d): %s",
+                        page_id,
+                        resp.status_code,
+                        err_msg,
+                    )
+                    return False
+        except Exception as exc:
+            logger.error("Exception subscribing page %s to webhooks: %s", page_id, exc)
+            return False
+
+    @classmethod
     async def save_or_update_pages(
         cls,
         pages: list[dict[str, Any]],
         user_id: uuid.UUID,
         db: AsyncSession,
     ) -> list[ConnectedPage]:
-        """Upsert fetched pages into connected_pages table with encrypted page tokens."""
+        """Upsert fetched pages into connected_pages table with encrypted page tokens and auto-subscribe webhooks."""
         saved_records: list[ConnectedPage] = []
 
         for pdata in pages:
@@ -212,6 +257,15 @@ class MetaOAuthService:
             if ig_account:
                 ig_id = str(ig_account.get("id")) if isinstance(ig_account, dict) else str(ig_account)
 
+            # Milestone 2: Autonomous Webhook App Subscription
+            is_subscribed = False
+            if raw_token:
+                try:
+                    is_subscribed = await cls.subscribe_page_to_webhooks(page_id=page_id, page_token=raw_token)
+                except Exception as sub_exc:
+                    logger.warning("Autonomous webhook subscription for page %s failed: %s", page_id, sub_exc)
+                    is_subscribed = False
+
             stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
             result = await db.execute(stmt)
             existing = result.scalar_one_or_none()
@@ -222,6 +276,8 @@ class MetaOAuthService:
                 existing.category = category
                 existing.instagram_business_account_id = ig_id
                 existing.status = "ACTIVE"
+                if is_subscribed:
+                    existing.is_webhook_subscribed = True
                 existing.connected_by_user_id = user_id
                 existing.updated_at = datetime.now(timezone.utc)
                 saved_records.append(existing)
@@ -233,7 +289,7 @@ class MetaOAuthService:
                     category=category,
                     instagram_business_account_id=ig_id,
                     status="ACTIVE",
-                    is_webhook_subscribed=False,
+                    is_webhook_subscribed=is_subscribed,
                     connected_by_user_id=user_id,
                 )
                 db.add(new_page)
@@ -245,3 +301,4 @@ class MetaOAuthService:
 
         logger.info("Successfully saved/updated %d ConnectedPage records.", len(saved_records))
         return saved_records
+
