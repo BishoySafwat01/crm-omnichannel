@@ -11,12 +11,28 @@ import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { TeamPage } from './pages/Team/TeamPage';
 import { ChannelsPage } from './pages/Channels/ChannelsPage';
+import { PrivacyPolicyPage, TermsPage, DataDeletionPage } from './pages/Legal';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
 import { MetaOAuthCallbackHandler } from './components/oauth/MetaOAuthCallbackHandler';
 
 export const App: React.FC = () => {
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    return typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+  });
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname.toLowerCase());
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
   const {
     fetchConversations,
     fetchUnreadSummary,
@@ -35,6 +51,17 @@ export const App: React.FC = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(wsConnected);
   wsConnectedRef.current = wsConnected;
+
+  // Dedicated, Public Legal & Compliance Routes (No authentication required)
+  if (currentPath === '/privacy-policy' || currentPath === '/privacy') {
+    return <PrivacyPolicyPage />;
+  }
+  if (currentPath === '/terms-of-service' || currentPath === '/terms') {
+    return <TermsPage />;
+  }
+  if (currentPath === '/data-deletion' || currentPath === '/deletion') {
+    return <DataDeletionPage />;
+  }
 
   useEffect(() => {
     fetchMe();
