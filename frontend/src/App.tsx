@@ -63,6 +63,54 @@ export const App: React.FC = () => {
     return <DataDeletionPage />;
   }
 
+  // Meta OAuth Popup Window Interception:
+  // If running inside a popup window, intercept errors/codes immediately to prevent rendering the full CRM shell.
+  const isPopup = typeof window !== 'undefined' && Boolean(window.opener && window.opener !== window);
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const errorCode = searchParams?.get('error_code');
+  const errorMessage = searchParams?.get('error_message');
+  const metaError = searchParams?.get('error');
+  const errorDescription = searchParams?.get('error_description') || searchParams?.get('error_reason');
+  const hasMetaError = Boolean(errorCode || errorMessage || metaError || errorDescription);
+  const hasMetaCode = Boolean(searchParams?.get('code') && searchParams?.get('state'));
+
+  if (isPopup && hasMetaError) {
+    try {
+      window.opener.postMessage(
+        {
+          type: 'META_OAUTH_ERROR',
+          error: errorMessage || errorCode || errorDescription || metaError || 'فشل في استكمال الربط مع حساب فيسبوك',
+        },
+        window.location.origin
+      );
+    } catch (e) {
+      console.warn('[Popup] Failed to postMessage to opener:', e);
+    }
+    window.close();
+
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6 text-center select-none" dir="rtl">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-xs w-full space-y-3 shadow-2xl text-white">
+          <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+            <div className="w-5 h-5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <h3 className="text-sm font-bold text-white">جارٍ إغلاق النافذة...</h3>
+          <p className="text-xs text-slate-400">
+            {errorMessage || errorDescription || (errorCode ? `Facebook Error: ${errorCode}` : 'تم إلغاء عملية الربط')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPopup && hasMetaCode) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-4 text-center select-none" dir="rtl">
+        <MetaOAuthCallbackHandler />
+      </div>
+    );
+  }
+
   useEffect(() => {
     fetchMe();
   }, []);

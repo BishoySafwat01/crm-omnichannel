@@ -376,10 +376,18 @@ if (typeof window !== 'undefined') {
       });
       useChannelsStore.getState().fetchConnectedPages();
     } else if (event.data?.type === 'META_OAUTH_ERROR') {
+      const rawError = event.data.error;
+      const formattedError =
+        typeof rawError === 'string'
+          ? rawError
+          : typeof rawError === 'number'
+          ? `خطأ فيسبوك: رمز الخطأ ${rawError}`
+          : rawError?.message || 'فشل في استكمال الربط مع حساب فيسبوك';
+
       useChannelsStore.setState({
         isConnecting: false,
         isProcessingCallback: false,
-        error: event.data.error || 'فشل في استكمال الربط مع حساب فيسبوك',
+        error: formattedError,
       });
     }
   });

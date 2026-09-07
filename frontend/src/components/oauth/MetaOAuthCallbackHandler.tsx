@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Loader2, CheckCircle2, AlertCircle, X, Facebook, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { useAuthStore, isAdminUser, User } from '../../store/useAuthStore';
 import { useChannelsStore } from '../../store/useChannelsStore';
 import { useCrmStore } from '../../store/useCrmStore';
@@ -15,7 +15,9 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
     message: string;
   } | null>(null);
 
-  const [isPopupMode, setIsPopupMode] = useState(false);
+  const [isPopupMode, setIsPopupMode] = useState(() => {
+    return typeof window !== 'undefined' && Boolean(window.opener && window.opener !== window);
+  });
   const processedRef = useRef(false);
 
   useEffect(() => {
@@ -25,32 +27,50 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
     const code = urlParams.get('code');
     const state = urlParams.get('state');
     const metaError = urlParams.get('error');
+    const errorCode = urlParams.get('error_code');
+    const errorMessage = urlParams.get('error_message');
     const errorDescription = urlParams.get('error_description') || urlParams.get('error_reason');
 
     const isPopup = Boolean(window.opener && window.opener !== window);
     setIsPopupMode(isPopup);
 
+    const hasError = Boolean(metaError || errorCode || errorMessage || errorDescription);
+
     // Case 1: Meta returned an error or user cancelled authorization
-    if (metaError) {
+    if (hasError) {
       processedRef.current = true;
-      const formattedError = errorDescription
-        ? `تم إلغاء أو تعذر الاتصال مع فيسبوك: ${decodeURIComponent(errorDescription)}`
-        : 'تم إلغاء عملية الربط مع فيسبوك بواسطة المستخدم.';
+      const reportedError =
+        errorMessage ||
+        errorCode ||
+        errorDescription ||
+        metaError ||
+        'تم إلغاء عملية الربط مع فيسبوك بواسطة المستخدم.';
+
+      const formattedError =
+        typeof reportedError === 'string'
+          ? decodeURIComponent(reportedError.replace(/\+/g, ' '))
+          : String(reportedError);
 
       if (isPopup) {
         try {
           window.opener.postMessage(
             {
               type: 'META_OAUTH_ERROR',
-              error: formattedError,
+              error: errorMessage || errorCode || formattedError,
             },
             window.location.origin
           );
         } catch (e) {
           console.warn('[Popup] Failed to postMessage error to opener:', e);
         }
+
         window.history.replaceState({}, document.title, window.location.pathname);
-        setTimeout(() => window.close(), 600);
+        setNotification({
+          type: 'error',
+          message: 'جارٍ إغلاق النافذة...',
+        });
+        window.close();
+        setTimeout(() => window.close(), 100);
         return;
       }
 
@@ -152,8 +172,9 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             try {
               window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: authErr }, window.location.origin);
             } catch {}
-            setNotification({ type: 'error', message: authErr });
-            setTimeout(() => window.close(), 1200);
+            setNotification({ type: 'error', message: 'جارٍ إغلاق النافذة...' });
+            window.close();
+            setTimeout(() => window.close(), 100);
             return;
           }
           setNotification({ type: 'error', message: authErr });
@@ -167,8 +188,9 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             try {
               window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: permErr }, window.location.origin);
             } catch {}
-            setNotification({ type: 'error', message: permErr });
-            setTimeout(() => window.close(), 1500);
+            setNotification({ type: 'error', message: 'جارٍ إغلاق النافذة...' });
+            window.close();
+            setTimeout(() => window.close(), 100);
             return;
           }
           setNotification({ type: 'error', message: permErr });
@@ -201,11 +223,12 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             } catch (e) {
               console.warn('[Popup] Failed to postMessage success to opener:', e);
             }
-            setTimeout(() => window.close(), 800);
+            window.close();
+            setTimeout(() => window.close(), 400);
           } else {
             setNotification({
               type: 'error',
-              message: result.error || 'فشل في استكمال الربط مع حساب فيسبوك.',
+              message: 'جارٍ إغلاق النافذة...',
             });
             try {
               window.opener.postMessage(
@@ -218,12 +241,13 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
             } catch (e) {
               console.warn('[Popup] Failed to postMessage error to opener:', e);
             }
-            setTimeout(() => window.close(), 1500);
+            window.close();
+            setTimeout(() => window.close(), 600);
           }
           return;
         }
 
-        // Standard in-page redirect fallback
+        // Standard in-page redirect fallback (if not opened in a popup)
         if (result.success) {
           setNotification({
             type: 'success',
@@ -245,10 +269,10 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
 
   if (!notification) return null;
 
-  // In popup mode, render a clean dedicated full-screen card
+  // In popup mode, render a minimal centered card ("جارٍ إغلاق النافذة...")
   if (isPopupMode) {
     return (
-      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[99999] flex items-center justify-center p-6 text-center dir-rtl">
+      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[99999] flex items-center justify-center p-6 text-center select-none" dir="rtl">
         <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-8 max-w-sm w-full space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 text-white">
           <div className="w-12 h-12 rounded-2xl bg-[#1877F2]/20 border border-[#1877F2]/30 text-[#1877F2] flex items-center justify-center mx-auto">
             {notification.type === 'loading' && <Loader2 className="w-6 h-6 animate-spin text-[#1877F2]" />}
@@ -261,7 +285,7 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
                 ? 'جارٍ استكمال الربط الآمن...'
                 : notification.type === 'success'
                 ? 'اكتملت المصادقة بنجاح'
-                : 'تنبيه المصادقة'}
+                : 'جارٍ إغلاق النافذة...'}
             </h3>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notification.message}</p>
           </div>
@@ -318,4 +342,5 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
     </div>
   );
 };
+
 export default MetaOAuthCallbackHandler;
