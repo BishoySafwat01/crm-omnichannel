@@ -17,6 +17,7 @@ from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
 from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
+from app.schemas.messaging import AgentReplyResultDTO, MessageResponse
 
 logger = logging.getLogger("MessageService")
 
@@ -192,7 +193,7 @@ class MessageService:
         sender_user_id: Optional[uuid.UUID] = None,
         reply_to: Optional[dict[str, Any]] = None,
         forwarded_from: Optional[dict[str, Any]] = None,
-    ) -> Message:
+    ) -> AgentReplyResultDTO:
         clean_text = (text or "").strip()
         if not clean_text and not attachments:
             raise ValueError("Message text cannot be empty or whitespace only.")
@@ -733,18 +734,31 @@ class MessageService:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
         await session.commit()
+        await session.refresh(new_message)
+
+        sender_name: Optional[str] = None
         if sender_user_id:
             from app.models.user import User
             user_obj = await session.get(User, sender_user_id)
             if user_obj:
-                setattr(new_message, "sender_user", user_obj)
-                setattr(new_message, "sender_name", user_obj.full_name)
+                sender_name = user_obj.full_name
 
-        if updated_loc:
-            setattr(new_message, "updated_customer_location", updated_loc)
-        elif conv.customer and getattr(conv.customer, "location", None):
-            setattr(new_message, "updated_customer_location", conv.customer.location)
+        final_customer_location = updated_loc or (
+            conv.customer.location if (conv.customer and getattr(conv.customer, "location", None)) else None
+        )
 
-        setattr(new_message, "location_detection_status", location_status)
+        msg_resp = MessageResponse.model_validate(new_message)
+        if sender_user_id:
+            msg_resp.sender_user_id = sender_user_id
+        if sender_name:
+            msg_resp.sender_name = sender_name
+        if final_customer_location:
+            msg_resp.updated_customer_location = final_customer_location
 
-        return new_message
+        return AgentReplyResultDTO(
+            message=msg_resp,
+            sender_user_id=sender_user_id,
+            sender_name=sender_name,
+            updated_customer_location=final_customer_location,
+            location_detection_status=location_status,
+        )

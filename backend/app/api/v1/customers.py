@@ -161,93 +161,19 @@ async def update_customer(
     current_user: User = Depends(get_current_user),
 ):
     """Update customer profile information (name, email, phone, location, tier, skin_type, stage)."""
-    customer = await CustomerService.get_customer_by_id(session=db, customer_id=customer_id)
+    client_ip = request.client.host if (request and request.client) else None
+    customer = await CustomerService.update_customer(
+        session=db,
+        customer_id=customer_id,
+        payload=payload,
+        current_user=current_user,
+        client_ip=client_ip,
+    )
     if not customer:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Customer {customer_id} not found.",
         )
-
-    update_data = payload.model_dump(exclude_unset=True)
-    changes = {}
-    for field, val in update_data.items():
-        if val is not None:
-            old_val = getattr(customer, field, None)
-            if old_val != val:
-                changes[field] = {"old": old_val, "new": val}
-                setattr(customer, field, val)
-
-    # Harmonize location and country auto-mapping
-    if payload.country is not None:
-        customer.country = payload.country
-    if payload.location is not None:
-        customer.location = payload.location
-        if not customer.country or payload.country is None:
-            customer.country = payload.location
-
-    await db.commit()
-    await db.refresh(customer)
-
-    # If changes occurred, log audit & timeline
-    if changes:
-        user_id = current_user.id
-        user_name = current_user.full_name or "النظام"
-        client_ip = request.client.host if (request and request.client) else None
-
-        # 1. Immutable UserAuditLog
-        try:
-            from app.services.audit_service import AuditService
-            action_name = "customer.updated"
-            if len(changes) == 1:
-                if "stage" in changes:
-                    action_name = "customer.stage_changed"
-                elif "tier" in changes:
-                    action_name = "customer.tier_changed"
-
-            await AuditService.log_action(
-                session=db,
-                user_id=user_id,
-                action=action_name,
-                resource_type="customer",
-                resource_id=str(customer_id),
-                payload={
-                    "changes": changes,
-                    "user_name": user_name,
-                    "customer_name": customer.display_name,
-                },
-                ip_address=client_ip,
-            )
-        except Exception as audit_err:
-            logger.warning("[Customer Update Audit Log Error] %s", audit_err)
-
-        # 2. Customer 360 Timeline event
-        try:
-            from app.services.customer_timeline_service import CustomerTimelineService
-            summary_parts = []
-            if "stage" in changes:
-                summary_parts.append(f"تغيير الحالة إلى '{changes['stage']['new']}'")
-            if "tier" in changes:
-                summary_parts.append(f"تغيير الدرجة إلى '{changes['tier']['new']}'")
-            if "location" in changes or "country" in changes:
-                new_loc = changes.get("location", {}).get("new") or changes.get("country", {}).get("new")
-                summary_parts.append(f"تغيير الموقع إلى '{new_loc}'")
-            if "skin_type" in changes:
-                summary_parts.append(f"تغيير نوع البشرة إلى '{changes['skin_type']['new']}'")
-            if not summary_parts:
-                summary_parts.append("تحديث بيانات العميل")
-
-            summary_str = f"قام {user_name} بـ " + " و ".join(summary_parts)
-            await CustomerTimelineService.record_event(
-                session=db,
-                customer_id=customer_id,
-                event_type="customer.updated",
-                channel="system",
-                summary=summary_str,
-                details={"modified_by": user_name, "changes": changes},
-            )
-            await db.commit()
-        except Exception:
-            pass
 
     return CustomerResponse.model_validate(customer)
 

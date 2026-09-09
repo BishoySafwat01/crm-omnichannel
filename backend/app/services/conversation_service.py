@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Any, Dict, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -443,4 +443,86 @@ class ConversationService:
         await session.commit()
         await session.refresh(conv)
         return conv
+
+    @staticmethod
+    def _user_can_access_brand_and_channel(user: Optional[Any], brand: Optional[str], channel: Any) -> bool:
+        """Check if user has access to a conversation brand and channel without web layer dependencies."""
+        if not user or not getattr(user, "is_active", True):
+            return True
+        role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+        if role_val.lower() in ("admin", "superadmin", "owner"):
+            return True
+        b_access = getattr(user, "brand_access", None) or []
+        brand_str = str(brand or "LAVVA").strip()
+        if "ALL" not in b_access and "all" not in b_access and "الكل" not in b_access:
+            if brand_str not in b_access and not any(brand_str.lower() == str(b).strip().lower() for b in b_access):
+                return False
+        c_access = getattr(user, "channel_access", None)
+        if c_access is not None:
+            norm_c = [str(x).strip().lower() for x in c_access]
+            if "all" not in norm_c and "الكل" not in norm_c:
+                ch_str = (channel.value if hasattr(channel, "value") else str(channel)).strip().lower()
+                if ch_str not in norm_c:
+                    return False
+        return True
+
+    @staticmethod
+    async def get_unread_summary(
+        session: AsyncSession,
+        user: Optional[Any] = None,
+        brand: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Aggregate total, per-channel, and per-brand unread message counts via optimized SQL aggregation."""
+        stmt = (
+            select(
+                Conversation.brand,
+                Conversation.channel,
+                func.coalesce(func.sum(Conversation.unread_count), 0),
+            )
+            .where(Conversation.unread_count > 0)
+        )
+        if brand:
+            stmt = stmt.where(Conversation.brand == brand)
+        stmt = stmt.group_by(Conversation.brand, Conversation.channel)
+        res = await session.execute(stmt)
+        rows = res.all()
+
+        total_unread = 0
+        channels_map = {"all": 0, "messenger": 0, "instagram": 0, "whatsapp": 0, "tiktok": 0}
+        brands_map = {}
+
+        for conv_brand, conv_channel, cnt in rows:
+            conv_brand_str = str(conv_brand or "LAVVA")
+            count_val = int(cnt or 0)
+            if not ConversationService._user_can_access_brand_and_channel(user, conv_brand_str, conv_channel):
+                continue
+
+            total_unread += count_val
+            ch = (conv_channel.value if hasattr(conv_channel, "value") else str(conv_channel)).lower()
+            if ch in channels_map:
+                channels_map[ch] += count_val
+
+            brands_map[conv_brand_str] = brands_map.get(conv_brand_str, 0) + count_val
+
+            # Standard aliases for UI binding
+            norm_b = conv_brand_str.strip().lower()
+            if "lotus" in norm_b:
+                brands_map["LOTUS BLUE"] = brands_map.get("LOTUS BLUE", 0) + count_val
+            elif "hayat" in norm_b:
+                brands_map["HAYAT"] = brands_map.get("HAYAT", 0) + count_val
+            elif "liora" in norm_b or "luxira" in norm_b:
+                brands_map["LUXIRA"] = brands_map.get("LUXIRA", 0) + count_val
+                brands_map["LIORA"] = brands_map.get("LIORA", 0) + count_val
+            elif "loxx" in norm_b:
+                brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + count_val
+            elif "lavva" in norm_b or "lava" in norm_b:
+                brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + count_val
+
+        channels_map["all"] = total_unread
+
+        return {
+            "total_unread": total_unread,
+            "channels": channels_map,
+            "brands": brands_map,
+        }
 

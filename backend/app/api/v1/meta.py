@@ -260,12 +260,12 @@ async def send_meta_outbound_message(
 ):
     """Send an agent reply to a Messenger conversation through the Meta Graph API."""
     try:
-        msg = await MessageService.send_agent_reply(
+        reply_result = await MessageService.send_agent_reply(
             session=db,
             conversation_id=conversation_id,
             text=payload.text,
         )
-        return msg
+        return reply_result.message
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

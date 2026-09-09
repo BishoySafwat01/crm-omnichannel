@@ -231,3 +231,25 @@ class MessageResponse(MessageBase):
                 "pinned_at": pinned_at,
                 "pinned_by_name": pinned_by_name,
             }
+
+
+class AgentReplyResultDTO(BaseModel):
+    """Result Data Transfer Object for outbound agent replies.
+    Prevents runtime monkey-patching of SQLAlchemy Message ORM entities.
+    """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    message: MessageResponse
+    sender_user_id: Optional[uuid.UUID] = None
+    sender_name: Optional[str] = None
+    updated_customer_location: Optional[str] = None
+    location_detection_status: Optional[str] = None
+
+    def __getattr__(self, name: str) -> Any:
+        """Transparent delegation to underlying MessageResponse for non-breaking backward compatibility."""
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            if "message" in self.__dict__:
+                return getattr(self.message, name)
+            raise

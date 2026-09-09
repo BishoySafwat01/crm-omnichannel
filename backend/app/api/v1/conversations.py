@@ -49,51 +49,7 @@ async def get_unread_summary(
     current_user: User = Depends(get_current_user),
 ):
     """Return total, per-channel, and per-brand unread message counts, scoped to caller's authorized brands and channels."""
-    user = current_user
-
-    stmt = select(Conversation)
-    res = await db.execute(stmt)
-    all_convs = res.scalars().all()
-
-    total_unread = 0
-    channels_map = {"all": 0, "messenger": 0, "instagram": 0, "whatsapp": 0, "tiktok": 0}
-    brands_map = {}
-
-    for conv in all_convs:
-        if not user_has_conversation_access(user, conv):
-            continue
-
-        conv_brand = getattr(conv, "brand", "LAVVA") or "LAVVA"
-        cnt = getattr(conv, "unread_count", 0) or 0
-        total_unread += cnt
-
-        ch = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)).lower()
-        if ch in channels_map:
-            channels_map[ch] += cnt
-
-        brands_map[conv_brand] = brands_map.get(conv_brand, 0) + cnt
-
-        # Also map to common standard aliases for seamless UI binding
-        norm_b = conv_brand.strip().lower()
-        if "lotus" in norm_b:
-            brands_map["LOTUS BLUE"] = brands_map.get("LOTUS BLUE", 0) + cnt
-        elif "hayat" in norm_b:
-            brands_map["HAYAT"] = brands_map.get("HAYAT", 0) + cnt
-        elif "liora" in norm_b or "luxira" in norm_b:
-            brands_map["LUXIRA"] = brands_map.get("LUXIRA", 0) + cnt
-            brands_map["LIORA"] = brands_map.get("LIORA", 0) + cnt
-        elif "loxx" in norm_b:
-            brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + cnt
-        elif "lavva" in norm_b or "lava" in norm_b:
-            brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + cnt
-
-    channels_map["all"] = total_unread
-
-    return {
-        "total_unread": total_unread,
-        "channels": channels_map,
-        "brands": brands_map,
-    }
+    return await ConversationService.get_unread_summary(session=db, user=current_user)
 
 
 @router.post(
@@ -373,7 +329,7 @@ async def send_outbound_reply(
                     "message_type": ref_msg.message_type.value if hasattr(ref_msg.message_type, "value") else str(ref_msg.message_type),
                 }
 
-        msg = await MessageService.send_agent_reply(
+        reply_dto = await MessageService.send_agent_reply(
             session=db,
             conversation_id=conversation_id,
             text=payload.text,
@@ -382,14 +338,14 @@ async def send_outbound_reply(
             sender_user_id=current_user.id if current_user else None,
             reply_to=reply_to_dict,
         )
-        resp = MessageResponse.model_validate(msg)
+        resp = reply_dto.message
         try:
-            from app.api.v1.ws import broadcast_realtime_event
+            from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
             msg_payload = resp.model_dump(mode="json")
             brand_val = getattr(conv, "brand", None)
             if brand_val and "brand" not in msg_payload:
                 msg_payload["brand"] = brand_val
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
