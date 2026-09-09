@@ -81,19 +81,31 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
   }
 
   const textVal = (msg.text || '').trim();
-  if (
-    !url &&
-    (textVal.startsWith('voice_') ||
+  if (!url && textVal) {
+    const msgTypeLower = (msg.message_type || msg.media_type || type || '').toLowerCase();
+    if (textVal.startsWith('http://') || textVal.startsWith('https://')) {
+      if (
+        msgTypeLower === 'audio' ||
+        msgTypeLower === 'image' ||
+        msgTypeLower === 'video' ||
+        /\.(ogg|aac|opus|mp4|m4a|webm|mp3|wav|jpg|jpeg|png|webp|gif)($|\?)/i.test(textVal)
+      ) {
+        url = textVal;
+        fileName = textVal.split('?')[0].split('/').pop() || 'media';
+      }
+    } else if (
+      textVal.startsWith('voice_') ||
       textVal.startsWith('img_') ||
       textVal.startsWith('vid_') ||
       textVal.startsWith('image-') ||
       textVal.startsWith('/uploads/') ||
-      /\.(ogg|mp4|m4a|webm|mp3|wav|jpg|jpeg|png|webp|gif)$/i.test(textVal))
-  ) {
-    url = textVal.startsWith('/uploads/')
-      ? textVal
-      : `/uploads/${textVal.replace(/^\(+|\)+$/g, '')}`;
-    fileName = textVal;
+      /\.(ogg|aac|opus|mp4|m4a|webm|mp3|wav|jpg|jpeg|png|webp|gif)$/i.test(textVal)
+    ) {
+      url = textVal.startsWith('/uploads/')
+        ? textVal
+        : `/uploads/${textVal.replace(/^\(+|\)+$/g, '')}`;
+      fileName = textVal;
+    }
   }
 
   if (!url) {

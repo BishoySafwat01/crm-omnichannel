@@ -204,6 +204,9 @@ export const MemoizedMessageBubble = React.memo<{
 
               {/* Regular Text Content */}
               {msg.text &&
+                !media.isAudio &&
+                !(media.isImage && msg.text === media.url) &&
+                !(media.isVideo && msg.text === media.url) &&
                 !msg.text.startsWith('voice_') &&
                 !msg.text.startsWith('img_') &&
                 !msg.text.startsWith('vid_') &&
