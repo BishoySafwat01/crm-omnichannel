@@ -71,6 +71,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
 
+  // Textarea Refs for auto-focus restoration
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
   // File Inputs Refs
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +86,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     if (draftText && draftText.trim() !== '') {
       setLocalDraftText(draftText);
       setDraftText('');
+      textareaRef.current?.focus();
     }
   }, [draftText, setDraftText]);
 
@@ -89,8 +94,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     if (editingMessage) {
       setLocalDraftText(editingMessage.text || '');
       setEditInputText(editingMessage.text || '');
+      setTimeout(() => editTextareaRef.current?.focus(), 0);
     } else {
       setEditInputText('');
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
   }, [editingMessage]);
 
@@ -511,6 +518,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 </button>
               </div>
               <textarea
+                ref={editTextareaRef}
                 value={editInputText}
                 onChange={(e) => setEditInputText(e.target.value)}
                 onKeyDown={(e) => {
@@ -608,6 +616,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             </div>
           ) : (
             <textarea
+              ref={textareaRef}
               value={localDraftText}
               onChange={(e) => setLocalDraftText(e.target.value)}
               onKeyDown={handleKeyDown}
