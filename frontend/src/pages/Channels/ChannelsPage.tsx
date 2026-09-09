@@ -29,14 +29,15 @@ import {
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { useChannelsStore } from '../../store/useChannelsStore';
+import { useBrandStore } from '../../store/useBrandStore';
 import { metaApi } from '../../services/api';
-import { MOCK_BRANDS } from '../../constants/brands';
 
 type ChannelsTab = 'pages' | 'providers' | 'webhooks';
 
 export const ChannelsPage: React.FC = () => {
   const { user } = useAuthStore();
   const isAdmin = isAdminUser(user);
+  const brands = useBrandStore((state) => state.brands);
 
   const {
     connectedPages,
@@ -553,7 +554,7 @@ export const ChannelsPage: React.FC = () => {
                             onChange={(e) => handleBrandChange(page.page_id, e.target.value)}
                             className="bg-slate-50 text-[11px] font-bold text-slate-700 px-2.5 py-1 rounded-xl border border-slate-200 focus:outline-none cursor-pointer"
                           >
-                            {MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => (
+                            {brands.filter((b) => b.id !== 'all').map((b) => (
                               <option key={b.id} value={b.name}>
                                 {b.name}
                               </option>

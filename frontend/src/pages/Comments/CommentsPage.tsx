@@ -33,7 +33,7 @@ import {
   Loader2,
   Image as ImageIcon,
 } from 'lucide-react';
-import { commentsApi, MOCK_BRANDS } from '../../services/api';
+import { commentsApi } from '../../services/api';
 import { SocialComment } from '../../types/crm';
 
 export interface ModerationRuleSettings {

@@ -21,10 +21,11 @@ import {
   BrandVolume,
   PeakHours,
   SlaMetrics,
-  MOCK_BRANDS,
 } from '../../services/api';
+import { useBrandStore } from '../../store/useBrandStore';
 
 export const ExecutiveDashboard: React.FC = () => {
+  const dynamicBrands = useBrandStore((state) => state.brands);
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [selectedDays, setSelectedDays] = useState<number>(30);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -105,8 +106,8 @@ export const ExecutiveDashboard: React.FC = () => {
               className="bg-transparent text-slate-700 focus:outline-hidden font-bold cursor-pointer"
             >
               <option value="all">كل البراندات (الكل)</option>
-              {MOCK_BRANDS.map((b) => (
-                <option key={b.id} value={b.name}>
+              {dynamicBrands.filter((b) => b.id !== 'all').map((b) => (
+                <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
               ))}

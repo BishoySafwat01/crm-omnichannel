@@ -10,9 +10,10 @@ import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
-import { MOCK_BRANDS } from '../../../constants/brands';
+import { useBrandStore } from '../../../store/useBrandStore';
 
 export const CustomerProfileSidebar: React.FC = () => {
+  const brands = useBrandStore((state) => state.brands);
   const {
     conversations,
     activeConversationId,
@@ -378,7 +379,7 @@ export const CustomerProfileSidebar: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                   className="w-full rounded-lg border border-blue-300 bg-blue-50/60 px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-[#1A73E8] outline-none cursor-pointer"
                 >
-                  {MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => (
+                  {brands.filter((b) => b.id !== 'all').map((b) => (
                     <option key={b.id} value={b.id}>
                       متجر: {b.name}
                     </option>

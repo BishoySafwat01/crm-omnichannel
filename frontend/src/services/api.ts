@@ -1,9 +1,6 @@
 import { CommentAutomationRule, ConnectedPage, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
 export type { ConnectedPage };
 import { APP_CONFIG } from '../config/appConfig';
-import { MOCK_BRANDS } from '../constants/brands';
-
-export { MOCK_BRANDS };
 
 const metaEnv = (import.meta as any).env || {};
 const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();

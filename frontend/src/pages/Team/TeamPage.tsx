@@ -24,7 +24,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { teamApi, TeamMember, AuditLog } from '../../services/api';
-import { MOCK_BRANDS } from '../../services/api';
+import { useBrandStore } from '../../store/useBrandStore';
 
 export const TeamGovernance: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'roster' | 'audit'>('roster');
@@ -65,7 +65,8 @@ export const TeamGovernance: React.FC = () => {
   const [totalAuditPages, setTotalAuditPages] = useState<number>(1);
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLog | null>(null);
 
-  const availableBrands = MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => b.id);
+  const brands = useBrandStore((state) => state.brands);
+  const availableBrands = brands.filter((b) => b.id !== 'all').map((b) => b.id);
 
   useEffect(() => {
     fetchMembers();

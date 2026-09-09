@@ -25,10 +25,11 @@ import {
   AutomationRule,
   AutomationExecutionLog,
   commentAutomationApi,
-  MOCK_BRANDS,
 } from '../../services/api';
 import { CommentAutomationRule } from '../../types/crm';
 import { BadWordsModerationModal } from './components/BadWordsModerationModal';
+import { useBrandStore } from '../../store/useBrandStore';
+import { getBrandObject } from '../../components/ConversationAvatar';
 
 interface MessageBlock {
   id: string;
@@ -37,6 +38,7 @@ interface MessageBlock {
 }
 
 export const AutomationsManager: React.FC = () => {
+  const brands = useBrandStore((state) => state.brands);
   const [activeTab, setActiveTab] = useState<'messages' | 'comments'>('messages');
 
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -475,7 +477,7 @@ export const AutomationsManager: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {rules.map((rule) => {
-                  const brandObj = MOCK_BRANDS.find((b) => b.id === rule.brand_id);
+                  const brandObj = rule.brand_id && rule.brand_id !== 'all' ? getBrandObject(rule.brand_id, rule.brand_id) : null;
                   const bubbles = (rule.response_text || '').split('\n\n').filter(Boolean);
                   return (
                     <div key={rule.id} className={`bg-white rounded-2xl border p-5 shadow-xs transition duration-150 space-y-4 ${rule.is_active ? 'border-slate-200 hover:border-teal-300' : 'border-slate-200/60 opacity-65 bg-slate-50/40'}`}>
@@ -622,7 +624,7 @@ export const AutomationsManager: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">البراند:</label>
                   <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer">
                     <option value="all">كل البراندات (Global)</option>
-                    {MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                    {brands.filter((b) => b.id !== 'all').map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
                   </select>
                 </div>
                 <div>

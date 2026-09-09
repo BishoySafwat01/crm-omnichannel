@@ -2,9 +2,8 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
-import { MOCK_BRANDS } from '../../../constants/brands';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
-import { ConversationAvatar } from '../../../components/ConversationAvatar';
+import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { formatCustomerPresence } from '../../../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
@@ -173,8 +172,16 @@ export const ConversationList: React.FC = () => {
     loadMoreConversations,
   } = useCrmStore();
 
+  const lastScrollTimeRef = useRef<number>(0);
+
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
+      const now = Date.now();
+      if (now - lastScrollTimeRef.current < 150) {
+        return;
+      }
+      lastScrollTimeRef.current = now;
+
       const target = e.currentTarget;
       const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
       if (scrollBottom < 120 && hasMoreConversations && !isLoadingMoreConversations) {
@@ -437,10 +444,7 @@ export const ConversationList: React.FC = () => {
                 {/* Scrollable Employee Options List */}
                 <div className="overflow-y-auto max-h-60 sm:max-h-72 space-y-0.5 pr-0.5">
                   {employeeOptions.map((emp) => {
-                    const brandObj =
-                      MOCK_BRANDS.find((b) => b.id.toLowerCase() === (emp.brand || '').toLowerCase()) ||
-                      MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
-                      MOCK_BRANDS[1];
+                    const brandObj = getBrandObject(emp.brand, emp.brand);
                     const brandName = emp.brand || brandObj?.name || 'LUXIRA';
                     const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
                     const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
@@ -485,10 +489,7 @@ export const ConversationList: React.FC = () => {
 
         {/* Active Employee Filter Pill Indicator with Store Logo */}
         {selectedEmployeeObj && (() => {
-          const brandObj =
-            MOCK_BRANDS.find((b) => b.id.toLowerCase() === (selectedEmployeeObj.brand || '').toLowerCase()) ||
-            MOCK_BRANDS.find((b) => b.id === 'LUXIRA') ||
-            MOCK_BRANDS[1];
+          const brandObj = getBrandObject(selectedEmployeeObj.brand, selectedEmployeeObj.brand);
           const brandName = selectedEmployeeObj.brand || brandObj?.name || 'LUXIRA';
           const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
           const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';

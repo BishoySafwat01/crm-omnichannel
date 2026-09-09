@@ -19,7 +19,7 @@ import {
   Globe,
   Layers,
 } from 'lucide-react';
-import { MOCK_BRANDS } from '../../constants/brands';
+import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
@@ -140,57 +140,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   const isUserAdmin = isAdminUser(user);
 
-  const dynamicBrands = useMemo(() => {
-    const list: { id: string; name: string; avatar: string; logo_url?: string; color: string }[] = [
-      { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800' },
-    ];
-    const seen = new Set<string>(['all']);
-
-    // 1. Gather all active brands from unreadSummary & conversations
-    const activeBrandNames = new Set<string>();
-    if (unreadSummary?.brands) {
-      Object.keys(unreadSummary.brands).forEach((b) => {
-        if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
-      });
-    }
-    conversations.forEach((c) => {
-      const b = c.brand || c.brand_name;
-      if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
-    });
-
-    // 2. Add active brands with resolved logos
-    activeBrandNames.forEach((bName) => {
-      const norm = bName.toLowerCase();
-      if (!seen.has(norm)) {
-        seen.add(norm);
-        const obj = getBrandObject(bName, bName);
-        list.push({
-          id: bName,
-          name: obj.name || bName,
-          avatar: obj.avatar,
-          logo_url: obj.logo_url,
-          color: obj.color,
-        });
-      }
-    });
-
-    // 3. Append remaining standard mock brands if not already present
-    MOCK_BRANDS.forEach((mb) => {
-      const norm = mb.id.toLowerCase();
-      if (!seen.has(norm) && mb.id !== 'all') {
-        seen.add(norm);
-        list.push({
-          id: mb.id,
-          name: mb.name,
-          avatar: mb.avatar,
-          logo_url: mb.logo_url,
-          color: mb.color || 'from-slate-700 to-slate-800',
-        });
-      }
-    });
-
-    return list;
-  }, [unreadSummary?.brands, conversations]);
+  const dynamicBrands = useBrandStore((state) => state.brands);
 
   const selectedBrandObj = useMemo(() => {
     if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
