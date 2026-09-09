@@ -512,85 +512,14 @@ class MetaImportService:
 
     @staticmethod
     async def download_and_cache_media(url: str, media_type: str = "file") -> str:
-        if not url or not isinstance(url, str) or not url.startswith("http"):
-            return url
-        try:
-            url_lower = url.lower()
-            prefix = "media_"
-            ext = ".bin"
-            if media_type == "video" or "video" in media_type:
-                ext = ".mp4"
-                prefix = "vid_"
-            elif media_type == "image" or "image" in media_type:
-                ext = ".jpg"
-                prefix = "img_"
-            elif media_type == "audio" or "audio" in media_type:
-                ext = ".m4a"
-                prefix = "voice_"
-            elif ".jpg" in url_lower or ".jpeg" in url_lower:
-                ext = ".jpg"
-                prefix = "img_"
-            elif ".png" in url_lower:
-                ext = ".png"
-                prefix = "img_"
-            elif ".webp" in url_lower:
-                ext = ".webp"
-                prefix = "img_"
-            elif ".gif" in url_lower:
-                ext = ".gif"
-                prefix = "img_"
-            elif ".mp3" in url_lower or ".ogg" in url_lower or ".m4a" in url_lower:
-                ext = ".m4a"
-                prefix = "voice_"
-            elif ".mp4" in url_lower:
-                ext = ".mp4"
-                prefix = "vid_"
-            elif ".pdf" in url_lower:
-                ext = ".pdf"
-                prefix = "doc_"
-            elif "image-" in url_lower or "img-" in url_lower:
-                ext = ".jpg"
-                prefix = "img_"
-
-            filename = f"{prefix}{uuid.uuid4().hex[:12]}{ext}"
-            uploads_dir = settings.UPLOAD_DIR
-            os.makedirs(uploads_dir, exist_ok=True)
-
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                headers = {}
-                if "facebook.com" in url or "fbcdn.net" in url or "fbsbx.com" in url:
-                    if settings.META_PAGE_ACCESS_TOKEN:
-                        headers["Authorization"] = f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"
-
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200 and len(resp.content) > 200:
-                    if not resp.content.startswith(b"<!DOCTYPE") and not resp.content.startswith(b"{\"error\""):
-                        content_start = resp.content[:16]
-                        if content_start.startswith(b"\xff\xd8\xff"):
-                            filename = f"{os.path.splitext(filename)[0]}.jpg"
-                        elif content_start.startswith(b"\x89PNG\r\n\x1a\n"):
-                            filename = f"{os.path.splitext(filename)[0]}.png"
-                        elif content_start.startswith(b"RIFF") and b"WEBP" in content_start:
-                            filename = f"{os.path.splitext(filename)[0]}.webp"
-                        elif content_start.startswith(b"OggS"):
-                            filename = f"{os.path.splitext(filename)[0]}.ogg"
-                        elif b"ftyp" in content_start:
-                            if "audio" in media_type:
-                                filename = f"{os.path.splitext(filename)[0]}.m4a"
-                            else:
-                                filename = f"{os.path.splitext(filename)[0]}.mp4"
-
-                        upload_path = os.path.join(uploads_dir, filename)
-                        with open(upload_path, "wb") as f:
-                            f.write(resp.content)
-                        return f"/uploads/{filename}"
-                    else:
-                        logger.error("Meta CDN returned error page instead of media binary: %s", resp.text[:200])
-                else:
-                    logger.warning("Meta CDN fetch returned HTTP %s for url: %s", resp.status_code, url)
-        except Exception as e:
-            logger.warning("Failed to cache inbound media attachment: %s", str(e))
-        return url
+        """Download remote asset and cache locally, delegating to MediaStorageGateway."""
+        from app.infrastructure.storage.media_storage_gateway import media_storage_gateway
+        cached = await media_storage_gateway.download_and_cache_remote_media(
+            url=url,
+            subfolder="",
+            media_type=media_type,
+        )
+        return cached or url
 
     @staticmethod
     async def resolve_whatsapp_media(media_id: str, mime_type: str = "image/jpeg") -> Optional[str]:
