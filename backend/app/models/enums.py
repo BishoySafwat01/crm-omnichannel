@@ -32,6 +32,7 @@ class MessageTypeEnum(str, enum.Enum):
     VIDEO = "video"
     AUDIO = "audio"
     FILE = "file"
+    STICKER = "sticker"
     SHARE_REEL = "share_reel"
     SHARE_POST = "share_post"
     SYSTEM = "system"
