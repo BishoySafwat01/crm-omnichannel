@@ -85,7 +85,12 @@ class MetaImportService:
         avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
         os.makedirs(avatars_dir, exist_ok=True)
 
-        token = settings.get_page_token(page_id)
+        from app.integrations.meta.client import MetaClient
+        token = await MetaClient.get_token_for_page(page_id) if page_id else None
+        if not token:
+            token = settings.get_page_token(page_id)
+        if not token:
+            return {}
         url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={token}"
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
@@ -126,12 +131,13 @@ class MetaImportService:
         page_id: Optional[str] = None,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
         provider_adapter: Optional[MetaProvider] = None,
-        since_days: Optional[int] = 7,
+        since_days: Optional[int] = 30,
     ) -> MigrationJob:
         from app.integrations.meta.client import MetaClient
 
         target_page_id = page_id or settings.META_PAGE_ID
-        adapter = provider_adapter or MetaProvider(client=MetaClient(page_id=target_page_id))
+        client = MetaClient(page_id=target_page_id, db=session)
+        adapter = provider_adapter or MetaProvider(client=client, page_id=target_page_id, db=session)
 
         # 1. Validate configuration & page access
         try:
@@ -385,11 +391,25 @@ class MetaImportService:
         cls,
         session: AsyncSession,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
-        since_days: Optional[int] = 7,
+        since_days: Optional[int] = 30,
     ) -> list[MigrationJob]:
-        """Iterates through all pages in settings.get_meta_pages() and executes historical migration."""
+        """Iterates through all pages in settings.get_meta_pages() and connected_pages in DB and executes historical migration."""
         jobs: list[MigrationJob] = []
         pages = settings.get_meta_pages()
+        try:
+            from app.models.connected_page import ConnectedPage
+            stmt = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+            db_pages = (await session.execute(stmt)).scalars().all()
+            for cp in db_pages:
+                if cp.page_id and cp.page_id not in pages:
+                    pages[cp.page_id] = {
+                        "name": cp.name or f"Page {cp.page_id}",
+                        "access_token": cp.decrypted_access_token or "",
+                        "category": cp.category or "Business",
+                    }
+        except Exception as exc:
+            logger.warning("[MetaMultiSync] Failed to query active connected_pages from DB: %s", exc)
+
         logger.info("[MetaMultiSync] Starting batch historical synchronization for %d configured page(s)...", len(pages))
         for pid, pdata in pages.items():
             page_name = pdata.get("name", "Page")
@@ -724,6 +744,7 @@ class MetaImportService:
                             MetaImportService.enrich_customer_profile_background(
                                 customer_id=customer.id,
                                 sender_psid=target_cust_id,
+                                page_id=entry_page_id,
                             )
                         )
 
@@ -862,6 +883,7 @@ class MetaImportService:
                         MetaImportService.enrich_customer_profile_background(
                             customer_id=customer.id,
                             sender_psid=norm_event.sender_psid,
+                            page_id=entry_page_id,
                         )
                     )
 
@@ -1390,10 +1412,10 @@ class MetaImportService:
                 logger.debug("[Live Poller] Platform %s sync error: %s", plat["name"], ex)
 
     @classmethod
-    async def enrich_customer_profile_background(cls, customer_id: uuid.UUID, sender_psid: str):
+    async def enrich_customer_profile_background(cls, customer_id: uuid.UUID, sender_psid: str, page_id: Optional[str] = None):
         """Asynchronously fetches and updates customer profile info in background session."""
         try:
-            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid)
+            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid, page_id=page_id)
             if not pinfo.get("avatar_url") and not pinfo.get("display_name"):
                 return
 

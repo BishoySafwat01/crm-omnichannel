@@ -28,7 +28,12 @@ class MetaClient:
         db: Optional[AsyncSession] = None,
     ):
         self.page_id = page_id if page_id is not None else settings.META_PAGE_ID
-        self.access_token = access_token if access_token is not None else (settings.META_PAGE_ACCESS_TOKEN or None)
+        if access_token is not None:
+            self.access_token = access_token
+        elif page_id is not None and str(page_id).strip() != str(settings.META_PAGE_ID or "").strip():
+            self.access_token = None
+        else:
+            self.access_token = settings.META_PAGE_ACCESS_TOKEN or None
         self.api_version = api_version or settings.META_GRAPH_API_VERSION
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.timeout = timeout
@@ -44,7 +49,7 @@ class MetaClient:
         Database-First Dynamic Token Resolution:
         1. If db session is available, query ConnectedPage where page_id == page_id and status == 'ACTIVE'.
         2. If found, return page.decrypted_access_token.
-        3. If not found or db is None, fall back to settings.get_page_token(page_id).
+        3. If not found or db is None, check settings.get_meta_pages() or fall back to settings.META_PAGE_ACCESS_TOKEN if default page.
         """
         if not page_id or not str(page_id).strip():
             return settings.META_PAGE_ACCESS_TOKEN or None
@@ -83,15 +88,18 @@ class MetaClient:
                 logger.debug("Ephemeral db session lookup for page_id %s failed: %s", pid, exc)
 
         # 2. Backward compatibility fallback to settings / .env
-        fallback = settings.get_page_token(pid)
-        if fallback and fallback.strip():
-            return fallback.strip()
+        pages_cfg = settings.get_meta_pages()
+        if pid in pages_cfg and pages_cfg[pid].get("access_token"):
+            return pages_cfg[pid]["access_token"].strip()
 
-        return settings.META_PAGE_ACCESS_TOKEN or None
+        if str(pid).strip() == str(settings.META_PAGE_ID or "").strip():
+            return settings.META_PAGE_ACCESS_TOKEN or None
+
+        return None
 
     def _ensure_authenticated(self, token: Optional[str] = None) -> None:
-        active_token = token or self.access_token
-        if not active_token or not active_token.strip():
+        active_token = token if token is not None else self.access_token
+        if not active_token or not str(active_token).strip():
             raise MetaAPIError(
                 "META_PAGE_ACCESS_TOKEN is missing or unconfigured for the requested page.",
                 status_code=401,
@@ -108,13 +116,11 @@ class MetaClient:
         db: Optional[AsyncSession] = None,
     ) -> dict[str, Any]:
         target_page_id = page_id or self.page_id
-        active_token = access_token
-        if active_token is None and self.access_token is not None:
-            active_token = self.access_token
-        elif not active_token:
+        active_token = access_token if access_token is not None else self.access_token
+        if active_token is None and target_page_id:
             active_token = await self.get_token_for_page(target_page_id, db=db or self.db)
-            if not active_token:
-                active_token = self.access_token
+        if active_token is None and (not target_page_id or target_page_id == settings.META_PAGE_ID):
+            active_token = settings.META_PAGE_ACCESS_TOKEN or None
 
         self._ensure_authenticated(active_token)
 
@@ -219,7 +225,11 @@ class MetaClient:
             dict: { "success": bool, "details": dict, "error": Optional[str] }
         """
         target_page_id = page_id or self.page_id
-        target_token = access_token or self.access_token
+        target_token = access_token if access_token is not None else self.access_token
+        if target_token is None and target_page_id:
+            target_token = await self.get_token_for_page(target_page_id, db=self.db)
+        if target_token is None and (not target_page_id or target_page_id == settings.META_PAGE_ID):
+            target_token = settings.META_PAGE_ACCESS_TOKEN or None
 
         if not target_token or not str(target_token).strip():
             return {
