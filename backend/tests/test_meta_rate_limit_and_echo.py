@@ -9,6 +9,7 @@ from app.core.database import AsyncSessionLocal
 from app.integrations.meta import MetaAPIError, MetaClient, MetaNormalizer, MetaRateLimitGuard
 from app.models import (
     ChannelEnum,
+    ConnectedPage,
     Conversation,
     Customer,
     CustomerIdentity,
@@ -349,4 +350,103 @@ def test_normalize_webhook_event_reels_and_shares():
     assert norm_share.message_type == MessageTypeEnum.VIDEO
     assert norm_share.text == "[Instagram Reel/Share: https://instagram.com/p/abc456]"
     assert norm_share.attachments[0]["url"] == "https://instagram.com/p/abc456"
+
+
+@pytest.mark.asyncio
+async def test_webhook_instagram_native_echo_with_connected_page():
+    import uuid
+
+    rand_suffix = uuid.uuid4().hex[:8]
+    fb_page_id = f"fb_{rand_suffix}"
+    ig_account_id = f"1784143417_{rand_suffix}"
+    cust_igsid = f"igsid_cust_{rand_suffix}"
+    echo_mid = f"mid_ig_echo_{rand_suffix}"
+
+    async with AsyncSessionLocal() as session:
+        # Create active ConnectedPage with Instagram Business Account
+        cp = ConnectedPage(
+            page_id=fb_page_id,
+            name="Demo Business CRM",
+            encrypted_access_token="test_token",
+            instagram_business_account_id=ig_account_id,
+            status="ACTIVE",
+        )
+        session.add(cp)
+        await session.commit()
+
+    echo_payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": ig_account_id,
+                "messaging": [
+                    {
+                        "sender": {"id": ig_account_id},
+                        "recipient": {"id": cust_igsid},
+                        "timestamp": 1712345679000,
+                        "message": {
+                            "mid": echo_mid,
+                            "is_echo": True,
+                            "text": "مرحباً بك من تطبيق انستغرام",
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    with patch("app.api.v1.ws.broadcast_realtime_event", new_callable=AsyncMock) as mock_broadcast:
+        async with AsyncSessionLocal() as session:
+            result = await MetaImportService.process_inbound_webhook(session, echo_payload)
+            assert result["status"] == "success"
+
+            # 1. Verify NO customer was created with ig_account_id
+            page_ident = (
+                await session.execute(
+                    select(CustomerIdentity).where(CustomerIdentity.external_user_id == ig_account_id)
+                )
+            ).scalar_one_or_none()
+            assert page_ident is None
+
+            # 2. Verify customer was created for cust_igsid with INSTAGRAM channel
+            cust_ident = (
+                await session.execute(
+                    select(CustomerIdentity).where(CustomerIdentity.external_user_id == cust_igsid)
+                )
+            ).scalar_one_or_none()
+            assert cust_ident is not None
+            assert cust_ident.channel == ChannelEnum.INSTAGRAM
+
+            # 3. Verify conversation has brand from ConnectedPage and INSTAGRAM channel
+            conv = (
+                await session.execute(
+                    select(Conversation).where(Conversation.customer_id == cust_ident.customer_id)
+                )
+            ).scalar_one_or_none()
+            assert conv is not None
+            assert conv.channel == ChannelEnum.INSTAGRAM
+            assert conv.brand == "Demo Business CRM"
+
+            # 4. Verify message was created with sender_type=AGENT, direction=OUTBOUND
+            msg = (
+                await session.execute(
+                    select(Message).where(Message.external_message_id == echo_mid)
+                )
+            ).scalar_one_or_none()
+            assert msg is not None
+            assert msg.sender_type == SenderTypeEnum.AGENT
+            assert msg.text == "مرحباً بك من تطبيق انستغرام"
+            assert msg.metadata_.get("direction") == "OUTBOUND"
+            assert msg.metadata_.get("is_from_customer") is False
+            assert msg.metadata_.get("is_echo") is True
+
+            # 5. Verify realtime WS broadcast
+            mock_broadcast.assert_called_once()
+            call_args = mock_broadcast.call_args[1]
+            assert call_args["target"] == "conversation"
+            assert call_args["payload"]["type"] == "NEW_MESSAGE"
+            assert call_args["payload"]["brand"] == "Demo Business CRM"
+            assert call_args["payload"]["message"]["sender_type"] == "agent"
+            assert call_args["payload"]["message"]["direction"] == "OUTBOUND"
+
 

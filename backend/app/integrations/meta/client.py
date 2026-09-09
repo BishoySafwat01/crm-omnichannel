@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Optional
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -61,7 +61,10 @@ class MetaClient:
             try:
                 from app.models.connected_page import ConnectedPage
                 stmt = select(ConnectedPage).where(
-                    ConnectedPage.page_id == pid,
+                    or_(
+                        ConnectedPage.page_id == pid,
+                        ConnectedPage.instagram_business_account_id == pid,
+                    ),
                     ConnectedPage.status == "ACTIVE",
                 )
                 result = await db.execute(stmt)
@@ -77,7 +80,10 @@ class MetaClient:
                 from app.models.connected_page import ConnectedPage
                 async with AsyncSessionLocal() as session:
                     stmt = select(ConnectedPage).where(
-                        ConnectedPage.page_id == pid,
+                        or_(
+                            ConnectedPage.page_id == pid,
+                            ConnectedPage.instagram_business_account_id == pid,
+                        ),
                         ConnectedPage.status == "ACTIVE",
                     )
                     result = await session.execute(stmt)

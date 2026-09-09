@@ -191,16 +191,17 @@ class ConnectionManager:
         await self._dispatch_to_sockets(target_sockets, message)
 
     async def broadcast_to_conversation(self, conversation_id: str, message: dict) -> None:
-        """Broadcast a message exclusively to sockets subscribed to a specific conversation, filtered by brand access."""
+        """Broadcast a message to sockets subscribed to a specific conversation, or all authorized sockets if no room subscribers exist, filtered by brand access."""
         room_sockets = self._conversation_subscribers.get(str(conversation_id), set())
+        candidate_sockets = room_sockets if room_sockets else self.active_connections
         brand = self._extract_brand_from_payload(message)
         if brand:
             target_sockets = {
-                ws for ws in room_sockets
+                ws for ws in candidate_sockets
                 if self.has_brand_access(ws, brand)
             }
         else:
-            target_sockets = room_sockets
+            target_sockets = candidate_sockets
         await self._dispatch_to_sockets(target_sockets, message)
 
     async def send_to_user(self, user_id: str, message: dict) -> None:

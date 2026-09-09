@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 import httpx
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +64,7 @@ class MetaImportService:
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
                     settings.INSTAGRAM_ACCOUNT_ID,
+                    getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None),
                     getattr(settings, "META_APP_ID", None),
                 ]
             )
@@ -577,9 +578,12 @@ class MetaImportService:
         # Milestone 3: Query active ConnectedPages from database
         stmt_connected = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
         res_connected = await session.execute(stmt_connected)
-        active_connected_pages: dict[str, ConnectedPage] = {
-            cp.page_id: cp for cp in res_connected.scalars().all()
-        }
+        active_connected_pages: dict[str, ConnectedPage] = {}
+        for cp in res_connected.scalars().all():
+            if cp.page_id:
+                active_connected_pages[str(cp.page_id).strip()] = cp
+            if cp.instagram_business_account_id:
+                active_connected_pages[str(cp.instagram_business_account_id).strip()] = cp
 
         configured_pages = settings.get_meta_pages()
         valid_page_ids = {
@@ -589,6 +593,7 @@ class MetaImportService:
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
                     settings.INSTAGRAM_ACCOUNT_ID,
+                    getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None),
                 ]
             ) if p and str(p).strip()
         }
@@ -607,7 +612,11 @@ class MetaImportService:
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
             items = []
             channel_hint = ChannelEnum.MESSENGER
-            if obj_type == "instagram" or "instagram" in str(entry):
+            if (
+                obj_type == "instagram"
+                or "instagram" in str(entry)
+                or (entry_page_id in active_connected_pages and active_connected_pages[entry_page_id].instagram_business_account_id == entry_page_id)
+            ):
                 channel_hint = ChannelEnum.INSTAGRAM
 
 
@@ -635,23 +644,34 @@ class MetaImportService:
                     norm_event.channel,
                     is_echo,
                 )
-
                 sender_id_clean = str(norm_event.sender_psid or "").strip()
                 recipient_id_clean = str(norm_event.recipient_id or "").strip()
                 is_self_message = (
                     sender_id_clean in valid_page_ids
+                    or sender_id_clean in active_connected_pages
                     or (sender_id_clean == str(settings.META_PAGE_ID))
                     or (sender_id_clean == str(settings.INSTAGRAM_ACCOUNT_ID))
+                    or (sender_id_clean == getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", ""))
                     or (sender_id_clean == str(settings.WHATSAPP_PHONE_NUMBER_ID))
                     or (sender_id_clean == str(settings.WHATSAPP_WABA_ID))
                     or (sender_id_clean == getattr(settings, "META_APP_ID", ""))
+                    or (sender_id_clean == entry_page_id)
                 )
 
                 # Early Echo & Self-Message Guard: Handle outbound agent echoes & prevent loops/self-customer creation
-                if is_echo or is_self_message:
+                if is_echo or is_self_message or norm_event.sender_type == SenderTypeEnum.AGENT:
                     target_mid = echo_mid or norm_event.external_message_id
                     target_text = echo_text or norm_event.text
-                    target_cust_id = recipient_id_clean if (recipient_id_clean and recipient_id_clean not in valid_page_ids) else None
+
+                    if recipient_id_clean and recipient_id_clean not in valid_page_ids and recipient_id_clean not in active_connected_pages:
+                        target_cust_id = recipient_id_clean
+                    elif sender_id_clean and sender_id_clean not in valid_page_ids and sender_id_clean not in active_connected_pages:
+                        target_cust_id = sender_id_clean
+                    else:
+                        target_cust_id = None
+
+                    if not target_mid and target_cust_id:
+                        target_mid = f"echo_{int(norm_event.created_at.timestamp())}_{target_cust_id}"
 
                     logger.info(
                         "[Webhook Echo Handler] Outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
@@ -757,7 +777,12 @@ class MetaImportService:
                     connected_page = active_connected_pages.get(entry_page_id)
                     if not connected_page:
                         cp_single = (await session.execute(
-                            select(ConnectedPage).where(ConnectedPage.page_id == entry_page_id)
+                            select(ConnectedPage).where(
+                                or_(
+                                    ConnectedPage.page_id == entry_page_id,
+                                    ConnectedPage.instagram_business_account_id == entry_page_id,
+                                )
+                            )
                         )).scalar_one_or_none()
                         if cp_single:
                             connected_page = cp_single
@@ -817,8 +842,9 @@ class MetaImportService:
 
                         if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
                             conv.last_message_at = norm_event.created_at
-                            conv.updated_at = datetime.now(timezone.utc)
-                            await session.commit()
+                        conv.last_activity_at = norm_event.created_at
+                        conv.updated_at = datetime.now(timezone.utc)
+                        await session.commit()
 
                         try:
                             from app.api.v1.ws import broadcast_realtime_event
@@ -896,7 +922,12 @@ class MetaImportService:
                 connected_page = active_connected_pages.get(entry_page_id)
                 if not connected_page:
                     cp_single = (await session.execute(
-                        select(ConnectedPage).where(ConnectedPage.page_id == entry_page_id)
+                        select(ConnectedPage).where(
+                            or_(
+                                ConnectedPage.page_id == entry_page_id,
+                                ConnectedPage.instagram_business_account_id == entry_page_id,
+                            )
+                        )
                     )).scalar_one_or_none()
                     if cp_single:
                         connected_page = cp_single

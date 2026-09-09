@@ -372,6 +372,16 @@ export const useCrmStore = create<CrmState>((set, get) => ({
 
   setActiveConversationId: (id) => {
     if (!id) return;
+    const prevId = get().activeConversationId;
+    if (prevId && prevId !== id) {
+      try {
+        realtimeService.send({ type: 'LEAVE_CONVERSATION', conversation_id: prevId });
+      } catch {}
+    }
+    try {
+      realtimeService.send({ type: 'JOIN_CONVERSATION', conversation_id: id });
+    } catch {}
+
     set((state) => {
       const conv = state.conversations.find((c) => c.id === id);
       const prevUnread = conv?.unread_count || 0;

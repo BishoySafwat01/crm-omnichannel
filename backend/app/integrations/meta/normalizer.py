@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.models.enums import (
     ChannelEnum,
     ConversationStatusEnum,
@@ -302,9 +303,17 @@ class MetaNormalizer:
 
         is_echo = bool(msg_data.get("is_echo") or raw_item.get("is_echo"))
 
+        known_agent_ids = {str(page_id).strip()} if page_id else set()
+        if getattr(settings, "META_PAGE_ID", None):
+            known_agent_ids.add(str(settings.META_PAGE_ID).strip())
+        if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+            known_agent_ids.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
+        if getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None):
+            known_agent_ids.add(str(settings.META_INSTAGRAM_ACCOUNT_ID).strip())
+
         if is_echo:
             sender_type = SenderTypeEnum.AGENT
-        elif sender_psid == page_id:
+        elif sender_psid in known_agent_ids:
             sender_type = SenderTypeEnum.AGENT
         elif sender_psid == "system":
             sender_type = SenderTypeEnum.SYSTEM
