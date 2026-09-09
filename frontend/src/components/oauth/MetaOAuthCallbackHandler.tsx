@@ -89,6 +89,28 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
       // Clean URL query parameters immediately to avoid re-triggering on accidental reload
       window.history.replaceState({}, document.title, window.location.pathname);
 
+      if (isPopup) {
+        try {
+          window.opener.postMessage(
+            {
+              type: 'META_OAUTH_SUCCESS',
+              code,
+              state,
+            },
+            window.location.origin
+          );
+        } catch (e) {
+          console.warn('[Popup] Failed to postMessage success to opener:', e);
+        }
+        setNotification({
+          type: 'success',
+          message: 'تم استلام تصريح Meta بنجاح! جارٍ إغلاق النافذة...',
+        });
+        window.close();
+        setTimeout(() => window.close(), 100);
+        return;
+      }
+
       (async () => {
         // 1. Resolve tokens and users across popup, opener, and local storage
         let activeToken =

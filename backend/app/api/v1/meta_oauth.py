@@ -123,20 +123,32 @@ async def handle_meta_oauth_browser_redirect(
       if (isPopup) {
         if (err) {
           try {
-            window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: err }, window.location.origin);
+            window.opener.postMessage({
+              type: 'META_OAUTH_ERROR',
+              error: err || 'تم إلغاء عملية الربط'
+            }, window.location.origin);
           } catch(e) {}
           window.close();
           setTimeout(function() { window.close(); }, 100);
         } else if (code && state) {
-          window.location.href = '/?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+          try {
+            window.opener.postMessage({
+              type: 'META_OAUTH_SUCCESS',
+              code: code,
+              state: state
+            }, window.location.origin);
+          } catch(e) {}
+          window.close();
+          setTimeout(function() { window.close(); }, 100);
         } else {
           window.close();
+          setTimeout(function() { window.close(); }, 100);
         }
       } else {
         if (err) {
           window.location.href = '/channels?error=' + encodeURIComponent(err);
         } else if (code && state) {
-          window.location.href = '/?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+          window.location.href = '/channels?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
         } else {
           window.location.href = '/channels';
         }

@@ -313,3 +313,31 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
 
         mock_sub_err.assert_awaited()
 
+
+def test_meta_oauth_sanitized_scopes():
+    from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES
+
+    expected_canonical_scopes = [
+        "pages_show_list",
+        "pages_messaging",
+        "pages_read_engagement",
+        "pages_manage_metadata",
+        "instagram_basic",
+        "instagram_manage_messages",
+    ]
+    assert VALID_SCOPES == expected_canonical_scopes
+
+    # Ensure deprecated scopes are completely absent
+    for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
+        assert deprecated not in VALID_SCOPES
+
+    with patch.object(settings, "META_APP_ID", "1234567890"):
+        url = MetaOAuthService.get_authorization_url(state="test_state_123")
+        assert "client_id=1234567890" in url
+        assert "state=test_state_123" in url
+        assert "pages_show_list" in url
+        assert "pages_messaging" in url
+        assert "instagram_manage_messages" in url
+        for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
+            assert deprecated not in url
+

@@ -28,6 +28,8 @@ interface ChannelsState {
   clearFeedback: () => void;
 }
 
+let activeMetaPopup: Window | null = null;
+
 export const useChannelsStore = create<ChannelsState>((set, get) => ({
   connectedPages: [],
   isLoadingPages: false,
@@ -92,6 +94,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     if (typeof window !== 'undefined') {
       try {
         popup = window.open('about:blank', 'meta_oauth_popup', popupFeatures);
+        activeMetaPopup = popup;
         if (popup) {
           popup.document.write(`
             <!DOCTYPE html>
@@ -124,11 +127,12 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     const popupWatcher = setInterval(() => {
       if (popup && popup.closed) {
         clearInterval(popupWatcher);
+        activeMetaPopup = null;
         if (get().isConnecting) {
           set({ isConnecting: false });
         }
       }
-    }, 1000);
+    }, 500);
 
     const safetyWatchdog = setTimeout(() => {
       clearInterval(popupWatcher);
@@ -160,12 +164,14 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         }
       } else {
         if (popup && !popup.closed) popup.close();
+        activeMetaPopup = null;
         clearInterval(popupWatcher);
         clearTimeout(safetyWatchdog);
         throw new Error('لم يتم استلام رابط تصريح Meta من الخادم');
       }
     } catch (err: any) {
       if (popup && !popup.closed) popup.close();
+      activeMetaPopup = null;
       clearInterval(popupWatcher);
       clearTimeout(safetyWatchdog);
       console.error('[ChannelsStore] Failed to initiate Meta OAuth:', err);
@@ -177,6 +183,12 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   cancelMetaConnect: () => {
+    if (activeMetaPopup && !activeMetaPopup.closed) {
+      try {
+        activeMetaPopup.close();
+      } catch {}
+      activeMetaPopup = null;
+    }
     set({ isConnecting: false });
   },
 
@@ -364,19 +376,48 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 // Global Window Event Listeners (PostMessage & BFCache)
 if (typeof window !== 'undefined') {
   // Listen for OAuth completion from popup window
-  window.addEventListener('message', (event) => {
+  window.addEventListener('message', async (event) => {
     // Only accept messages from same origin
     if (event.origin !== window.location.origin) return;
 
+    if (activeMetaPopup && !activeMetaPopup.closed) {
+      try {
+        activeMetaPopup.close();
+      } catch {}
+      activeMetaPopup = null;
+    }
+
     if (event.data?.type === 'META_OAUTH_SUCCESS') {
-      const pages = event.data.pages || [];
-      useChannelsStore.setState({
-        connectedPages: pages.length > 0 ? pages : useChannelsStore.getState().connectedPages,
-        isConnecting: false,
-        isProcessingCallback: false,
-        successMessage: `تم بنجاح ربط ${pages.length} صفحة من صفحات فيسبوك وتفعيل اشتراك الويب هـوك تلقائياً ✨`,
-      });
-      useChannelsStore.getState().fetchConnectedPages();
+      const { code, state, pages } = event.data;
+      if (code && state) {
+        useChannelsStore.setState({ isProcessingCallback: true, isConnecting: true });
+        try {
+          const res = await useChannelsStore.getState().handleOAuthCallback(code, state);
+          if (res && res.success) {
+            useChannelsStore.getState().fetchConnectedPages();
+          }
+        } catch (err: any) {
+          useChannelsStore.setState({
+            isConnecting: false,
+            isProcessingCallback: false,
+            error: err?.message || 'فشل في استكمال الربط مع حساب فيسبوك',
+          });
+        }
+      } else if (pages && pages.length > 0) {
+        useChannelsStore.setState({
+          connectedPages: pages,
+          isConnecting: false,
+          isProcessingCallback: false,
+          successMessage: `تم بنجاح ربط ${pages.length} صفحة من صفحات فيسبوك وتفعيل اشتراك الويب هـوك تلقائياً ✨`,
+        });
+        useChannelsStore.getState().fetchConnectedPages();
+      } else {
+        useChannelsStore.setState({
+          isConnecting: false,
+          isProcessingCallback: false,
+        });
+        useChannelsStore.getState().fetchConnectedPages();
+      }
     } else if (event.data?.type === 'META_OAUTH_ERROR') {
       const rawError = event.data.error;
       const formattedError =
@@ -384,7 +425,7 @@ if (typeof window !== 'undefined') {
           ? rawError
           : typeof rawError === 'number'
           ? `خطأ فيسبوك: رمز الخطأ ${rawError}`
-          : rawError?.message || 'فشل في استكمال الربط مع حساب فيسبوك';
+          : rawError?.message || 'تم إلغاء عملية الربط';
 
       useChannelsStore.setState({
         isConnecting: false,

@@ -16,17 +16,16 @@ from app.models.connected_page import ConnectedPage
 
 logger = logging.getLogger("app.services.meta_oauth")
 
-DEFAULT_SCOPES = [
+VALID_SCOPES = [
     "pages_show_list",
+    "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
-    "pages_messaging",
     "instagram_basic",
     "instagram_manage_messages",
-    "pages_manage_posts",
-    "pages_read_user_content",
-    "instagram_manage_comments",
 ]
+
+DEFAULT_SCOPES = VALID_SCOPES
 
 DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
     "messages",
@@ -99,7 +98,7 @@ class MetaOAuthService:
         params = {
             "client_id": str(app_id).strip(),
             "state": state,
-            "scope": ",".join(DEFAULT_SCOPES),
+            "scope": ",".join(VALID_SCOPES),
             "response_type": "code",
             "redirect_uri": effective_redirect,
         }
