@@ -31,6 +31,7 @@ from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.message_service import MessageService
 from app.services.migration_service import MigrationService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("app.services.meta_import_service")
 
@@ -625,7 +626,7 @@ class MetaImportService:
                     f.write(media_res.content)
 
                 if is_audio:
-                    from scripts.fix_media_attachments import transcode_to_m4a
+                    from app.infrastructure.media.audio_transcoder import transcode_to_m4a
                     transcoded_path = os.path.join(uploads_dir, f"voice_{media_id[:12]}.m4a")
                     if transcode_to_m4a(disk_path, transcoded_path):
                         return f"/uploads/{os.path.basename(transcoded_path)}"
@@ -916,8 +917,7 @@ class MetaImportService:
                         await session.commit()
 
                         try:
-                            from app.api.v1.ws import broadcast_realtime_event
-                            await broadcast_realtime_event(
+                            await ws_broadcaster.broadcast_event(
                                 target="conversation",
                                 conversation_id=str(conv.id),
                                 payload={
@@ -1069,8 +1069,7 @@ class MetaImportService:
                             last_result_msg_id = str(msg.id)
 
                             try:
-                                from app.api.v1.ws import broadcast_realtime_event
-                                await broadcast_realtime_event(
+                                await ws_broadcaster.broadcast_event(
                                     target="conversation",
                                     conversation_id=str(conv.id),
                                     payload={
@@ -1141,8 +1140,7 @@ class MetaImportService:
                         last_result_msg_id = str(msg.id)
 
                         try:
-                            from app.api.v1.ws import broadcast_realtime_event
-                            await broadcast_realtime_event(
+                            await ws_broadcaster.broadcast_event(
                                 target="conversation",
                                 conversation_id=str(conv.id),
                                 payload={
@@ -1549,8 +1547,7 @@ class MetaImportService:
                         # 4. Emit WebSocket Notification if new messages were found
                         if has_new_messages:
                             try:
-                                from app.api.v1.ws import broadcast_realtime_event
-                                await broadcast_realtime_event(
+                                await ws_broadcaster.broadcast_event(
                                     target="conversation",
                                     conversation_id=str(conversation.id),
                                     payload={

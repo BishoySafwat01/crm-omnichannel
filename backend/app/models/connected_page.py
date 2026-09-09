@@ -50,13 +50,13 @@ class ConnectedPage(Base):
 
     @property
     def decrypted_access_token(self) -> str:
-        from app.core.security import decrypt_token
-        return decrypt_token(self.encrypted_access_token)
+        from app.services.connected_page_service import ConnectedPageService
+        return ConnectedPageService.decrypt_token(self)
 
     @decrypted_access_token.setter
     def decrypted_access_token(self, value: str) -> None:
-        from app.core.security import encrypt_token
-        self.encrypted_access_token = encrypt_token(value)
+        from app.services.connected_page_service import ConnectedPageService
+        ConnectedPageService.set_page_token(self, value)
 
     @property
     def is_active(self) -> bool:

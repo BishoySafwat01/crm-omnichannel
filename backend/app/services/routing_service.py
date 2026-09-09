@@ -10,6 +10,7 @@ from app.models.conversation import Conversation
 from app.models.enums import ConversationStatusEnum, UserRole
 from app.models.user import User
 from app.services.audit_service import AuditService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +123,7 @@ class RoutingService:
 
         # Broadcast WebSocket event
         try:
-            from app.api.v1.ws import manager
-            await manager.broadcast({
+            await ws_broadcaster.broadcast({
                 "type": "CONVERSATION_ASSIGNED",
                 "data": {
                     "conversation_id": str(conversation.id),

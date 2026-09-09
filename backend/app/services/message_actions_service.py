@@ -17,6 +17,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.schemas.messaging import MessageResponse
 from app.services.audit_service import AuditService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("MessageActionsService")
 
@@ -111,11 +112,10 @@ class MessageActionsService:
 
         # 8. Realtime broadcast
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             resp = MessageResponse.model_validate(msg)
             conv = await session.get(Conversation, conversation_id)
             conv_brand = getattr(conv, "brand", None) if conv else None
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
@@ -223,9 +223,8 @@ class MessageActionsService:
 
         # 2. Realtime broadcast (Chat update + Red Alert Toast for Admins)
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             resp = MessageResponse.model_validate(msg)
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
@@ -238,7 +237,7 @@ class MessageActionsService:
 
             # Broadcast high-priority Red Alert to all logged-in Admins
             alert_id = f"del-{msg.id}"
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="global",
                 payload={
                     "type": "ADMIN_SECURITY_ALERT",
@@ -359,11 +358,10 @@ class MessageActionsService:
 
         # Realtime broadcast
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             resp = MessageResponse.model_validate(msg)
             conv = await session.get(Conversation, conversation_id)
             conv_brand = getattr(conv, "brand", None) if conv else None
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
@@ -437,11 +435,10 @@ class MessageActionsService:
 
         # Realtime broadcast
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             resp = MessageResponse.model_validate(msg)
             conv = await session.get(Conversation, conversation_id)
             conv_brand = getattr(conv, "brand", None) if conv else None
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
@@ -532,9 +529,8 @@ class MessageActionsService:
 
         # 5. Broadcast to target conversation
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             resp = MessageResponse.model_validate(forwarded_msg)
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(target_conversation_id),
                 payload={

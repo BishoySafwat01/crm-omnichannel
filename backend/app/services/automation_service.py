@@ -132,7 +132,7 @@ class AutomationService:
 
             import asyncio
             from app.services.message_service import MessageService
-            from app.api.v1.ws import manager as ws_manager
+            from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
             for idx, chunk in enumerate(chunks):
                 if not chunk:
@@ -142,7 +142,7 @@ class AutomationService:
                     # Calculate human-like typing speed: ~40ms per character with a min of 0.8s and max of 4.5s
                     typing_delay = max(0.8, min(4.5, len(chunk) * 0.045))
                     try:
-                        await ws_manager.broadcast({
+                        await ws_broadcaster.broadcast({
                             "type": "TYPING_INDICATOR",
                             "conversation_id": str(conversation.id),
                             "is_typing": True,

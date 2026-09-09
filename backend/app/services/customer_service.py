@@ -10,6 +10,7 @@ from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
 from app.models.user import User
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 
 class CustomerService:
@@ -550,8 +551,7 @@ class CustomerService:
 
         # Real-time WebSocket Broadcast
         try:
-            from app.api.v1.ws import manager
-            await manager.broadcast({
+            await ws_broadcaster.broadcast({
                 "type": "CUSTOMER_BLOCKED",
                 "customer_id": str(customer.id),
                 "is_blocked": True,
@@ -611,8 +611,7 @@ class CustomerService:
 
         # Real-time WebSocket Broadcast
         try:
-            from app.api.v1.ws import manager
-            await manager.broadcast({
+            await ws_broadcaster.broadcast({
                 "type": "CUSTOMER_UNBLOCKED",
                 "customer_id": str(customer.id),
                 "is_blocked": False,

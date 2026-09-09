@@ -16,6 +16,7 @@ from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("MessageService")
 
@@ -94,7 +95,6 @@ class MessageService:
 
         # Broadcast real-time NEW_MESSAGE event across worker processes
         try:
-            from app.api.v1.ws import broadcast_realtime_event
             msg_data = {
                 "id": str(message.id),
                 "conversation_id": str(conversation_id),
@@ -106,7 +106,7 @@ class MessageService:
                 "created_at": message.created_at.isoformat() if message.created_at else None,
                 "brand": getattr(conversation, "brand", None) if conversation else None,
             }
-            await broadcast_realtime_event(
+            await ws_broadcaster.broadcast_event(
                 target="conversation",
                 conversation_id=str(conversation_id),
                 payload={
@@ -373,7 +373,7 @@ class MessageService:
             if att_type == "audio" and ext_lower.endswith(".webm"):
                 transcoded_path = os.path.join(settings.UPLOAD_DIR, f"{os.path.splitext(filename)[0]}.m4a")
                 if not os.path.exists(transcoded_path):
-                    from scripts.fix_media_attachments import transcode_to_m4a
+                    from app.infrastructure.media.audio_transcoder import transcode_to_m4a
                     import asyncio
                     await asyncio.to_thread(transcode_to_m4a, file_path, transcoded_path)
                 if os.path.exists(transcoded_path):

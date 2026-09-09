@@ -6,7 +6,7 @@ from typing import Any, Optional
 import httpx
 from sqlalchemy import delete, func, select, or_
 
-from app.api.v1.ws import broadcast_realtime_event, manager
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.integrations.beon.client import BeonClient
@@ -211,7 +211,7 @@ class BeonSyncEngine:
                             "unread_count": conversation.unread_count or 0,
                         }
                         if is_new_conv:
-                            await broadcast_realtime_event(
+                            await ws_broadcaster.broadcast_event(
                                 target="global",
                                 payload={
                                     "type": "NEW_CONVERSATION",
@@ -221,7 +221,7 @@ class BeonSyncEngine:
                                 },
                             )
                         else:
-                            await broadcast_realtime_event(
+                            await ws_broadcaster.broadcast_event(
                                 target="conversation",
                                 conversation_id=str(conversation.id),
                                 payload={
@@ -235,7 +235,7 @@ class BeonSyncEngine:
                         for m_data in new_msgs_for_conv:
                             if "brand" not in m_data:
                                 m_data["brand"] = conversation.brand
-                            await broadcast_realtime_event(
+                            await ws_broadcaster.broadcast_event(
                                 target="conversation",
                                 conversation_id=str(conversation.id),
                                 payload={
