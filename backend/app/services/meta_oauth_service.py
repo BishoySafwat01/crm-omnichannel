@@ -39,14 +39,16 @@ class MetaOAuthService:
     """OAuth 2.0 Service for Meta (Facebook & Instagram) Multi-Page Onboarding."""
 
     @staticmethod
-    def generate_oauth_state(user_id: uuid.UUID) -> str:
+    def generate_oauth_state(user_id: uuid.UUID, redirect_uri: Optional[str] = None) -> str:
         """Generate a tamper-proof, signed JWT CSRF state token for the OAuth handshake."""
-        payload = {
+        payload: dict[str, Any] = {
             "sub": str(user_id),
             "type": "meta_oauth_csrf",
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         }
+        if redirect_uri:
+            payload["redirect_uri"] = str(redirect_uri).strip()
         return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
     @staticmethod

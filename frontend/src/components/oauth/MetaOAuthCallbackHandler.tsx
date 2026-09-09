@@ -15,9 +15,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
     message: string;
   } | null>(null);
 
-  const [isPopupMode, setIsPopupMode] = useState(() => {
-    return typeof window !== 'undefined' && Boolean(window.opener && window.opener !== window);
-  });
   const processedRef = useRef(false);
 
   useEffect(() => {
@@ -30,9 +27,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
     const errorCode = urlParams.get('error_code');
     const errorMessage = urlParams.get('error_message');
     const errorDescription = urlParams.get('error_description') || urlParams.get('error_reason');
-
-    const isPopup = Boolean(window.opener && window.opener !== window);
-    setIsPopupMode(isPopup);
 
     const hasError = Boolean(metaError || errorCode || errorMessage || errorDescription);
 
@@ -51,29 +45,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
           ? decodeURIComponent(reportedError.replace(/\+/g, ' '))
           : String(reportedError);
 
-      if (isPopup) {
-        try {
-          window.opener.postMessage(
-            {
-              type: 'META_OAUTH_ERROR',
-              error: errorMessage || errorCode || formattedError,
-            },
-            window.location.origin
-          );
-        } catch (e) {
-          console.warn('[Popup] Failed to postMessage error to opener:', e);
-        }
-
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setNotification({
-          type: 'error',
-          message: 'جارٍ إغلاق النافذة...',
-        });
-        window.close();
-        setTimeout(() => window.close(), 100);
-        return;
-      }
-
       window.history.replaceState({}, document.title, window.location.pathname);
       setNotification({
         type: 'error',
@@ -88,28 +59,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
 
       // Clean URL query parameters immediately to avoid re-triggering on accidental reload
       window.history.replaceState({}, document.title, window.location.pathname);
-
-      if (isPopup) {
-        try {
-          window.opener.postMessage(
-            {
-              type: 'META_OAUTH_SUCCESS',
-              code,
-              state,
-            },
-            window.location.origin
-          );
-        } catch (e) {
-          console.warn('[Popup] Failed to postMessage success to opener:', e);
-        }
-        setNotification({
-          type: 'success',
-          message: 'تم استلام تصريح Meta بنجاح! جارٍ إغلاق النافذة...',
-        });
-        window.close();
-        setTimeout(() => window.close(), 100);
-        return;
-      }
 
       (async () => {
         // 1. Resolve tokens and users across popup, opener, and local storage
@@ -128,47 +77,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
               return null;
             }
           })();
-
-        // If inside popup window, sync credentials from opener
-        if (isPopup && (!activeToken || !activeUser)) {
-          try {
-            const opener = window.opener as any;
-            if (opener) {
-              const openerToken =
-                opener.useAuthStore?.getState?.()?.token ||
-                opener.__CRM_AUTH_TOKEN__ ||
-                opener.localStorage?.getItem('auth_token') ||
-                opener.localStorage?.getItem('token') ||
-                opener.sessionStorage?.getItem('auth_token');
-
-              const openerUser =
-                opener.useAuthStore?.getState?.()?.user ||
-                opener.__CRM_AUTH_USER__ ||
-                (() => {
-                  try {
-                    const raw = opener.localStorage?.getItem('auth_user') || opener.sessionStorage?.getItem('auth_user');
-                    return raw ? JSON.parse(raw) : null;
-                  } catch {
-                    return null;
-                  }
-                })();
-
-              if (openerToken) {
-                activeToken = openerToken;
-                localStorage.setItem('auth_token', openerToken);
-              }
-              if (openerUser) {
-                activeUser = openerUser;
-                localStorage.setItem('auth_user', JSON.stringify(openerUser));
-              }
-              if (openerToken) {
-                useAuthStore.getState().setAuth(openerToken, activeUser);
-              }
-            }
-          } catch (e) {
-            console.warn('[Popup] Opener auth sync notice:', e);
-          }
-        }
 
         // 2. If token exists but user profile is null, fetch /auth/me before evaluating permissions
         if (activeToken && !activeUser) {
@@ -190,15 +98,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
         // 3. Verify user authentication
         if (!activeToken) {
           const authErr = 'يجب تسجيل الدخول كمسؤول للنظام لإتمام عملية ربط القنوات.';
-          if (isPopup) {
-            try {
-              window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: authErr }, window.location.origin);
-            } catch {}
-            setNotification({ type: 'error', message: 'جارٍ إغلاق النافذة...' });
-            window.close();
-            setTimeout(() => window.close(), 100);
-            return;
-          }
           setNotification({ type: 'error', message: authErr });
           return;
         }
@@ -206,15 +105,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
         // 4. Verify admin permissions
         if (!isAdminUser(activeUser)) {
           const permErr = 'صلاحيات غير كافية: ربط صفحات فيسبوك يتطلب دور مدير النظام (Admin / Superadmin).';
-          if (isPopup) {
-            try {
-              window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: permErr }, window.location.origin);
-            } catch {}
-            setNotification({ type: 'error', message: 'جارٍ إغلاق النافذة...' });
-            window.close();
-            setTimeout(() => window.close(), 100);
-            return;
-          }
           setNotification({ type: 'error', message: permErr });
           return;
         }
@@ -227,49 +117,6 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
 
         const result = await handleOAuthCallback(code, state, undefined, activeToken);
 
-        if (isPopup) {
-          if (result.success) {
-            setNotification({
-              type: 'success',
-              message: `تم الربط بنجاح! جارٍ إغلاق النافذة...`,
-            });
-            try {
-              window.opener.postMessage(
-                {
-                  type: 'META_OAUTH_SUCCESS',
-                  pages: result.pages || [],
-                  count: result.count || 0,
-                },
-                window.location.origin
-              );
-            } catch (e) {
-              console.warn('[Popup] Failed to postMessage success to opener:', e);
-            }
-            window.close();
-            setTimeout(() => window.close(), 400);
-          } else {
-            setNotification({
-              type: 'error',
-              message: 'جارٍ إغلاق النافذة...',
-            });
-            try {
-              window.opener.postMessage(
-                {
-                  type: 'META_OAUTH_ERROR',
-                  error: result.error || 'فشل في استكمال الربط مع حساب فيسبوك.',
-                },
-                window.location.origin
-              );
-            } catch (e) {
-              console.warn('[Popup] Failed to postMessage error to opener:', e);
-            }
-            window.close();
-            setTimeout(() => window.close(), 600);
-          }
-          return;
-        }
-
-        // Standard in-page redirect fallback (if not opened in a popup)
         if (result.success) {
           setNotification({
             type: 'success',
@@ -291,32 +138,7 @@ export const MetaOAuthCallbackHandler: React.FC = () => {
 
   if (!notification) return null;
 
-  // In popup mode, render a minimal centered card ("جارٍ إغلاق النافذة...")
-  if (isPopupMode) {
-    return (
-      <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[99999] flex items-center justify-center p-6 text-center select-none" dir="rtl">
-        <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-8 max-w-sm w-full space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 text-white">
-          <div className="w-12 h-12 rounded-2xl bg-[#1877F2]/20 border border-[#1877F2]/30 text-[#1877F2] flex items-center justify-center mx-auto">
-            {notification.type === 'loading' && <Loader2 className="w-6 h-6 animate-spin text-[#1877F2]" />}
-            {notification.type === 'success' && <CheckCircle2 className="w-6 h-6 text-emerald-400" />}
-            {notification.type === 'error' && <AlertCircle className="w-6 h-6 text-rose-400" />}
-          </div>
-          <div>
-            <h3 className="text-sm font-black">
-              {notification.type === 'loading'
-                ? 'جارٍ استكمال الربط الآمن...'
-                : notification.type === 'success'
-                ? 'اكتملت المصادقة بنجاح'
-                : 'جارٍ إغلاق النافذة...'}
-            </h3>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notification.message}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // In main window mode, render toast notification
+  // Render toast notification in main window
   return (
     <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[99999] max-w-lg w-[92%] dir-rtl animate-in fade-in slide-in-from-top-4 duration-200">
       <div

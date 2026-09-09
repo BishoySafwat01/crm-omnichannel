@@ -1,4 +1,5 @@
 from datetime import datetime
+import html
 import logging
 from typing import Optional
 import uuid
@@ -72,7 +73,7 @@ async def get_meta_oauth_login_url(
         else "https://webluxira.com/api/v1/meta/oauth/callback"
     )
 
-    state = MetaOAuthService.generate_oauth_state(user_id=current_user.id)
+    state = MetaOAuthService.generate_oauth_state(user_id=current_user.id, redirect_uri=resolved_redirect_uri)
     auth_url = MetaOAuthService.get_authorization_url(state=state, redirect_uri=resolved_redirect_uri)
     return MetaOAuthLoginUrlResponse(authorization_url=auth_url, state=state)
 
@@ -89,75 +90,130 @@ async def handle_meta_oauth_browser_redirect(
     error_code: Optional[str] = Query(None),
     error_message: Optional[str] = Query(None),
     error_description: Optional[str] = Query(None),
-):
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
     """
-    Browser landing endpoint when Meta redirects user back from OAuth dialog.
-    Dispatches to parent window via postMessage if popup, or redirects to frontend app shell.
+    Pure backend OAuth landing page.
+    Terminates Meta OAuth redirect at FastAPI, exchanges tokens, persists pages to PostgreSQL,
+    and returns a standalone HTML payload that calls window.opener.postMessage and window.close().
+    React NEVER mounts inside the popup.
     """
-    html_content = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Meta Authorization Callback - LUXIRA</title>
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 24px; max-width: 340px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-    .spinner { width: 32px; height: 32px; border: 3px solid #334155; border-top: 3px solid #1877f2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="spinner"></div>
-    <h3 style="margin:0 0 6px 0;font-size:15px;font-weight:700;">Authenticating with Meta...</h3>
-    <p style="margin:0;font-size:12px;color:#94a3b8;">Processing secure authorization and closing window...</p>
+    # 1. Handle user cancellation or error from Meta
+    if error or error_code or error_message or error_description or not code or not state:
+        raw_error = (
+            error_message
+            or error_description
+            or error
+            or (f"Meta error code {error_code}" if error_code else "User cancelled or authorization failed")
+        )
+        safe_error = html.escape(str(raw_error))
+        logger.warning("Meta OAuth browser callback received error/cancellation: %s (code=%s)", raw_error, error_code)
+
+        error_html = f"""<!DOCTYPE html>
+<html>
+<head><title>Meta OAuth Error</title></head>
+<body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f87171;">
+  <div style="text-align: center;">
+    <h3>فشل الاتصال بـ Meta</h3>
+    <p>جاري إغلاق هذه النافذة...</p>
   </div>
   <script>
-    (function() {
-      var params = new URLSearchParams(window.location.search);
-      var code = params.get('code');
-      var state = params.get('state');
-      var err = params.get('error_message') || params.get('error') || params.get('error_code') || params.get('error_description');
-      var isPopup = Boolean(window.opener && window.opener !== window);
-
-      if (isPopup) {
-        if (err) {
-          try {
-            window.opener.postMessage({
-              type: 'META_OAUTH_ERROR',
-              error: err || 'تم إلغاء عملية الربط'
-            }, window.location.origin);
-          } catch(e) {}
-          window.close();
-          setTimeout(function() { window.close(); }, 100);
-        } else if (code && state) {
-          try {
-            window.opener.postMessage({
-              type: 'META_OAUTH_SUCCESS',
-              code: code,
-              state: state
-            }, window.location.origin);
-          } catch(e) {}
-          window.close();
-          setTimeout(function() { window.close(); }, 100);
-        } else {
-          window.close();
-          setTimeout(function() { window.close(); }, 100);
-        }
-      } else {
-        if (err) {
-          window.location.href = '/channels?error=' + encodeURIComponent(err);
-        } else if (code && state) {
-          window.location.href = '/channels?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
-        } else {
-          window.location.href = '/channels';
-        }
-      }
-    })();
+    if (window.opener) {{
+      try {{
+        window.opener.postMessage({{ type: 'META_OAUTH_COMPLETE', status: 'error', error: '{safe_error}' }}, window.location.origin);
+      }} catch(e) {{}}
+      try {{
+        window.opener.postMessage({{ type: 'META_OAUTH_COMPLETE', status: 'error', error: '{safe_error}' }}, '*');
+      }} catch(e) {{}}
+    }}
+    setTimeout(() => window.close(), 1200);
   </script>
 </body>
 </html>"""
-    return HTMLResponse(content=html_content)
+        return HTMLResponse(content=error_html, status_code=200)
+
+    # 2. Process Code & State Handshake on the Server
+    try:
+        # A. Validate CSRF state signature and extract authenticated user_id
+        state_payload = MetaOAuthService.verify_oauth_state(state=state)
+        user_id_str = state_payload.get("sub")
+        if not user_id_str:
+            raise ValueError("State payload missing authenticated user identity (sub).")
+        user_id = uuid.UUID(user_id_str)
+
+        # B. Resolve effective redirect URI matching authorization request
+        effective_redirect = state_payload.get("redirect_uri") or "https://webluxira.com/api/v1/meta/oauth/callback"
+
+        # C. Exchange code for long-lived User Access Token (60 days)
+        long_lived_user_token = await MetaOAuthService.exchange_code_for_user_token(
+            code=code,
+            redirect_uri=effective_redirect,
+        )
+
+        # D. Fetch managed Facebook Pages and linked Instagram accounts
+        pages = await MetaOAuthService.fetch_user_pages(long_lived_user_token=long_lived_user_token)
+
+        # E. Idempotently upsert records into connected_pages table and auto-subscribe to webhooks
+        if pages:
+            await MetaOAuthService.save_or_update_pages(
+                pages=pages,
+                user_id=user_id,
+                db=db,
+            )
+            await db.commit()
+            logger.info("Successfully onboarded %d Meta pages for user %s via server callback.", len(pages), user_id)
+        else:
+            logger.warning("No Facebook Pages returned for user %s during server callback.", user_id)
+
+        # F. Return pure HTML success response
+        success_html = """<!DOCTYPE html>
+<html>
+<head><title>Meta OAuth Success</title></head>
+<body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #4ade80;">
+  <div style="text-align: center;">
+    <h3>✓ تم ربط صفحاتك بنجاح!</h3>
+    <p>جاري تحديث لوحة التحكم وإغلاق النافذة تلقائياً...</p>
+  </div>
+  <script>
+    if (window.opener) {
+      try {
+        window.opener.postMessage({ type: 'META_OAUTH_COMPLETE', status: 'success' }, window.location.origin);
+      } catch(e) {}
+      try {
+        window.opener.postMessage({ type: 'META_OAUTH_COMPLETE', status: 'success' }, '*');
+      } catch(e) {}
+    }
+    setTimeout(() => window.close(), 1000);
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(content=success_html, status_code=200)
+
+    except Exception as exc:
+        logger.error("Failed to complete Meta OAuth handshake in server callback: %s", exc, exc_info=True)
+        safe_error = html.escape(str(exc))
+        error_html = f"""<!DOCTYPE html>
+<html>
+<head><title>Meta OAuth Error</title></head>
+<body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f87171;">
+  <div style="text-align: center;">
+    <h3>فشل الاتصال بـ Meta</h3>
+    <p>جاري إغلاق هذه النافذة...</p>
+  </div>
+  <script>
+    if (window.opener) {{
+      try {{
+        window.opener.postMessage({{ type: 'META_OAUTH_COMPLETE', status: 'error', error: '{safe_error}' }}, window.location.origin);
+      }} catch(e) {{}}
+      try {{
+        window.opener.postMessage({{ type: 'META_OAUTH_COMPLETE', status: 'error', error: '{safe_error}' }}, '*');
+      }} catch(e) {{}}
+    }}
+    setTimeout(() => window.close(), 1200);
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(content=error_html, status_code=200)
 
 
 @router.post(

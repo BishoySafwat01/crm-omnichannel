@@ -14,6 +14,7 @@ interface ChannelsState {
 
   fetchConnectedPages: () => Promise<void>;
   initiateMetaConnect: (customRedirectUri?: string) => Promise<void>;
+  connectMetaPage: (customRedirectUri?: string) => Promise<void>;
   cancelMetaConnect: () => void;
   handleOAuthCallback: (
     code: string,
@@ -56,92 +57,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   initiateMetaConnect: async (customRedirectUri?: string) => {
     set({ isConnecting: true, error: null, successMessage: null });
 
-    // Pre-cache authenticated credentials for popup access
-    const authState = useAuthStore.getState();
-    const token =
-      authState.token ||
-      (typeof window !== 'undefined' ? localStorage.getItem('auth_token') || localStorage.getItem('token') : null);
-    const user = authState.user;
-
-    if (typeof window !== 'undefined') {
-      if (token) {
-        (window as any).__CRM_AUTH_TOKEN__ = token;
-        try {
-          sessionStorage.setItem('auth_token', token);
-        } catch {}
-      }
-      if (user) {
-        (window as any).__CRM_AUTH_USER__ = user;
-        try {
-          sessionStorage.setItem('auth_user', JSON.stringify(user));
-        } catch {}
-      }
-    }
-
-    // Calculate centered popup coordinates
-    const width = 650;
-    const height = 750;
-    let left = 200;
-    let top = 100;
-    if (typeof window !== 'undefined') {
-      left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
-      top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
-    }
-    const popupFeatures = `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,status=yes,resizable=yes`;
-
-    // Open popup immediately on click to prevent browser popup blockers
-    let popup: Window | null = null;
-    if (typeof window !== 'undefined') {
-      try {
-        popup = window.open('about:blank', 'meta_oauth_popup', popupFeatures);
-        activeMetaPopup = popup;
-        if (popup) {
-          popup.document.write(`
-            <!DOCTYPE html>
-            <html dir="rtl">
-            <head>
-              <meta charset="utf-8">
-              <title>Meta OAuth - LUXIRA</title>
-              <style>
-                body { font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
-                .spinner { width: 36px; height: 36px; border: 3px solid #334155; border-top: 3px solid #1877f2; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
-                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                h3 { margin: 0 0 6px 0; font-size: 16px; font-weight: 700; }
-                p { margin: 0; font-size: 12px; color: #94a3b8; }
-              </style>
-            </head>
-            <body>
-              <div class="spinner"></div>
-              <h3>جارٍ الاتصال بـ Meta...</h3>
-              <p>يرجى الانتظار لتجهيز نافذة المصادقة الموثقة</p>
-            </body>
-            </html>
-          `);
-        }
-      } catch {
-        // popup fallback handled below
-      }
-    }
-
-    // Safety watchdog: reset state if popup closed or navigation stalls
-    const popupWatcher = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(popupWatcher);
-        activeMetaPopup = null;
-        if (get().isConnecting) {
-          set({ isConnecting: false });
-        }
-      }
-    }, 500);
-
-    const safetyWatchdog = setTimeout(() => {
-      clearInterval(popupWatcher);
-      if (get().isConnecting) {
-        set({ isConnecting: false });
-      }
-    }, 60000);
-
     try {
+      // 1. Fetch authorization URL from backend FIRST
       const defaultCallback = 'https://webluxira.com/api/v1/meta/oauth/callback';
       const redirectUri =
         customRedirectUri ||
@@ -149,37 +66,78 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           ? `${window.location.origin}/api/v1/meta/oauth/callback`
           : defaultCallback);
 
-      if (typeof window !== 'undefined' && redirectUri) {
-        sessionStorage.setItem('meta_oauth_redirect_uri', redirectUri);
+      const res = await metaOAuthApi.getMetaLoginUrl(redirectUri);
+      const authUrl = res?.authorization_url;
+      if (!authUrl) throw new Error('فشل في إنشاء رابط تصريح Meta من الخادم');
+
+      // 2. Open popup directly pointing to Facebook OAuth
+      const width = 650;
+      const height = 750;
+      let left = 200;
+      let top = 100;
+      if (typeof window !== 'undefined') {
+        left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+        top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+      }
+      const popup = window.open(
+        authUrl,
+        'Meta_OAuth_Window',
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
+
+      activeMetaPopup = popup;
+
+      if (!popup && typeof window !== 'undefined') {
+        // Fallback if popup blocker completely disallowed window.open
+        window.location.href = authUrl;
+        return;
       }
 
-      const res = await metaOAuthApi.getMetaLoginUrl(redirectUri);
-      if (res && res.authorization_url) {
-        if (popup && !popup.closed) {
-          popup.location.href = res.authorization_url;
-          popup.focus();
-        } else if (typeof window !== 'undefined') {
-          // Fallback if popup blocker completely disallowed window.open
-          window.location.href = res.authorization_url;
+      // 3. Listen for pure PostMessage event from backend landing
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data?.type === 'META_OAUTH_COMPLETE') {
+          window.removeEventListener('message', handleMessage);
+          activeMetaPopup = null;
+          if (event.data.status === 'success') {
+            await get().fetchConnectedPages();
+            set({
+              isConnecting: false,
+              successMessage: 'تم بنجاح ربط صفحاتك وتفعيل اشتراك الويب هـوك تلقائياً ✨',
+            });
+          } else {
+            set({
+              isConnecting: false,
+              error: event.data.error || 'فشلت عملية الربط مع حساب فيسبوك',
+            });
+          }
         }
-      } else {
-        if (popup && !popup.closed) popup.close();
-        activeMetaPopup = null;
-        clearInterval(popupWatcher);
-        clearTimeout(safetyWatchdog);
-        throw new Error('لم يتم استلام رابط تصريح Meta من الخادم');
-      }
+      };
+      window.addEventListener('message', handleMessage);
+
+      // Safe window closed check: only resets if user manually closes popup window
+      const checkClosed = setInterval(() => {
+        if (popup && popup.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', handleMessage);
+          activeMetaPopup = null;
+          if (get().isConnecting) {
+            set({ isConnecting: false });
+          }
+        }
+      }, 1000);
     } catch (err: any) {
-      if (popup && !popup.closed) popup.close();
       activeMetaPopup = null;
-      clearInterval(popupWatcher);
-      clearTimeout(safetyWatchdog);
       console.error('[ChannelsStore] Failed to initiate Meta OAuth:', err);
       set({
         isConnecting: false,
-        error: err.message || 'فشل في بدء عملية الربط مع Meta',
+        error: err?.message || 'فشل في بدء عملية الربط مع Meta',
       });
     }
+  },
+
+  connectMetaPage: async (customRedirectUri?: string) => {
+    return get().initiateMetaConnect(customRedirectUri);
   },
 
   cancelMetaConnect: () => {
@@ -373,68 +331,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   clearFeedback: () => set({ error: null, successMessage: null }),
 }));
 
-// Global Window Event Listeners (PostMessage & BFCache)
+// Global Window Event Listeners (BFCache)
 if (typeof window !== 'undefined') {
-  // Listen for OAuth completion from popup window
-  window.addEventListener('message', async (event) => {
-    // Only accept messages from same origin
-    if (event.origin !== window.location.origin) return;
-
-    if (activeMetaPopup && !activeMetaPopup.closed) {
-      try {
-        activeMetaPopup.close();
-      } catch {}
-      activeMetaPopup = null;
-    }
-
-    if (event.data?.type === 'META_OAUTH_SUCCESS') {
-      const { code, state, pages } = event.data;
-      if (code && state) {
-        useChannelsStore.setState({ isProcessingCallback: true, isConnecting: true });
-        try {
-          const res = await useChannelsStore.getState().handleOAuthCallback(code, state);
-          if (res && res.success) {
-            useChannelsStore.getState().fetchConnectedPages();
-          }
-        } catch (err: any) {
-          useChannelsStore.setState({
-            isConnecting: false,
-            isProcessingCallback: false,
-            error: err?.message || 'فشل في استكمال الربط مع حساب فيسبوك',
-          });
-        }
-      } else if (pages && pages.length > 0) {
-        useChannelsStore.setState({
-          connectedPages: pages,
-          isConnecting: false,
-          isProcessingCallback: false,
-          successMessage: `تم بنجاح ربط ${pages.length} صفحة من صفحات فيسبوك وتفعيل اشتراك الويب هـوك تلقائياً ✨`,
-        });
-        useChannelsStore.getState().fetchConnectedPages();
-      } else {
-        useChannelsStore.setState({
-          isConnecting: false,
-          isProcessingCallback: false,
-        });
-        useChannelsStore.getState().fetchConnectedPages();
-      }
-    } else if (event.data?.type === 'META_OAUTH_ERROR') {
-      const rawError = event.data.error;
-      const formattedError =
-        typeof rawError === 'string'
-          ? rawError
-          : typeof rawError === 'number'
-          ? `خطأ فيسبوك: رمز الخطأ ${rawError}`
-          : rawError?.message || 'تم إلغاء عملية الربط';
-
-      useChannelsStore.setState({
-        isConnecting: false,
-        isProcessingCallback: false,
-        error: formattedError,
-      });
-    }
-  });
-
   // Unlock connecting state if restored via browser back/forward cache (bfcache)
   window.addEventListener('pageshow', () => {
     useChannelsStore.setState({ isConnecting: false });

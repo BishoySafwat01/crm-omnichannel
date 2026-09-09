@@ -341,3 +341,72 @@ def test_meta_oauth_sanitized_scopes():
         for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
             assert deprecated not in url
 
+
+def test_generate_oauth_state_with_redirect_uri():
+    import uuid
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    test_uid = uuid.uuid4()
+    redirect_uri = "https://custom.domain/api/v1/meta/oauth/callback"
+    state = MetaOAuthService.generate_oauth_state(user_id=test_uid, redirect_uri=redirect_uri)
+
+    payload = MetaOAuthService.verify_oauth_state(state=state)
+    assert payload["sub"] == str(test_uid)
+    assert payload["redirect_uri"] == redirect_uri
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_server_callback_error():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/meta/oauth/callback?error=access_denied&error_description=User%20denied%20permissions")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
+        content = resp.text
+        assert "META_OAUTH_COMPLETE" in content
+        assert "status: 'error'" in content
+        assert "User denied permissions" in content
+        assert "window.close()" in content
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_server_callback_success():
+    import uuid
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    test_uid = uuid.uuid4()
+    state = MetaOAuthService.generate_oauth_state(user_id=test_uid)
+
+    mock_pages = [
+        {
+            "id": "1122334455",
+            "name": "Luxury Test Brand",
+            "access_token": "mock_page_token_xyz",
+            "category": "Retail",
+        }
+    ]
+
+    with (
+        patch.object(MetaOAuthService, "exchange_code_for_user_token", new_callable=AsyncMock) as mock_exchange,
+        patch.object(MetaOAuthService, "fetch_user_pages", new_callable=AsyncMock) as mock_fetch,
+        patch.object(MetaOAuthService, "save_or_update_pages", new_callable=AsyncMock) as mock_save,
+    ):
+        mock_exchange.return_value = "mock_long_lived_token_123"
+        mock_fetch.return_value = mock_pages
+        mock_save.return_value = []
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/api/v1/meta/oauth/callback?code=mock_oauth_code_456&state={state}")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers.get("content-type", "")
+            content = resp.text
+            assert "META_OAUTH_COMPLETE" in content
+            assert "status: 'success'" in content
+            assert "window.close()" in content
+
+        mock_exchange.assert_awaited_once_with(code="mock_oauth_code_456", redirect_uri="https://webluxira.com/api/v1/meta/oauth/callback")
+        mock_fetch.assert_awaited_once_with(long_lived_user_token="mock_long_lived_token_123")
+        mock_save.assert_awaited_once()
+
+
