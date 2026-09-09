@@ -7,6 +7,7 @@ const WS_CLOSE_AUTH_FAILURE = 4001;
 export class RealtimeWebSocketService {
   private socket: WebSocket | null = null;
   private listeners: Set<MessageHandler> = new Set();
+  private onOpenCallbacks: Set<() => void> = new Set();
   private reconnectInterval = 3000;
   private maxReconnectInterval = 15000;
   private currentReconnectDelay = 3000;
@@ -48,6 +49,13 @@ export class RealtimeWebSocketService {
       this.socket.onopen = () => {
         console.log('Real-time WebSocket Connected:', wsUrl.split('?')[0]);
         this.currentReconnectDelay = this.reconnectInterval;
+        this.onOpenCallbacks.forEach((cb) => {
+          try {
+            cb();
+          } catch (e) {
+            console.warn('Error in onOpen callback:', e);
+          }
+        });
       };
 
       this.socket.onmessage = (event) => {
@@ -90,6 +98,13 @@ export class RealtimeWebSocketService {
     this.listeners.add(handler);
     return () => {
       this.listeners.delete(handler);
+    };
+  }
+
+  public onOpen(cb: () => void) {
+    this.onOpenCallbacks.add(cb);
+    return () => {
+      this.onOpenCallbacks.delete(cb);
     };
   }
 

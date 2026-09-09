@@ -13,3 +13,7 @@ export const useCrmStore = create<CrmState>()((...a) => ({
   ...createCustomerSlice(...a),
   ...createChatSlice(...a),
 }));
+
+if (typeof window !== 'undefined') {
+  (window as any).useCrmStore = useCrmStore;
+}

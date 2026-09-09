@@ -88,6 +88,15 @@ export const App: React.FC = () => {
     // Connect to WebSocket real-time channel
     realtimeService.connect();
 
+    // Auto-re-subscribe active conversation room on initial open and reconnect
+    const unsubscribeOpen = realtimeService.onOpen(() => {
+      setWsConnected(true);
+      const activeId = useCrmStore.getState().activeConversationId;
+      if (activeId) {
+        realtimeService.send({ type: 'JOIN_CONVERSATION', conversation_id: activeId });
+      }
+    });
+
     // Track open/close so polling can be suppressed while WS is active
     const unsubscribeWs = realtimeService.subscribe((event) => {
       if (event.type === 'PONG' || event.type) {
@@ -111,6 +120,7 @@ export const App: React.FC = () => {
     return () => {
       clearInterval(pollInterval);
       clearInterval(pingInterval);
+      unsubscribeOpen();
       unsubscribeWs();
       realtimeService.close();
       setWsConnected(false);
