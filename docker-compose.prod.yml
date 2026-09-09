@@ -57,14 +57,14 @@ services:
       REDIS_HOST: redis_prod
       REDIS_PORT: 6379
       REDIS_URL: redis://redis_prod:6379/0
-      SECRET_KEY: ${SECRET_KEY:-4d71c9b69a027039bb284cdb829124970205d60a4eb031a566285cbbab984925}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY environment variable is required}
       META_PAGE_ID: ${META_PAGE_ID}
       META_PAGE_ACCESS_TOKEN: ${META_PAGE_ACCESS_TOKEN}
       META_APP_SECRET: ${META_APP_SECRET}
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
       ENABLE_DIRECT_META: ${ENABLE_DIRECT_META:-false}
       DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-BEON}
-      BEON_API_KEY: ${BEON_API_KEY:-ZUiczQBL4Ymh7E6qjkNS}
+      BEON_API_KEY: ${BEON_API_KEY:?BEON_API_KEY environment variable is required}
       BEON_API_BASE_URL: ${BEON_API_BASE_URL:-https://v3.api.beon.chat/api}
       BEON_WEBHOOK_SECRET: ${BEON_WEBHOOK_SECRET:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://webluxira.com,http://webluxira.com,http://localhost:5174,http://127.0.0.1:5174}
