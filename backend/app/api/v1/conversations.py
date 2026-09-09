@@ -384,12 +384,21 @@ async def send_outbound_reply(
         )
         resp = MessageResponse.model_validate(msg)
         try:
-            from app.api.v1.ws import manager as ws_manager
-            await ws_manager.broadcast({
-                "type": "NEW_MESSAGE",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            from app.api.v1.ws import broadcast_realtime_event
+            msg_payload = resp.model_dump(mode="json")
+            brand_val = getattr(conv, "brand", None)
+            if brand_val and "brand" not in msg_payload:
+                msg_payload["brand"] = brand_val
+            await broadcast_realtime_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "NEW_MESSAGE",
+                    "conversation_id": str(conversation_id),
+                    "brand": brand_val,
+                    "message": msg_payload,
+                },
+            )
         except Exception:
             pass
         return resp

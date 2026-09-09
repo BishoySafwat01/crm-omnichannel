@@ -8,6 +8,7 @@ from typing import Any, Optional
 import httpx
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -794,34 +795,45 @@ class MetaImportService:
                             },
                         )
                         session.add(msg)
-                        await session.commit()
-                        await session.refresh(msg)
-                        created_count += 1
-                        last_result_status = "success"
-                        last_result_msg_id = str(msg.id)
-
                         try:
-                            from app.api.v1.ws import manager
-                            await manager.broadcast({
-                                "type": "NEW_MESSAGE",
-                                "conversation_id": str(conv.id),
-                                "message": {
-                                    "id": str(msg.id),
-                                    "conversation_id": str(conv.id),
-                                    "external_message_id": msg.external_message_id,
-                                    "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
-                                    "sender_external_id": msg.sender_external_id,
-                                    "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
-                                    "text": msg.text,
-                                    "media_url": att_url,
-                                    "created_at": msg.created_at.isoformat(),
-                                    "delivery_status": "delivered",
-                                    "attachments": [att],
-                                }
-                            })
-                        except Exception as ws_err:
-                            logger.warning("Failed to broadcast multi-attachment WS: %s", str(ws_err))
-                        logger.info(f"[Webhook Multi-Media] Saved attachment {idx+1}/{len(attachments_list)} (ID: {att_mid}) for Conv {conv.id}")
+                            await session.commit()
+                            await session.refresh(msg)
+                            created_count += 1
+                            last_result_status = "success"
+                            last_result_msg_id = str(msg.id)
+
+                            try:
+                                from app.api.v1.ws import broadcast_realtime_event
+                                await broadcast_realtime_event(
+                                    target="conversation",
+                                    conversation_id=str(conv.id),
+                                    payload={
+                                        "type": "NEW_MESSAGE",
+                                        "conversation_id": str(conv.id),
+                                        "brand": getattr(conv, "brand", None),
+                                        "message": {
+                                            "id": str(msg.id),
+                                            "conversation_id": str(conv.id),
+                                            "external_message_id": msg.external_message_id,
+                                            "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
+                                            "sender_external_id": msg.sender_external_id,
+                                            "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
+                                            "text": msg.text,
+                                            "media_url": att_url,
+                                            "created_at": msg.created_at.isoformat(),
+                                            "delivery_status": "delivered",
+                                            "attachments": [att],
+                                            "brand": getattr(conv, "brand", None),
+                                        },
+                                    },
+                                )
+                            except Exception as ws_err:
+                                logger.warning("Failed to broadcast multi-attachment WS: %s", str(ws_err))
+                            logger.info(f"[Webhook Multi-Media] Saved attachment {idx+1}/{len(attachments_list)} (ID: {att_mid}) for Conv {conv.id}")
+                        except IntegrityError:
+                            await session.rollback()
+                            logger.info("[Webhook Multi-Media] Duplicate message %s caught by unique constraint; skipping gracefully.", att_mid)
+                            continue
                 else:
                     first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
                     single_att_url = (
@@ -851,33 +863,44 @@ class MetaImportService:
                         },
                     )
                     session.add(msg)
-                    await session.commit()
-                    await session.refresh(msg)
-                    created_count += 1
-                    last_result_status = "success"
-                    last_result_msg_id = str(msg.id)
-
                     try:
-                        from app.api.v1.ws import manager
-                        await manager.broadcast({
-                            "type": "NEW_MESSAGE",
-                            "conversation_id": str(conv.id),
-                            "message": {
-                                "id": str(msg.id),
-                                "conversation_id": str(conv.id),
-                                "external_message_id": msg.external_message_id,
-                                "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
-                                "sender_external_id": msg.sender_external_id,
-                                "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
-                                "text": msg.text,
-                                "created_at": msg.created_at.isoformat(),
-                                "delivery_status": "delivered",
-                                "attachments": attachments_list,
-                            }
-                        })
-                    except Exception as ws_err:
-                        logger.warning("Failed to broadcast inbound message over WebSocket: %s", str(ws_err))
-                    logger.info("Meta webhook success: message_id=%s persisted (id=%s)", norm_event.external_message_id, msg.id)
+                        await session.commit()
+                        await session.refresh(msg)
+                        created_count += 1
+                        last_result_status = "success"
+                        last_result_msg_id = str(msg.id)
+
+                        try:
+                            from app.api.v1.ws import broadcast_realtime_event
+                            await broadcast_realtime_event(
+                                target="conversation",
+                                conversation_id=str(conv.id),
+                                payload={
+                                    "type": "NEW_MESSAGE",
+                                    "conversation_id": str(conv.id),
+                                    "brand": getattr(conv, "brand", None),
+                                    "message": {
+                                        "id": str(msg.id),
+                                        "conversation_id": str(conv.id),
+                                        "external_message_id": msg.external_message_id,
+                                        "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
+                                        "sender_external_id": msg.sender_external_id,
+                                        "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
+                                        "text": msg.text,
+                                        "created_at": msg.created_at.isoformat(),
+                                        "delivery_status": "delivered",
+                                        "attachments": attachments_list,
+                                        "brand": getattr(conv, "brand", None),
+                                    },
+                                },
+                            )
+                        except Exception as ws_err:
+                            logger.warning("Failed to broadcast inbound message over WebSocket: %s", str(ws_err))
+                        logger.info("Meta webhook success: message_id=%s persisted (id=%s)", norm_event.external_message_id, msg.id)
+                    except IntegrityError:
+                        await session.rollback()
+                        logger.info("[Webhook Inbound] Duplicate message %s caught by unique constraint; returning already_processed.", norm_event.external_message_id)
+                        return "already_processed"
 
                 if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
                     conv.last_message_at = norm_event.created_at
@@ -1186,15 +1209,20 @@ class MetaImportService:
                         # 4. Emit WebSocket Notification if new messages were found
                         if has_new_messages:
                             try:
-                                from app.api.v1.ws import manager
-                                await manager.broadcast({
-                                    "type": "NEW_MESSAGE",
-                                    "conversation_id": str(conversation.id),
-                                    "customer_id": str(customer.id),
-                                    "customer_display_name": customer.display_name,
-                                    "channel": plat["channel"].value,
-                                    "text": conversation.last_message_text or "رسالة جديدة"
-                                })
+                                from app.api.v1.ws import broadcast_realtime_event
+                                await broadcast_realtime_event(
+                                    target="conversation",
+                                    conversation_id=str(conversation.id),
+                                    payload={
+                                        "type": "NEW_MESSAGE",
+                                        "conversation_id": str(conversation.id),
+                                        "customer_id": str(customer.id),
+                                        "customer_display_name": customer.display_name,
+                                        "brand": getattr(conversation, "brand", None),
+                                        "channel": plat["channel"].value,
+                                        "text": conversation.last_message_text or "رسالة جديدة",
+                                    },
+                                )
                                 logger.info("[Live Poller] Synced new message for conversation %s", conversation.id)
                             except Exception as ws_err:
                                 logger.debug("[WS Broadcast] Error: %s", ws_err)

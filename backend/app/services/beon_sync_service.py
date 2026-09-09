@@ -6,7 +6,7 @@ from typing import Any, Optional
 import httpx
 from sqlalchemy import delete, func, select, or_
 
-from app.api.v1.ws import manager
+from app.api.v1.ws import broadcast_realtime_event, manager
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.integrations.beon.client import BeonClient
@@ -211,18 +211,42 @@ class BeonSyncEngine:
                             "unread_count": conversation.unread_count or 0,
                         }
                         if is_new_conv:
-                            await manager.broadcast({"type": "NEW_CONVERSATION", "conversation_id": str(conversation.id), "conversation": conv_dict})
+                            await broadcast_realtime_event(
+                                target="global",
+                                payload={
+                                    "type": "NEW_CONVERSATION",
+                                    "conversation_id": str(conversation.id),
+                                    "brand": conversation.brand,
+                                    "conversation": conv_dict,
+                                },
+                            )
                         else:
-                            await manager.broadcast({"type": "CONVERSATION_UPDATED", "conversation_id": str(conversation.id), "data": conv_dict})
+                            await broadcast_realtime_event(
+                                target="conversation",
+                                conversation_id=str(conversation.id),
+                                payload={
+                                    "type": "CONVERSATION_UPDATED",
+                                    "conversation_id": str(conversation.id),
+                                    "brand": conversation.brand,
+                                    "data": conv_dict,
+                                },
+                            )
 
                         for m_data in new_msgs_for_conv:
-                            await manager.broadcast({
-                                "type": "NEW_MESSAGE",
-                                "conversation_id": str(conversation.id),
-                                "message": m_data,
-                            })
+                            if "brand" not in m_data:
+                                m_data["brand"] = conversation.brand
+                            await broadcast_realtime_event(
+                                target="conversation",
+                                conversation_id=str(conversation.id),
+                                payload={
+                                    "type": "NEW_MESSAGE",
+                                    "conversation_id": str(conversation.id),
+                                    "brand": conversation.brand,
+                                    "message": m_data,
+                                },
+                            )
                     except Exception as ws_err:
-                        logger.debug(f"[BeOn Sync Engine] WebSocket broadcast error: {ws_err}")
+                        logger.debug(f"[BeOn Sync Engine] Real-time broadcast error: {ws_err}")
 
         return stats
 

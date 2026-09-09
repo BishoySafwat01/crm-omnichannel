@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_admin
@@ -196,23 +197,34 @@ async def receive_beon_webhook(
 
             # WebSocket Broadcast
             try:
-                from app.api.v1.ws import manager
-                await manager.broadcast(
-                    {
+                from app.api.v1.ws import broadcast_realtime_event
+                msg_payload = {
+                    "id": str(msg_obj.id),
+                    "conversation_id": str(conversation.id),
+                    "external_message_id": msg_obj.external_message_id,
+                    "sender_type": str(msg_obj.sender_type.value if hasattr(msg_obj.sender_type, "value") else msg_obj.sender_type),
+                    "text": msg_obj.text,
+                    "created_at": msg_obj.created_at.isoformat(),
+                    "brand": brand,
+                }
+                await broadcast_realtime_event(
+                    target="conversation",
+                    conversation_id=str(conversation.id),
+                    payload={
                         "type": "NEW_MESSAGE",
                         "conversation_id": str(conversation.id),
-                        "message": {
-                            "id": str(msg_obj.id),
-                            "conversation_id": str(conversation.id),
-                            "external_message_id": msg_obj.external_message_id,
-                            "sender_type": str(msg_obj.sender_type.value if hasattr(msg_obj.sender_type, "value") else msg_obj.sender_type),
-                            "text": msg_obj.text,
-                            "created_at": msg_obj.created_at.isoformat(),
-                        },
-                    }
+                        "brand": brand,
+                        "message": msg_payload,
+                    },
                 )
             except Exception as ws_err:
                 logger.warning(f"Failed to broadcast WebSocket event: {ws_err}")
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.info("[BeOn Webhook] Duplicate message or conversation caught by unique constraint; skipping gracefully.")
+        return {"status": "already_processed", "conversation_id": str(conversation.id)}
+
     return {"status": "success", "conversation_id": str(conversation.id)}

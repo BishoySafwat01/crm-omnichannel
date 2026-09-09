@@ -91,6 +91,34 @@ class MessageService:
 
         await session.commit()
         await session.refresh(message)
+
+        # Broadcast real-time NEW_MESSAGE event across worker processes
+        try:
+            from app.api.v1.ws import broadcast_realtime_event
+            msg_data = {
+                "id": str(message.id),
+                "conversation_id": str(conversation_id),
+                "external_message_id": message.external_message_id,
+                "sender_type": message.sender_type.value if hasattr(message.sender_type, "value") else str(message.sender_type),
+                "sender_external_id": message.sender_external_id,
+                "message_type": message.message_type.value if hasattr(message.message_type, "value") else str(message.message_type),
+                "text": message.text,
+                "created_at": message.created_at.isoformat() if message.created_at else None,
+                "brand": getattr(conversation, "brand", None) if conversation else None,
+            }
+            await broadcast_realtime_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "NEW_MESSAGE",
+                    "conversation_id": str(conversation_id),
+                    "brand": getattr(conversation, "brand", None) if conversation else None,
+                    "message": msg_data,
+                },
+            )
+        except Exception as ws_err:
+            logger.debug("[MessageService] Real-time broadcast exception: %s", ws_err)
+
         return message
 
     @staticmethod
