@@ -84,18 +84,21 @@ echo "[Stage 3/6] Packaging deployment artifact..."
 cd "$ROOT_DIR"
 rm -f "$ARCHIVE_NAME"
 
-tar --exclude='frontend/node_modules' \
+tar --warning=no-file-changed \
+    --exclude='frontend/node_modules' \
     --exclude='frontend/dist' \
     --exclude='backend/.venv' \
     --exclude='backend/__pycache__' \
     --exclude='*__pycache__*' \
+    --exclude='.pytest_cache' \
+    --exclude='.gemini' \
     --exclude='.git' \
     --exclude='*.sql' \
     --exclude='*.pem' \
     --exclude='crm_backup.sql' \
     --exclude='crm_deploy.tar.gz' \
     --exclude="${ARCHIVE_NAME}" \
-    -czf "${ARCHIVE_NAME}" .
+    -czf "${ARCHIVE_NAME}" . || [ $? -le 1 ]
 
 ARCHIVE_SIZE=$(du -h "${ARCHIVE_NAME}" | cut -f1)
 echo "[+] Created clean artifact: ${ARCHIVE_NAME} (${ARCHIVE_SIZE})"
