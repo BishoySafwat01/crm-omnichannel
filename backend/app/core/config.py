@@ -50,10 +50,9 @@ class Settings(BaseSettings):
     META_APP_ID: str | None = "2591862777899310"
     META_WEBHOOK_VERIFY_TOKEN: str | None = "LUXIRA_META_WEBHOOK_VERIFY_TOKEN"
     META_APP_SECRET: str | None = None
-    WHATSAPP_PHONE_NUMBER_ID: str | None = "105938472819405"
-    WHATSAPP_WABA_ID: str | None = "948301847582019"
-    INSTAGRAM_ACCOUNT_ID: str | None = "17841405938201948"
-    META_INSTAGRAM_ACCOUNT_ID: str | None = "17841434176832322"
+    WHATSAPP_PHONE_NUMBER_ID: str | None = None
+    WHATSAPP_WABA_ID: str | None = None
+    INSTAGRAM_ACCOUNT_ID: str | None = None
     META_ENABLE_LIVE_POLLING: bool = False
     META_POLL_INTERVAL_SECONDS: int = 300
     META_PAGES_CONFIG: str = "{}"
@@ -68,13 +67,13 @@ class Settings(BaseSettings):
                     for pid, pdata in parsed.items():
                         if isinstance(pdata, dict):
                             pages[str(pid).strip()] = {
-                                "name": pdata.get("name", f"Page {pid}"),
+                                "name": pdata.get("name") or "Default Business Page",
                                 "access_token": pdata.get("access_token") or pdata.get("token") or self.META_PAGE_ACCESS_TOKEN or "",
                                 "category": pdata.get("category", "Business"),
                             }
                         elif isinstance(pdata, str):
                             pages[str(pid).strip()] = {
-                                "name": f"Page {pid}",
+                                "name": "Default Business Page",
                                 "access_token": pdata or self.META_PAGE_ACCESS_TOKEN or "",
                                 "category": "Business",
                             }
@@ -103,9 +102,8 @@ class Settings(BaseSettings):
         if page_id:
             pid = str(page_id).strip()
             pages = self.get_meta_pages()
-            if pid in pages and pages[pid].get("name"):
+            if pid in pages and pages[pid].get("name") and not str(pages[pid]["name"]).startswith("Page "):
                 return pages[pid]["name"]
-            return f"Page {pid}"
         return "Default Business Page"
 
     # Provider Switching & BeOn V3 Omnichannel Settings

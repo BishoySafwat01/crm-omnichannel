@@ -308,8 +308,6 @@ class MetaNormalizer:
             known_agent_ids.add(str(settings.META_PAGE_ID).strip())
         if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
             known_agent_ids.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
-        if getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None):
-            known_agent_ids.add(str(settings.META_INSTAGRAM_ACCOUNT_ID).strip())
 
         if is_echo:
             sender_type = SenderTypeEnum.AGENT

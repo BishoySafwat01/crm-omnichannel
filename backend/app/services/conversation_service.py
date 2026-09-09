@@ -29,7 +29,7 @@ class ConversationService:
             external_conversation_id=external_conversation_id,
             subject=subject,
             status=status,
-            brand=brand or "LAVVA",
+            brand=brand or "Default Business Page",
         )
         session.add(conversation)
         await session.commit()
@@ -41,6 +41,7 @@ class ConversationService:
         session: AsyncSession,
         identity: CustomerIdentity,
         subject: Optional[str] = None,
+        brand: Optional[str] = None,
     ) -> Conversation:
         # First check if customer ALREADY has an existing conversation thread
         stmt_cust = (
@@ -52,6 +53,9 @@ class ConversationService:
         res_cust = await session.execute(stmt_cust)
         existing_cust_conv = res_cust.scalar_one_or_none()
         if existing_cust_conv:
+            if brand and (not existing_cust_conv.brand or existing_cust_conv.brand in ("LAVVA", "Default Business Page") or str(existing_cust_conv.brand).startswith("Page ")):
+                existing_cust_conv.brand = brand
+                await session.flush()
             return existing_cust_conv
 
         ext_conv_id = f"resp_conv_{identity.external_user_id}"
@@ -62,6 +66,9 @@ class ConversationService:
             external_conversation_id=ext_conv_id,
         )
         if existing:
+            if brand and (not existing.brand or existing.brand in ("LAVVA", "Default Business Page") or str(existing.brand).startswith("Page ")):
+                existing.brand = brand
+                await session.flush()
             return existing
 
         return await ConversationService.create_conversation(
@@ -70,7 +77,8 @@ class ConversationService:
             provider=identity.provider,
             channel=identity.channel,
             external_conversation_id=ext_conv_id,
-            subject=subject or f"Messenger Conversation ({identity.external_user_id})",
+            subject=subject or f"Conversation ({identity.external_user_id})",
+            brand=brand,
         )
 
     @staticmethod

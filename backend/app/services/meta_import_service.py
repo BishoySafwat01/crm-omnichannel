@@ -49,6 +49,83 @@ class MetaImportService:
             err_str = err_str.replace(verify_token, "[REDACTED_VERIFY_TOKEN]")
         return err_str
 
+    @classmethod
+    async def resolve_brand_name_dynamically(
+        cls,
+        entry_page_id: Optional[str],
+        session: AsyncSession,
+        active_connected_pages: Optional[dict[str, ConnectedPage]] = None,
+    ) -> str:
+        """Dynamically resolve brand name from in-memory pages, DB ConnectedPage, or Meta Graph API.
+        Guarantees that brand is never a raw 'Page {id}' placeholder."""
+        if not entry_page_id or not str(entry_page_id).strip():
+            return "Default Business Page"
+
+        pid = str(entry_page_id).strip()
+
+        # Step A: In-memory active_connected_pages lookup
+        if active_connected_pages and pid in active_connected_pages:
+            cp = active_connected_pages[pid]
+            if cp and cp.name and not str(cp.name).startswith("Page "):
+                return cp.name
+
+        # Step B: Query ConnectedPage from DB
+        stmt = select(ConnectedPage).where(
+            or_(
+                ConnectedPage.page_id == pid,
+                ConnectedPage.instagram_business_account_id == pid,
+            )
+        )
+        res = await session.execute(stmt)
+        cp = res.scalars().first()
+        if cp and cp.name and not str(cp.name).startswith("Page "):
+            return cp.name
+
+        # Step C: If not in DB, query Meta Graph API dynamically and persist
+        token = settings.META_PAGE_ACCESS_TOKEN
+        if not token:
+            stmt_token = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE").limit(1)
+            active_cp = (await session.execute(stmt_token)).scalars().first()
+            if active_cp:
+                token = active_cp.decrypted_access_token
+
+        if token:
+            try:
+                api_ver = getattr(settings, "META_GRAPH_API_VERSION", "v23.0")
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as http_client:
+                    r = await http_client.get(
+                        f"https://graph.facebook.com/{api_ver}/{pid}",
+                        params={"fields": "name,id", "access_token": token},
+                    )
+                    if r.status_code == 200:
+                        data = r.json()
+                        brand_name = data.get("name")
+                        if brand_name and not str(brand_name).startswith("Page "):
+                            if cp:
+                                cp.name = brand_name
+                                await session.flush()
+                            else:
+                                from app.core.security import encrypt_token
+                                new_cp = ConnectedPage(
+                                    page_id=pid,
+                                    name=brand_name,
+                                    encrypted_access_token=encrypt_token(token),
+                                    status="ACTIVE",
+                                )
+                                session.add(new_cp)
+                                await session.flush()
+                                if active_connected_pages is not None:
+                                    active_connected_pages[pid] = new_cp
+                            return brand_name
+            except Exception as e:
+                logger.warning("[Brand Resolution] Failed dynamic lookup for page ID %s: %s", pid, e)
+
+        # Step D: Safe fallback
+        fallback = settings.get_page_name(pid)
+        if fallback and not str(fallback).startswith("Page "):
+            return fallback
+        return "Default Business Page"
+
     @staticmethod
     async def fetch_and_cache_customer_profile(psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
         if not psid or not str(psid).strip() or psid == "unknown_customer" or psid == "system":
@@ -64,12 +141,23 @@ class MetaImportService:
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
                     settings.INSTAGRAM_ACCOUNT_ID,
-                    getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None),
                     getattr(settings, "META_APP_ID", None),
                 ]
             )
             if p and str(p).strip()
         }
+        try:
+            from app.core.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session_cp:
+                cp_res = await session_cp.execute(select(ConnectedPage))
+                for cp in cp_res.scalars().all():
+                    if cp.page_id:
+                        valid_page_ids.add(str(cp.page_id).strip())
+                    if cp.instagram_business_account_id:
+                        valid_page_ids.add(str(cp.instagram_business_account_id).strip())
+        except Exception:
+            pass
+
         if str(psid).strip() in valid_page_ids:
             return {}
 
@@ -238,20 +326,14 @@ class MetaImportService:
                     external_conversation_id=norm_conv.external_conversation_id,
                 )
 
-                brand_name = None
-                if target_page_id:
-                    cp_res = await session.execute(
-                        select(ConnectedPage).where(ConnectedPage.page_id == str(target_page_id).strip())
-                    )
-                    cp_row = cp_res.scalar_one_or_none()
-                    if cp_row and cp_row.name:
-                        brand_name = cp_row.name
-                if not brand_name:
-                    brand_name = settings.get_page_name(target_page_id)
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=target_page_id,
+                    session=session,
+                )
                 if existing_conv:
                     conv = existing_conv
                     conv.last_message_at = norm_conv.last_message_at
-                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
                         conv.brand = brand_name
                     await session.commit()
                 else:
@@ -593,7 +675,6 @@ class MetaImportService:
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
                     settings.INSTAGRAM_ACCOUNT_ID,
-                    getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", None),
                 ]
             ) if p and str(p).strip()
         }
@@ -651,7 +732,6 @@ class MetaImportService:
                     or sender_id_clean in active_connected_pages
                     or (sender_id_clean == str(settings.META_PAGE_ID))
                     or (sender_id_clean == str(settings.INSTAGRAM_ACCOUNT_ID))
-                    or (sender_id_clean == getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", ""))
                     or (sender_id_clean == str(settings.WHATSAPP_PHONE_NUMBER_ID))
                     or (sender_id_clean == str(settings.WHATSAPP_WABA_ID))
                     or (sender_id_clean == getattr(settings, "META_APP_ID", ""))
@@ -768,31 +848,20 @@ class MetaImportService:
                             )
                         )
 
+                    brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                        entry_page_id=entry_page_id,
+                        session=session,
+                        active_connected_pages=active_connected_pages,
+                    )
+
                     if not conv:
                         conv = await ConversationService.get_or_create_conversation_for_identity(
                             session=session,
                             identity=identity,
+                            brand=brand_name,
                         )
 
-                    connected_page = active_connected_pages.get(entry_page_id)
-                    if not connected_page:
-                        cp_single = (await session.execute(
-                            select(ConnectedPage).where(
-                                or_(
-                                    ConnectedPage.page_id == entry_page_id,
-                                    ConnectedPage.instagram_business_account_id == entry_page_id,
-                                )
-                            )
-                        )).scalar_one_or_none()
-                        if cp_single:
-                            connected_page = cp_single
-
-                    if connected_page and connected_page.name:
-                        brand_name = connected_page.name
-                    else:
-                        brand_name = settings.get_page_name(entry_page_id)
-
-                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page", f"Page {entry_page_id}")):
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
                         conv.brand = brand_name
                         await session.commit()
 
@@ -913,31 +982,20 @@ class MetaImportService:
                         )
                     )
 
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=entry_page_id,
+                    session=session,
+                    active_connected_pages=active_connected_pages,
+                )
+
                 # 2. Resolve/create Conversation
                 conv = await ConversationService.get_or_create_conversation_for_identity(
                     session=session,
                     identity=identity,
+                    brand=brand_name,
                 )
-                # Milestone 3: Dynamic Inbound Webhook Identity Resolution
-                connected_page = active_connected_pages.get(entry_page_id)
-                if not connected_page:
-                    cp_single = (await session.execute(
-                        select(ConnectedPage).where(
-                            or_(
-                                ConnectedPage.page_id == entry_page_id,
-                                ConnectedPage.instagram_business_account_id == entry_page_id,
-                            )
-                        )
-                    )).scalar_one_or_none()
-                    if cp_single:
-                        connected_page = cp_single
 
-                if connected_page and connected_page.name:
-                    brand_name = connected_page.name
-                else:
-                    brand_name = settings.get_page_name(entry_page_id)
-
-                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page", f"Page {entry_page_id}")):
+                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
                     conv.brand = brand_name
                     await session.commit()
 
@@ -1198,28 +1256,95 @@ class MetaImportService:
 
     @staticmethod
     async def sync_live_conversations():
-        """Poll latest conversations from Meta Graph API for both Messenger and Instagram Direct."""
-        if not settings.META_PAGE_ACCESS_TOKEN or not settings.META_PAGE_ID:
-            return
-
+        """Poll latest conversations from Meta Graph API for both Messenger and Instagram Direct across all connected pages."""
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
+        from app.core.database import AsyncSessionLocal
+        from app.models.connected_page import ConnectedPage
+        from app.models.customer import Customer, CustomerIdentity
+        from app.models.enums import ConversationStatusEnum, MessageTypeEnum, SenderTypeEnum
 
         if MetaRateLimitGuard.is_rate_limited():
             rem = MetaRateLimitGuard.get_cooldown_remaining()
             logger.warning("[Live Poller] Meta rate limit cooldown active (%ds remaining). Skipping poll cycle.", int(rem))
             return
 
-        ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
+        platforms: list[dict[str, Any]] = []
+        known_account_ids: set[str] = set()
 
-        platforms = [
-            {"name": "messenger", "channel": ChannelEnum.MESSENGER, "endpoint": f"/{settings.META_PAGE_ID}/conversations", "param": None},
-            {"name": "instagram", "channel": ChannelEnum.INSTAGRAM, "endpoint": f"/{settings.META_PAGE_ID}/conversations", "param": "instagram"},
-            {"name": "instagram_direct", "channel": ChannelEnum.INSTAGRAM, "endpoint": f"/{ig_account_id}/conversations", "param": None}
-        ]
+        async with AsyncSessionLocal() as session:
+            stmt_cp = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+            active_cps = (await session.execute(stmt_cp)).scalars().all()
+            for cp in active_cps:
+                token = cp.decrypted_access_token or settings.META_PAGE_ACCESS_TOKEN
+                if not token:
+                    continue
+                if cp.page_id:
+                    pid = str(cp.page_id).strip()
+                    known_account_ids.add(pid)
+                    platforms.append({
+                        "name": f"messenger_{pid}",
+                        "channel": ChannelEnum.MESSENGER,
+                        "endpoint": f"/{pid}/conversations",
+                        "param": None,
+                        "token": token,
+                        "brand": cp.name,
+                    })
+                    platforms.append({
+                        "name": f"instagram_{pid}",
+                        "channel": ChannelEnum.INSTAGRAM,
+                        "endpoint": f"/{pid}/conversations",
+                        "param": "instagram",
+                        "token": token,
+                        "brand": cp.name,
+                    })
+                if cp.instagram_business_account_id:
+                    ig_id = str(cp.instagram_business_account_id).strip()
+                    known_account_ids.add(ig_id)
+                    platforms.append({
+                        "name": f"instagram_direct_{ig_id}",
+                        "channel": ChannelEnum.INSTAGRAM,
+                        "endpoint": f"/{ig_id}/conversations",
+                        "param": None,
+                        "token": token,
+                        "brand": cp.name,
+                    })
 
-        from app.core.database import AsyncSessionLocal
-        from app.models.customer import Customer, CustomerIdentity
-        from app.models.enums import ConversationStatusEnum, MessageTypeEnum, SenderTypeEnum
+        # Safe fallback if no ConnectedPage in DB but settings exist
+        if not platforms and settings.META_PAGE_ACCESS_TOKEN and settings.META_PAGE_ID:
+            pid = str(settings.META_PAGE_ID).strip()
+            known_account_ids.add(pid)
+            if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+                known_account_ids.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
+            brand_fallback = settings.get_page_name(pid)
+            platforms.append({
+                "name": f"messenger_{pid}",
+                "channel": ChannelEnum.MESSENGER,
+                "endpoint": f"/{pid}/conversations",
+                "param": None,
+                "token": settings.META_PAGE_ACCESS_TOKEN,
+                "brand": brand_fallback,
+            })
+            platforms.append({
+                "name": f"instagram_{pid}",
+                "channel": ChannelEnum.INSTAGRAM,
+                "endpoint": f"/{pid}/conversations",
+                "param": "instagram",
+                "token": settings.META_PAGE_ACCESS_TOKEN,
+                "brand": brand_fallback,
+            })
+            if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+                ig_id = str(settings.INSTAGRAM_ACCOUNT_ID).strip()
+                platforms.append({
+                    "name": f"instagram_direct_{ig_id}",
+                    "channel": ChannelEnum.INSTAGRAM,
+                    "endpoint": f"/{ig_id}/conversations",
+                    "param": None,
+                    "token": settings.META_PAGE_ACCESS_TOKEN,
+                    "brand": brand_fallback,
+                })
+
+        if not platforms:
+            return
 
         for plat in platforms:
             if MetaRateLimitGuard.is_rate_limited():
@@ -1230,7 +1355,7 @@ class MetaImportService:
             params = {
                 "fields": "id,updated_time,unread_count,participants,messages.limit(10){id,message,from,created_time,attachments}",
                 "limit": 10,
-                "access_token": settings.META_PAGE_ACCESS_TOKEN
+                "access_token": plat["token"],
             }
             if plat["param"]:
                 params["platform"] = plat["param"]
@@ -1255,7 +1380,7 @@ class MetaImportService:
                         participants = conv_data.get("participants", {}).get("data", [])
 
                         # Find external customer participant
-                        customer_info = next((p for p in participants if str(p.get("id")) != str(settings.META_PAGE_ID) and str(p.get("id")) != str(ig_account_id)), None)
+                        customer_info = next((p for p in participants if str(p.get("id")) not in known_account_ids), None)
                         if not customer_info:
                             continue
 
@@ -1312,10 +1437,13 @@ class MetaImportService:
                                 status=ConversationStatusEnum.OPEN,
                                 priority="normal",
                                 subject=f"{plat['name'].capitalize()} Conversation {ext_conv_id or psid}",
+                                brand=plat.get("brand") or "Default Business Page",
                                 last_message_at=datetime.utcnow()
                             )
                             session.add(conversation)
                             await session.flush()
+                        elif plat.get("brand") and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
+                            conversation.brand = plat["brand"]
 
                         # 3. Ingest Messages & Update Denormalized Preview Fields
                         msgs_data = conv_data.get("messages", {}).get("data", [])
@@ -1333,7 +1461,7 @@ class MetaImportService:
                             if not existing_msg:
                                 has_new_messages = True
                                 sender_id = str(m.get("from", {}).get("id", ""))
-                                is_page = sender_id == str(settings.META_PAGE_ID)
+                                is_page = sender_id in known_account_ids
                                 msg_text = m.get("message", "")
                                 created_time_str = m.get("created_time")
                                 created_dt = datetime.utcnow()

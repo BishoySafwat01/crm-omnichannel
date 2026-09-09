@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.enums import (
@@ -30,6 +30,48 @@ class MetaHistoricalSyncService:
         self.base_url = f"https://graph.facebook.com/{self.api_ver}"
         self.headers = {"Authorization": f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"}
 
+    async def _get_known_account_ids(self) -> set[str]:
+        from app.models.connected_page import ConnectedPage
+        known: set[str] = set()
+        if settings.META_PAGE_ID:
+            known.add(str(settings.META_PAGE_ID).strip())
+        if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+            known.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
+        try:
+            async with AsyncSessionLocal() as session:
+                cps = (await session.execute(select(ConnectedPage))).scalars().all()
+                for cp in cps:
+                    if cp.page_id:
+                        known.add(str(cp.page_id).strip())
+                    if cp.instagram_business_account_id:
+                        known.add(str(cp.instagram_business_account_id).strip())
+        except Exception:
+            pass
+        return known
+
+    async def _resolve_brand_for_page(self, page_id: Optional[str]) -> str:
+        if not page_id:
+            return "Default Business Page"
+        pid = str(page_id).strip()
+        from app.models.connected_page import ConnectedPage
+        try:
+            async with AsyncSessionLocal() as session:
+                stmt = select(ConnectedPage).where(
+                    or_(
+                        ConnectedPage.page_id == pid,
+                        ConnectedPage.instagram_business_account_id == pid,
+                    )
+                )
+                cp = (await session.execute(stmt)).scalars().first()
+                if cp and cp.name and not str(cp.name).startswith("Page "):
+                    return cp.name
+        except Exception:
+            pass
+        fallback = settings.get_page_name(pid)
+        if fallback and not str(fallback).startswith("Page "):
+            return fallback
+        return "Default Business Page"
+
     async def _inspect_rate_limits_and_throttle(self, response: httpx.Response):
         """Inspect Meta usage headers and throttle dynamically to avoid 429/613 errors."""
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
@@ -49,7 +91,13 @@ class MetaHistoricalSyncService:
             except Exception:
                 pass
 
-    async def sync_all_historical_threads(self, platform: Optional[str] = None, max_threads: int = 100):
+    async def sync_all_historical_threads(
+        self,
+        platform: Optional[str] = None,
+        max_threads: int = 100,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ):
         """
         Two-Tier Shallow Thread Discovery with Cursor Pagination.
         platform: None (Messenger) | 'instagram' (Instagram Direct)
@@ -57,78 +105,128 @@ class MetaHistoricalSyncService:
         channel = ChannelEnum.INSTAGRAM if platform == "instagram" else ChannelEnum.MESSENGER
         logger.info("[%s] Starting historical sync (Max Threads: %d)...", channel.value.upper(), max_threads)
 
-        url = f"{self.base_url}/{settings.META_PAGE_ID}/conversations"
-        params = {
-            "fields": "id,updated_time,participants",
-            "limit": 25,
-            "access_token": settings.META_PAGE_ACCESS_TOKEN,
-        }
-        if platform:
-            params["platform"] = platform
+        from app.models.connected_page import ConnectedPage
 
+        targets: list[dict[str, Any]] = []
+        if page_id:
+            brand = await self._resolve_brand_for_page(page_id)
+            token = access_token or settings.META_PAGE_ACCESS_TOKEN
+            if not token:
+                async with AsyncSessionLocal() as session:
+                    stmt = select(ConnectedPage).where(ConnectedPage.page_id == str(page_id).strip())
+                    cp = (await session.execute(stmt)).scalars().first()
+                    if cp:
+                        token = cp.decrypted_access_token
+            targets.append({
+                "page_id": str(page_id).strip(),
+                "access_token": token,
+                "brand": brand,
+            })
+        else:
+            async with AsyncSessionLocal() as session:
+                cps = (await session.execute(select(ConnectedPage).where(ConnectedPage.status == "ACTIVE"))).scalars().all()
+                for cp in cps:
+                    token = cp.decrypted_access_token or settings.META_PAGE_ACCESS_TOKEN
+                    if not token:
+                        continue
+                    if platform == "instagram" and cp.instagram_business_account_id:
+                        targets.append({
+                            "page_id": str(cp.instagram_business_account_id).strip(),
+                            "access_token": token,
+                            "brand": cp.name,
+                        })
+                    elif cp.page_id:
+                        targets.append({
+                            "page_id": str(cp.page_id).strip(),
+                            "access_token": token,
+                            "brand": cp.name,
+                        })
+
+            if not targets and settings.META_PAGE_ID and settings.META_PAGE_ACCESS_TOKEN:
+                targets.append({
+                    "page_id": str(settings.META_PAGE_ID).strip(),
+                    "access_token": settings.META_PAGE_ACCESS_TOKEN,
+                    "brand": await self._resolve_brand_for_page(settings.META_PAGE_ID),
+                })
+
+        known_account_ids = await self._get_known_account_ids()
         total_synced_threads = 0
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            while url and total_synced_threads < max_threads:
-                try:
-                    res = await client.get(url, params=params if "?" not in url else None)
-                    await self._inspect_rate_limits_and_throttle(res)
+        for target in targets:
+            tgt_page_id = target["page_id"]
+            tgt_token = target["access_token"]
+            tgt_brand = target["brand"]
+            url = f"{self.base_url}/{tgt_page_id}/conversations"
+            params = {
+                "fields": "id,updated_time,participants",
+                "limit": 25,
+                "access_token": tgt_token,
+            }
+            if platform:
+                params["platform"] = platform
 
-                    if res.status_code != 200:
-                        logger.warning(
-                            "[%s] Failed to fetch conversation page status=%s: %s",
-                            channel.value,
-                            res.status_code,
-                            res.text,
-                        )
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                while url and total_synced_threads < max_threads:
+                    try:
+                        res = await client.get(url, params=params if "?" not in url else None)
+                        await self._inspect_rate_limits_and_throttle(res)
+
+                        if res.status_code != 200:
+                            logger.warning(
+                                "[%s] Failed to fetch conversation page for %s status=%s: %s",
+                                channel.value,
+                                tgt_page_id,
+                                res.status_code,
+                                res.text,
+                            )
+                            break
+
+                        payload = res.json()
+                        threads = payload.get("data", [])
+                        if not threads:
+                            break
+
+                        for th in threads:
+                            thread_id = th.get("id")
+                            participants = th.get("participants", {}).get("data", [])
+
+                            customer_info = next(
+                                (
+                                    p
+                                    for p in participants
+                                    if str(p.get("id")) not in known_account_ids
+                                ),
+                                None,
+                            )
+                            if not customer_info:
+                                continue
+
+                            psid = str(customer_info.get("id"))
+                            name = (
+                                customer_info.get("name")
+                                or customer_info.get("username")
+                                or f"عميل {channel.value} ({psid[-4:]})"
+                            )
+
+                            await self._hydrate_thread_messages(
+                                client=client,
+                                thread_id=thread_id,
+                                external_user_id=psid,
+                                display_name=name,
+                                channel=channel,
+                                brand=tgt_brand,
+                                access_token=tgt_token,
+                                known_account_ids=known_account_ids,
+                            )
+                            total_synced_threads += 1
+
+                        url = payload.get("paging", {}).get("next")
+                        params = None
+                        await asyncio.sleep(0.5)
+
+                    except Exception as e:
+                        logger.error("[%s] Exception during thread discovery for %s: %s", channel.value, tgt_page_id, e)
                         break
-
-                    payload = res.json()
-                    threads = payload.get("data", [])
-                    if not threads:
-                        break
-
-                    ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
-
-                    for th in threads:
-                        thread_id = th.get("id")
-                        participants = th.get("participants", {}).get("data", [])
-
-                        customer_info = next(
-                            (
-                                p
-                                for p in participants
-                                if str(p.get("id")) != str(settings.META_PAGE_ID)
-                                and str(p.get("id")) != str(ig_account_id)
-                            ),
-                            None,
-                        )
-                        if not customer_info:
-                            continue
-
-                        psid = str(customer_info.get("id"))
-                        name = (
-                            customer_info.get("name")
-                            or customer_info.get("username")
-                            or f"عميل {channel.value} ({psid[-4:]})"
-                        )
-
-                        await self._hydrate_thread_messages(
-                            client=client,
-                            thread_id=thread_id,
-                            external_user_id=psid,
-                            display_name=name,
-                            channel=channel,
-                        )
-                        total_synced_threads += 1
-
-                    url = payload.get("paging", {}).get("next")
-                    params = None
-                    await asyncio.sleep(0.5)
-
-                except Exception as e:
-                    logger.error("[%s] Exception during thread discovery: %s", channel.value, e)
-                    break
 
         logger.info(
             "[%s] Historical sync completed. Processed %d threads.",
@@ -188,19 +286,46 @@ class MetaHistoricalSyncService:
             "attachments": attachments,
         }
 
-    async def harvest_all_instagram_conversations(self, max_threads: int = 100):
+    async def harvest_all_instagram_conversations(
+        self,
+        max_threads: int = 100,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ):
         """Phase 1 & Phase 2: Harvest all Instagram thread IDs and deeply hydrate all message payloads."""
         logger.info("=== [PHASE 1] HARVESTING ALL INSTAGRAM THREADS (Limit: %d) ===", max_threads)
-        url = f"{self.base_url}/{settings.META_PAGE_ID}/conversations"
+        from app.models.connected_page import ConnectedPage
+
+        tgt_page_id = str(page_id or settings.META_PAGE_ID or "").strip()
+        tgt_token = access_token or settings.META_PAGE_ACCESS_TOKEN
+        brand = None
+
+        if not tgt_token or not brand:
+            async with AsyncSessionLocal() as session:
+                stmt = select(ConnectedPage).where(
+                    or_(
+                        ConnectedPage.page_id == tgt_page_id,
+                        ConnectedPage.instagram_business_account_id == tgt_page_id,
+                    )
+                )
+                cp = (await session.execute(stmt)).scalars().first()
+                if cp:
+                    tgt_token = tgt_token or cp.decrypted_access_token
+                    brand = cp.name
+
+        if not brand:
+            brand = await self._resolve_brand_for_page(tgt_page_id)
+
+        url = f"{self.base_url}/{tgt_page_id}/conversations"
         params = {
             "platform": "instagram",
             "fields": "id,updated_time,participants",
             "limit": 25,
-            "access_token": settings.META_PAGE_ACCESS_TOKEN,
+            "access_token": tgt_token,
         }
 
         harvested_threads: list[dict[str, Any]] = []
-        ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
+        known_account_ids = await self._get_known_account_ids()
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             while url and len(harvested_threads) < max_threads:
@@ -223,8 +348,7 @@ class MetaHistoricalSyncService:
                             (
                                 p
                                 for p in participants
-                                if str(p.get("id")) != str(settings.META_PAGE_ID)
-                                and str(p.get("id")) != str(ig_account_id)
+                                if str(p.get("id")) not in known_account_ids
                             ),
                             participants[0] if participants else None,
                         )
@@ -258,14 +382,33 @@ class MetaHistoricalSyncService:
                     item["username"],
                     item["thread_id"],
                 )
-                await self._deep_hydrate_instagram_thread(client, item)
+                await self._deep_hydrate_instagram_thread(
+                    client,
+                    item,
+                    brand=brand,
+                    access_token=tgt_token,
+                    known_account_ids=known_account_ids,
+                )
                 await asyncio.sleep(0.5)
 
-    async def _deep_hydrate_instagram_thread(self, client: httpx.AsyncClient, thread_info: dict[str, Any]):
+    async def _deep_hydrate_instagram_thread(
+        self,
+        client: httpx.AsyncClient,
+        thread_info: dict[str, Any],
+        brand: Optional[str] = None,
+        access_token: Optional[str] = None,
+        known_account_ids: Optional[set[str]] = None,
+    ):
         """Phase 2: Hydrate single Instagram thread with full pagination and polymorphic parsing."""
         thread_id = thread_info["thread_id"]
         external_user_id = thread_info["user_id"]
         display_name = thread_info["username"]
+
+        if known_account_ids is None:
+            known_account_ids = await self._get_known_account_ids()
+        if brand is None:
+            brand = await self._resolve_brand_for_page(settings.META_PAGE_ID)
+        tgt_token = access_token or settings.META_PAGE_ACCESS_TOKEN
 
         async with AsyncSessionLocal() as session:
             id_stmt = select(CustomerIdentity).where(
@@ -316,17 +459,20 @@ class MetaHistoricalSyncService:
                     provider=ProviderEnum.META,
                     status=ConversationStatusEnum.OPEN,
                     priority="normal",
+                    brand=brand or "Default Business Page",
                     last_message_at=datetime.utcnow(),
                 )
                 session.add(conversation)
+                await session.flush()
+            elif brand and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
+                conversation.brand = brand
                 await session.flush()
 
             msg_url = f"{self.base_url}/{thread_id}"
             msg_params = {
                 "fields": "messages.limit(50){id,created_time,from,to,message,attachments{id,mime_type,file_url,image_data,video_data,target},shares{id,link,name}}",
-                "access_token": settings.META_PAGE_ACCESS_TOKEN,
+                "access_token": tgt_token,
             }
-            ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
 
             is_root = True
             while msg_url:
@@ -359,7 +505,7 @@ class MetaHistoricalSyncService:
                             continue
                         sender_id = str(m.get("from", {}).get("id", ""))
                         sender_username = m.get("from", {}).get("username", "")
-                        is_page = sender_id in [str(settings.META_PAGE_ID), str(ig_account_id)]
+                        is_page = sender_id in known_account_ids
 
                         created_dt = datetime.utcnow()
                         if m.get("created_time"):
@@ -424,20 +570,32 @@ class MetaHistoricalSyncService:
         external_user_id: str,
         display_name: str,
         channel: ChannelEnum,
+        brand: Optional[str] = None,
+        access_token: Optional[str] = None,
+        known_account_ids: Optional[set[str]] = None,
     ):
         """Paginate and ingest all historical messages for a thread across Messenger and Instagram."""
         if channel == ChannelEnum.INSTAGRAM:
             await self._deep_hydrate_instagram_thread(
                 client,
                 {"thread_id": thread_id, "user_id": external_user_id, "username": display_name},
+                brand=brand,
+                access_token=access_token,
+                known_account_ids=known_account_ids,
             )
             return
+
+        if known_account_ids is None:
+            known_account_ids = await self._get_known_account_ids()
+        if brand is None:
+            brand = await self._resolve_brand_for_page(settings.META_PAGE_ID)
+        tgt_token = access_token or settings.META_PAGE_ACCESS_TOKEN
 
         msg_url = f"{self.base_url}/{thread_id}/messages"
         msg_params = {
             "fields": "id,created_time,from,to,message,attachments{id,mime_type,file_url,image_data,video_data}",
             "limit": 50,
-            "access_token": settings.META_PAGE_ACCESS_TOKEN,
+            "access_token": tgt_token,
         }
 
         async with AsyncSessionLocal() as session:
@@ -489,12 +647,15 @@ class MetaHistoricalSyncService:
                     provider=ProviderEnum.META,
                     status=ConversationStatusEnum.OPEN,
                     priority="normal",
+                    brand=brand or "Default Business Page",
                     last_message_at=datetime.utcnow(),
                 )
                 session.add(conversation)
                 await session.flush()
+            elif brand and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
+                conversation.brand = brand
+                await session.flush()
 
-            ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
             is_first_request = True
 
             while msg_url:
@@ -521,7 +682,7 @@ class MetaHistoricalSyncService:
 
                         sender_id = str(m.get("from", {}).get("id", ""))
                         sender_name = m.get("from", {}).get("name", "")
-                        is_page = sender_id in [str(settings.META_PAGE_ID), str(ig_account_id)]
+                        is_page = sender_id in known_account_ids
                         text = m.get("message", "")
 
                         created_dt = datetime.utcnow()
