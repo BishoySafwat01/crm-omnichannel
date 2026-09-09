@@ -627,62 +627,213 @@ class MetaImportService:
                     or (sender_id_clean == getattr(settings, "META_APP_ID", ""))
                 )
 
-                # Early Echo & Self-Message Guard: Prevent infinite loops, self-customer creation, and profile fetching
+                # Early Echo & Self-Message Guard: Handle outbound agent echoes & prevent loops/self-customer creation
                 if is_echo or is_self_message:
                     target_mid = echo_mid or norm_event.external_message_id
                     target_text = echo_text or norm_event.text
                     target_cust_id = recipient_id_clean if (recipient_id_clean and recipient_id_clean not in valid_page_ids) else None
 
                     logger.info(
-                        "[Webhook Echo Guard] Filtered outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
+                        "[Webhook Echo Handler] Outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
                         target_mid,
                         sender_id_clean,
                         recipient_id_clean,
                         is_echo,
                     )
 
-                    if target_cust_id and target_mid:
-                        id_stmt = select(CustomerIdentity).where(
-                            CustomerIdentity.provider == ProviderEnum.META,
-                            CustomerIdentity.channel == norm_event.channel,
-                            CustomerIdentity.external_user_id == target_cust_id,
+                    # If recipient is missing or is also a page/system account, skip to avoid self-referential cycles
+                    if not target_cust_id:
+                        logger.info(
+                            "[Webhook Echo Guard] Filtered self-addressed or missing recipient: sender=%s, recipient=%s",
+                            sender_id_clean,
+                            recipient_id_clean,
                         )
-                        ident_res = await session.execute(id_stmt)
-                        identity = ident_res.scalars().first()
-                        if identity:
-                            conv_stmt = select(Conversation).where(
-                                Conversation.customer_id == identity.customer_id,
-                                Conversation.channel == norm_event.channel,
+                        last_result_status = "already_processed"
+                        last_result_msg_id = target_mid
+                        continue
+
+                    # 1. Deduplication by external_message_id
+                    if target_mid:
+                        existing_by_mid = (await session.execute(
+                            select(Message).where(Message.external_message_id == target_mid)
+                        )).scalar_one_or_none()
+                        if existing_by_mid:
+                            logger.info(
+                                "[Webhook Echo] Deduplicated: mid=%s already exists in DB (id=%s)",
+                                target_mid,
+                                existing_by_mid.id,
                             )
-                            conv = (await session.execute(conv_stmt)).scalars().first()
-                            if conv:
-                                existing_by_mid = (await session.execute(
-                                    select(Message).where(Message.external_message_id == target_mid)
-                                )).scalar_one_or_none()
+                            last_result_status = "already_processed"
+                            last_result_msg_id = str(existing_by_mid.id)
+                            continue
 
-                                if not existing_by_mid and target_text:
-                                    recent_agent_msg = (await session.execute(
-                                        select(Message)
-                                        .where(
-                                            Message.conversation_id == conv.id,
-                                            Message.sender_type == SenderTypeEnum.AGENT,
-                                            Message.text == target_text,
-                                        )
-                                        .order_by(Message.created_at.desc())
-                                        .limit(1)
-                                    )).scalar_one_or_none()
+                    # 2. Check if this echo matches a recently sent agent message awaiting mid confirmation
+                    id_stmt = select(CustomerIdentity).where(
+                        CustomerIdentity.provider == ProviderEnum.META,
+                        CustomerIdentity.channel == norm_event.channel,
+                        CustomerIdentity.external_user_id == target_cust_id,
+                    )
+                    ident_res = await session.execute(id_stmt)
+                    identity = ident_res.scalars().first()
+                    conv = None
+                    if identity:
+                        conv_stmt = select(Conversation).where(
+                            Conversation.customer_id == identity.customer_id,
+                            Conversation.channel == norm_event.channel,
+                        )
+                        conv = (await session.execute(conv_stmt)).scalars().first()
 
-                                    if recent_agent_msg:
-                                        recent_agent_msg.external_message_id = target_mid
-                                        await session.commit()
-                                        logger.info(
-                                            "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
-                                            target_mid,
-                                            recent_agent_msg.id,
-                                        )
+                    if conv and target_text:
+                        recent_agent_msg = (await session.execute(
+                            select(Message)
+                            .where(
+                                Message.conversation_id == conv.id,
+                                Message.sender_type == SenderTypeEnum.AGENT,
+                                Message.text == target_text,
+                            )
+                            .order_by(Message.created_at.desc())
+                            .limit(1)
+                        )).scalar_one_or_none()
 
-                    last_result_status = "already_processed"
-                    last_result_msg_id = target_mid
+                        if recent_agent_msg and (
+                            not recent_agent_msg.external_message_id
+                            or recent_agent_msg.external_message_id.startswith("tmp_")
+                        ):
+                            recent_agent_msg.external_message_id = target_mid
+                            await session.commit()
+                            logger.info(
+                                "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
+                                target_mid,
+                                recent_agent_msg.id,
+                            )
+                            last_result_status = "already_processed"
+                            last_result_msg_id = target_mid
+                            continue
+
+                    # 3. Native outbound agent reply sent outside CRM (e.g. via Instagram / Facebook app)
+                    # Resolve or create Customer & Identity for target_cust_id (the customer)
+                    customer, identity = await CustomerService.get_or_create_customer_with_identity(
+                        session=session,
+                        provider=ProviderEnum.META,
+                        channel=norm_event.channel,
+                        external_user_id=target_cust_id,
+                    )
+
+                    if not customer.avatar_url or customer.display_name == "عميل":
+                        asyncio.create_task(
+                            MetaImportService.enrich_customer_profile_background(
+                                customer_id=customer.id,
+                                sender_psid=target_cust_id,
+                            )
+                        )
+
+                    if not conv:
+                        conv = await ConversationService.get_or_create_conversation_for_identity(
+                            session=session,
+                            identity=identity,
+                        )
+
+                    connected_page = active_connected_pages.get(entry_page_id)
+                    if not connected_page:
+                        cp_single = (await session.execute(
+                            select(ConnectedPage).where(ConnectedPage.page_id == entry_page_id)
+                        )).scalar_one_or_none()
+                        if cp_single:
+                            connected_page = cp_single
+
+                    if connected_page and connected_page.name:
+                        brand_name = connected_page.name
+                    else:
+                        brand_name = settings.get_page_name(entry_page_id)
+
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page", f"Page {entry_page_id}")):
+                        conv.brand = brand_name
+                        await session.commit()
+
+                    attachments_list = norm_event.attachments
+                    first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
+                    single_att_url = (
+                        first_att.get("url")
+                        or first_att.get("payload", {}).get("url")
+                        or first_att.get("payload", {}).get("reel_video_url")
+                        or first_att.get("share", {}).get("link")
+                        or first_att.get("image_data", {}).get("url")
+                        or first_att.get("image_data", {}).get("preview_url")
+                    ) if first_att else None
+
+                    single_msg_type = norm_event.message_type
+                    if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
+                        single_msg_type = MessageTypeEnum.IMAGE
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.VIDEO
+
+                    outbound_metadata = {
+                        "direction": "OUTBOUND",
+                        "is_from_customer": False,
+                        "is_echo": True,
+                        "attachments": attachments_list,
+                        "media_url": single_att_url,
+                        "raw": item,
+                    }
+
+                    echo_msg = Message(
+                        conversation_id=conv.id,
+                        external_message_id=target_mid,
+                        sender_type=SenderTypeEnum.AGENT,
+                        sender_external_id=sender_id_clean,
+                        message_type=single_msg_type,
+                        text=target_text,
+                        created_at=norm_event.created_at,
+                        metadata_=outbound_metadata,
+                    )
+                    session.add(echo_msg)
+                    try:
+                        await session.commit()
+                        await session.refresh(echo_msg)
+                        created_count += 1
+                        last_result_status = "success"
+                        last_result_msg_id = str(echo_msg.id)
+
+                        if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
+                            conv.last_message_at = norm_event.created_at
+                            conv.updated_at = datetime.now(timezone.utc)
+                            await session.commit()
+
+                        try:
+                            from app.api.v1.ws import broadcast_realtime_event
+                            await broadcast_realtime_event(
+                                target="conversation",
+                                conversation_id=str(conv.id),
+                                payload={
+                                    "type": "NEW_MESSAGE",
+                                    "conversation_id": str(conv.id),
+                                    "brand": getattr(conv, "brand", None),
+                                    "message": {
+                                        "id": str(echo_msg.id),
+                                        "conversation_id": str(conv.id),
+                                        "external_message_id": echo_msg.external_message_id,
+                                        "sender_type": "agent",
+                                        "sender_external_id": echo_msg.sender_external_id,
+                                        "message_type": echo_msg.message_type.value if hasattr(echo_msg.message_type, "value") else str(echo_msg.message_type),
+                                        "text": echo_msg.text,
+                                        "media_url": single_att_url,
+                                        "created_at": echo_msg.created_at.isoformat(),
+                                        "delivery_status": "delivered",
+                                        "is_from_customer": False,
+                                        "direction": "OUTBOUND",
+                                        "attachments": attachments_list,
+                                        "brand": getattr(conv, "brand", None),
+                                    },
+                                },
+                            )
+                        except Exception as ws_err:
+                            logger.warning("Failed to broadcast outbound echo message over WebSocket: %s", str(ws_err))
+
+                        logger.info("✅ [Echo Persisted & Broadcast] Native agent reply saved for Conv %s (MID: %s)", conv.id, target_mid)
+                    except IntegrityError:
+                        await session.rollback()
+                        logger.info("[Webhook Echo] Duplicate message %s caught by unique constraint; skipping gracefully.", target_mid)
+
                     continue
 
                 if not norm_event.sender_psid or not norm_event.sender_psid.strip():
@@ -772,9 +923,13 @@ class MetaImportService:
                         att_type = att.get("type", norm_event.message_type) if isinstance(att, dict) else norm_event.message_type
                         if isinstance(att, dict) and (att.get("image_data") or (att.get("mime_type") or "").startswith("image/")):
                             att_type = "image"
+                        elif isinstance(att, dict) and any(k in str(att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                            att_type = "video"
                         att_url = (
                             att.get("url")
                             or att.get("payload", {}).get("url")
+                            or att.get("payload", {}).get("reel_video_url")
+                            or att.get("share", {}).get("link")
                             or att.get("image_data", {}).get("url")
                             or att.get("image_data", {}).get("preview_url")
                         ) if isinstance(att, dict) else None
@@ -839,13 +994,17 @@ class MetaImportService:
                     single_att_url = (
                         first_att.get("url")
                         or first_att.get("payload", {}).get("url")
+                        or first_att.get("payload", {}).get("reel_video_url")
+                        or first_att.get("share", {}).get("link")
                         or first_att.get("image_data", {}).get("url")
                         or first_att.get("image_data", {}).get("preview_url")
                     ) if first_att else None
 
                     single_msg_type = norm_event.message_type
                     if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
-                        single_msg_type = "image"
+                        single_msg_type = MessageTypeEnum.IMAGE
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.VIDEO
 
                     msg = Message(
                         conversation_id=conv.id,
