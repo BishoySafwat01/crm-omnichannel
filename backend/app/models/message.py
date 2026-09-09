@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Any, Optional
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Index, String, Text, UniqueConstraint, func, text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,5 +86,10 @@ class Message(Base):
             "conversation_id",
             "external_message_id",
             name="uq_message_conversation_ext_msg_id",
+        ),
+        Index(
+            "ix_messages_conv_created_asc",
+            "conversation_id",
+            sa_text("created_at ASC"),
         ),
     )
