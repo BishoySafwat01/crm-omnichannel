@@ -28,7 +28,7 @@ class MetaClient:
         db: Optional[AsyncSession] = None,
     ):
         self.page_id = page_id if page_id is not None else settings.META_PAGE_ID
-        self.access_token = access_token
+        self.access_token = access_token if access_token is not None else (settings.META_PAGE_ACCESS_TOKEN or None)
         self.api_version = api_version or settings.META_GRAPH_API_VERSION
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.timeout = timeout
@@ -238,9 +238,8 @@ class MetaClient:
         fields_list = subscribed_fields or [
             "messages",
             "messaging_postbacks",
-            "feed",
-            "message_deliveries",
-            "message_reads",
+            "messaging_referrals",
+            "message_echoes",
         ]
         fields_param = ",".join(fields_list) if isinstance(fields_list, list) else str(fields_list)
 

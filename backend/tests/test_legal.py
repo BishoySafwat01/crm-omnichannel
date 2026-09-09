@@ -9,8 +9,8 @@ async def test_privacy_policy_endpoint(async_client: AsyncClient):
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "Privacy Policy" in response.text
-    assert "LUXIRA CRM" in response.text
-    assert "bishoysafwat2004@gmail.com" in response.text
+    assert "LUXIRA" in response.text
+    assert "privacy@webluxira.com" in response.text
 
 
 @pytest.mark.asyncio
@@ -19,8 +19,8 @@ async def test_terms_of_service_endpoint(async_client: AsyncClient):
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "Terms of Service" in response.text
-    assert "LUXIRA CRM" in response.text
-    assert "bishoysafwat2004@gmail.com" in response.text
+    assert "LUXIRA" in response.text
+    assert "privacy@webluxira.com" in response.text
 
 
 @pytest.mark.asyncio
@@ -28,17 +28,17 @@ async def test_data_deletion_instructions_endpoint(async_client: AsyncClient):
     response = await async_client.get("/data-deletion")
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
-    assert "User Data Deletion Instructions" in response.text
-    assert "bishoysafwat2004@gmail.com" in response.text
-    assert "48 hours" in response.text or "48-Hour" in response.text
+    assert "User Data Deletion" in response.text
+    assert "privacy@webluxira.com" in response.text
+    assert "48" in response.text
 
 
 @pytest.mark.asyncio
 async def test_data_deletion_with_confirmation_id(async_client: AsyncClient):
-    response = await async_client.get("/data-deletion?id=test_code_12345")
+    response = await async_client.get("/data-deletion?code=test_code_12345")
     assert response.status_code == 200
     assert "test_code_12345" in response.text
-    assert "Data Deletion Request Recorded" in response.text
+    assert "Data Deletion Request Queued" in response.text
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,7 @@ async def test_meta_data_deletion_callback_post(async_client: AsyncClient):
     data = response.json()
     assert "url" in data
     assert "confirmation_code" in data
-    assert "/data-deletion?id=" in data["url"]
+    assert "/data-deletion?code=" in data["url"]
 
 
 @pytest.mark.asyncio

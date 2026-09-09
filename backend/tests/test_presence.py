@@ -74,14 +74,12 @@ async def test_message_service_updates_last_activity_at():
 
 
 @pytest.mark.asyncio
-async def test_api_conversations_includes_last_activity_at():
+async def test_api_conversations_includes_last_activity_at(async_client: AsyncClient):
     """Verify API endpoint GET /api/v1/conversations serializes last_activity_at in JSON payload."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.get("/api/v1/conversations")
-        assert res.status_code == 200
-        data = res.json()
-        assert "items" in data
-        if len(data["items"]) > 0:
-            item = data["items"][0]
-            assert "last_activity_at" in item
+    res = await async_client.get("/api/v1/conversations")
+    assert res.status_code == 200
+    data = res.json()
+    assert "items" in data
+    if len(data["items"]) > 0:
+        item = data["items"][0]
+        assert "last_activity_at" in item

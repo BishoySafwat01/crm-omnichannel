@@ -162,7 +162,6 @@ for origin in _default_cors:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -227,6 +226,7 @@ app.include_router(meta_oauth_router, prefix="/api/v1")
 app.include_router(beon_router, prefix="/api/v1")
 app.include_router(moderation_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/api")
 app.include_router(ws_router, prefix="/api/v1")
 
 # Admin Routers

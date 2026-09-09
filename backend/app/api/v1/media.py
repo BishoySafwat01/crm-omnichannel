@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_optional_current_user
+from app.api.deps import get_current_user, get_db
 from app.core.config import settings
-from app.api.deps import get_current_user
 from app.models.user import User
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/media", tags=["media"])
 logger = logging.getLogger("MediaProxy")
@@ -66,7 +66,6 @@ ALLOWED_DOMAIN_SUFFIXES = (
     "httpbin.org",
     "placeholder.com",
     "via.placeholder.com",
-    "localhost",
 )
 
 
@@ -90,6 +89,8 @@ def is_trusted_meta_url(target_url: str) -> bool:
 @router.post("/upload", summary="Upload Media Attachment")
 async def upload_media(
     file: UploadFile = File(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Upload media file for attachment relay in chat. Max 25 MB; MIME type allowlisted."""
@@ -155,7 +156,7 @@ async def upload_media(
         # Audit media upload if authenticated user
         if current_user:
             try:
-                client_ip = request.client.host if request.client else None
+                client_ip = request.client.host if (request and request.client) else None
                 await AuditService.log_action(
                     session=db,
                     user_id=current_user.id,

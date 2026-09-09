@@ -3,7 +3,8 @@ import logging
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +30,7 @@ class MetaOAuthLoginUrlResponse(BaseModel):
 class MetaOAuthCallbackRequest(BaseModel):
     code: str = Field(..., min_length=1, description="Authorization code returned by Meta dialog")
     state: str = Field(..., min_length=1, description="CSRF state parameter returned by Meta")
-    redirect_uri: str = Field(..., min_length=1, description="Exact redirect URI used in the initial authorization request")
+    redirect_uri: Optional[str] = Field(None, description="Exact redirect URI used in the initial authorization request")
 
 
 class ConnectedPageResponse(BaseModel):
@@ -39,6 +40,7 @@ class ConnectedPageResponse(BaseModel):
     category: Optional[str] = None
     instagram_business_account_id: Optional[str] = None
     status: str
+    is_active: bool = True
     is_webhook_subscribed: bool
     connected_by_user_id: Optional[uuid.UUID] = None
     created_at: datetime
@@ -55,16 +57,95 @@ class ConnectedPageResponse(BaseModel):
     summary="Generate Meta OAuth 2.0 Authorization URL",
 )
 async def get_meta_oauth_login_url(
+    request: Request,
     redirect_uri: Optional[str] = Query(
         None,
-        description="Optional explicit frontend callback URL. Defaults to frontend origin if omitted.",
+        description="Optional explicit frontend callback URL. Defaults to https://webluxira.com/api/v1/meta/oauth/callback if omitted.",
     ),
     current_user: User = Depends(require_admin),
 ) -> MetaOAuthLoginUrlResponse:
     """Generate signed CSRF state and return Meta authorization redirect URL (Superadmin / Admin only)."""
+    # Dynamic redirect URI resolution: default to https://webluxira.com/api/v1/meta/oauth/callback
+    resolved_redirect_uri = (
+        redirect_uri.strip()
+        if (redirect_uri and redirect_uri.strip())
+        else "https://webluxira.com/api/v1/meta/oauth/callback"
+    )
+
     state = MetaOAuthService.generate_oauth_state(user_id=current_user.id)
-    auth_url = MetaOAuthService.get_authorization_url(state=state, redirect_uri=redirect_uri)
+    auth_url = MetaOAuthService.get_authorization_url(state=state, redirect_uri=resolved_redirect_uri)
     return MetaOAuthLoginUrlResponse(authorization_url=auth_url, state=state)
+
+
+@router.get(
+    "/oauth/callback",
+    summary="Handle Meta OAuth 2.0 Browser Callback Redirect",
+)
+async def handle_meta_oauth_browser_redirect(
+    request: Request,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    error_code: Optional[str] = Query(None),
+    error_message: Optional[str] = Query(None),
+    error_description: Optional[str] = Query(None),
+):
+    """
+    Browser landing endpoint when Meta redirects user back from OAuth dialog.
+    Dispatches to parent window via postMessage if popup, or redirects to frontend app shell.
+    """
+    html_content = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Meta Authorization Callback - LUXIRA</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 24px; max-width: 340px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+    .spinner { width: 32px; height: 32px; border: 3px solid #334155; border-top: 3px solid #1877f2; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h3 style="margin:0 0 6px 0;font-size:15px;font-weight:700;">Authenticating with Meta...</h3>
+    <p style="margin:0;font-size:12px;color:#94a3b8;">Processing secure authorization and closing window...</p>
+  </div>
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var code = params.get('code');
+      var state = params.get('state');
+      var err = params.get('error_message') || params.get('error') || params.get('error_code') || params.get('error_description');
+      var isPopup = Boolean(window.opener && window.opener !== window);
+
+      if (isPopup) {
+        if (err) {
+          try {
+            window.opener.postMessage({ type: 'META_OAUTH_ERROR', error: err }, window.location.origin);
+          } catch(e) {}
+          window.close();
+          setTimeout(function() { window.close(); }, 100);
+        } else if (code && state) {
+          window.location.href = '/?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+        } else {
+          window.close();
+        }
+      } else {
+        if (err) {
+          window.location.href = '/channels?error=' + encodeURIComponent(err);
+        } else if (code && state) {
+          window.location.href = '/?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+        } else {
+          window.location.href = '/channels';
+        }
+      }
+    })();
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content)
 
 
 @router.post(
@@ -82,9 +163,14 @@ async def handle_meta_oauth_callback(
     MetaOAuthService.verify_oauth_state(state=payload.state, expected_user_id=current_user.id)
 
     # 2. Exchange code for user token (and upgrade to 60-day long-lived token)
+    effective_redirect_uri = (
+        payload.redirect_uri.strip()
+        if (payload.redirect_uri and payload.redirect_uri.strip())
+        else "https://webluxira.com/api/v1/meta/oauth/callback"
+    )
     long_lived_user_token = await MetaOAuthService.exchange_code_for_user_token(
         code=payload.code,
-        redirect_uri=payload.redirect_uri,
+        redirect_uri=effective_redirect_uri,
     )
 
     # 3. Fetch managed Facebook Pages and linked Instagram accounts

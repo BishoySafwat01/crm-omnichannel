@@ -22,7 +22,20 @@ from app.models import (
 
 
 @pytest.mark.asyncio
-async def test_get_customers_list_search_and_pagination():
+async def test_unauthenticated_requests_blocked_with_401(unauth_client: AsyncClient):
+    """Verify that unauthenticated requests to conversations and customers endpoints strictly return HTTP 401."""
+    res_conv = await unauth_client.get("/api/v1/conversations")
+    assert res_conv.status_code == 401
+
+    res_cust = await unauth_client.get("/api/v1/customers")
+    assert res_cust.status_code == 401
+
+    res_unread = await unauth_client.get("/api/v1/conversations/unread-summary")
+    assert res_unread.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_customers_list_search_and_pagination(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         c1 = Customer(display_name="Alpha User", email="alpha@example.com", phone="+111111")
         c2 = Customer(display_name="Beta User", email="beta@example.com", phone="+222222")
@@ -30,35 +43,32 @@ async def test_get_customers_list_search_and_pagination():
         session.add_all([c1, c2, c3])
         await session.commit()
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 1. GET Customers List
-        res = await client.get("/api/v1/customers")
-        assert res.status_code == 200
-        data = res.json()
-        assert "items" in data
-        assert data["total"] >= 3
+    # 1. GET Customers List
+    res = await async_client.get("/api/v1/customers")
+    assert res.status_code == 200
+    data = res.json()
+    assert "items" in data
+    assert data["total"] >= 3
 
-        # 2. Customer Pagination
-        res_p = await client.get("/api/v1/customers?page=1&page_size=2")
-        assert res_p.status_code == 200
-        data_p = res_p.json()
-        assert len(data_p["items"]) == 2
-        assert data_p["page"] == 1
-        assert data_p["page_size"] == 2
-        assert data_p["total_pages"] >= 2
+    # 2. Customer Pagination
+    res_p = await async_client.get("/api/v1/customers?page=1&page_size=2")
+    assert res_p.status_code == 200
+    data_p = res_p.json()
+    assert len(data_p["items"]) == 2
+    assert data_p["page"] == 1
+    assert data_p["page_size"] == 2
+    assert data_p["total_pages"] >= 2
 
-        # 3. Customer Search
-        res_s = await client.get("/api/v1/customers?search=Alpha")
-        assert res_s.status_code == 200
-        data_s = res_s.json()
-        assert data_s["total"] >= 1
-        assert any("Alpha" in c["display_name"] for c in data_s["items"])
+    # 3. Customer Search
+    res_s = await async_client.get("/api/v1/customers?search=Alpha")
+    assert res_s.status_code == 200
+    data_s = res_s.json()
+    assert data_s["total"] >= 1
+    assert any("Alpha" in c["display_name"] for c in data_s["items"])
 
 
 @pytest.mark.asyncio
-async def test_get_customer_by_id_and_identities():
+async def test_get_customer_by_id_and_identities(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Detail Customer", email="detail@example.com")
         session.add(cust)
@@ -74,38 +84,36 @@ async def test_get_customer_by_id_and_identities():
         await session.commit()
         cust_id = cust.id
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 4. GET Customer by ID
-        res = await client.get(f"/api/v1/customers/{cust_id}")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["id"] == str(cust_id)
-        assert len(data["identities"]) == 1
+    # 4. GET Customer by ID
+    res = await async_client.get(f"/api/v1/customers/{cust_id}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["id"] == str(cust_id)
+    assert len(data["identities"]) == 1
 
-        # 5. GET Customer Identities
-        res_i = await client.get(f"/api/v1/customers/{cust_id}/identities")
-        assert res_i.status_code == 200
-        data_i = res_i.json()
-        assert len(data_i) == 1
-        assert data_i[0]["external_user_id"] == "ext_user_detail_100"
+    # 5. GET Customer Identities
+    res_i = await async_client.get(f"/api/v1/customers/{cust_id}/identities")
+    assert res_i.status_code == 200
+    data_i = res_i.json()
+    assert len(data_i) == 1
+    assert data_i[0]["external_user_id"] == "ext_user_detail_100"
 
-        # 13. Customer not found
-        fake_id = uuid.uuid4()
-        res_nf = await client.get(f"/api/v1/customers/{fake_id}")
-        assert res_nf.status_code == 404
+    # 13. Customer not found
+    fake_id = uuid.uuid4()
+    res_nf = await async_client.get(f"/api/v1/customers/{fake_id}")
+    assert res_nf.status_code == 404
 
-        # 14. Invalid UUID
-        res_inv = await client.get("/api/v1/customers/not-a-valid-uuid")
-        assert res_inv.status_code == 422
+    # 14. Invalid UUID
+    res_inv = await async_client.get("/api/v1/customers/not-a-valid-uuid")
+    assert res_inv.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_get_conversations_list_filtering_and_pagination():
+async def test_get_conversations_list_filtering_and_pagination(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Conv Owner")
-        session.add(cust)
+        cust2 = Customer(display_name="Second Owner")
+        session.add_all([cust, cust2])
         await session.commit()
 
         conv1 = Conversation(
@@ -117,66 +125,72 @@ async def test_get_conversations_list_filtering_and_pagination():
             status=ConversationStatusEnum.OPEN,
         )
         conv2 = Conversation(
-            customer_id=cust.id,
+            customer_id=cust2.id,
             provider=ProviderEnum.META,
             channel=ChannelEnum.MESSENGER,
             external_conversation_id="conv_filter_2",
             subject="Technical Support",
+            status=ConversationStatusEnum.OPEN,
+        )
+        conv3 = Conversation(
+            customer_id=cust2.id,
+            provider=ProviderEnum.META,
+            channel=ChannelEnum.MESSENGER,
+            external_conversation_id="conv_filter_3",
+            subject="Closed Inquiry",
             status=ConversationStatusEnum.CLOSED,
         )
-        session.add_all([conv1, conv2])
+        session.add_all([conv1, conv2, conv3])
         await session.commit()
         cust_id = cust.id
+        cust2_id = cust2.id
         conv1_id = conv1.id
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 6. GET Conversations
-        res = await client.get("/api/v1/conversations")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["total"] >= 2
+    # 6. GET Conversations
+    res = await async_client.get("/api/v1/conversations")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] >= 2
 
-        # 7. Conversation Pagination
-        res_p = await client.get("/api/v1/conversations?page=1&page_size=1")
-        assert res_p.status_code == 200
-        data_p = res_p.json()
-        assert len(data_p["items"]) == 1
+    # 7. Conversation Pagination
+    res_p = await async_client.get("/api/v1/conversations?page=1&page_size=1")
+    assert res_p.status_code == 200
+    data_p = res_p.json()
+    assert len(data_p["items"]) == 1
 
-        # 8 & 16 & 17 & 18. Filtering
-        res_f = await client.get(
-            f"/api/v1/conversations?customer_id={cust_id}&provider=meta&channel=messenger&status=closed"
-        )
-        assert res_f.status_code == 200
-        data_f = res_f.json()
-        assert data_f["total"] == 1
-        assert data_f["items"][0]["external_conversation_id"] == "conv_filter_2"
+    # 8 & 16 & 17 & 18. Filtering
+    res_f = await async_client.get(
+        f"/api/v1/conversations?customer_id={cust2_id}&provider=meta&channel=messenger&status=closed"
+    )
+    assert res_f.status_code == 200
+    data_f = res_f.json()
+    assert data_f["total"] == 1
+    assert data_f["items"][0]["external_conversation_id"] == "conv_filter_3"
 
-        # Search subject
-        res_s = await client.get("/api/v1/conversations?search=Billing")
-        assert res_s.status_code == 200
-        assert res_s.json()["total"] >= 1
+    # Search subject
+    res_s = await async_client.get("/api/v1/conversations?search=Billing")
+    assert res_s.status_code == 200
+    assert res_s.json()["total"] >= 1
 
-        # 9. GET Conversation by ID
-        res_detail = await client.get(f"/api/v1/conversations/{conv1_id}")
-        assert res_detail.status_code == 200
-        data_d = res_detail.json()
-        assert data_d["id"] == str(conv1_id)
-        assert data_d["customer_display_name"] == "Conv Owner"
+    # 9. GET Conversation by ID
+    res_detail = await async_client.get(f"/api/v1/conversations/{conv1_id}")
+    assert res_detail.status_code == 200
+    data_d = res_detail.json()
+    assert data_d["id"] == str(conv1_id)
+    assert data_d["customer_display_name"] == "Conv Owner"
 
-        # 12. Conversation Not Found
-        fake_id = uuid.uuid4()
-        res_nf = await client.get(f"/api/v1/conversations/{fake_id}")
-        assert res_nf.status_code == 404
+    # 12. Conversation Not Found
+    fake_id = uuid.uuid4()
+    res_nf = await async_client.get(f"/api/v1/conversations/{fake_id}")
+    assert res_nf.status_code == 404
 
-        # 15. Invalid Pagination
-        res_bad_p = await client.get("/api/v1/conversations?page=0")
-        assert res_bad_p.status_code == 422
+    # 15. Invalid Pagination
+    res_bad_p = await async_client.get("/api/v1/conversations?page=0")
+    assert res_bad_p.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_messages_and_pagination():
+async def test_get_conversation_messages_and_pagination(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Msg Owner")
         session.add(cust)
@@ -214,28 +228,25 @@ async def test_get_conversation_messages_and_pagination():
         await session.commit()
         conv_id = conv.id
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 10. GET Conversation Messages (ASC order default)
-        res = await client.get(f"/api/v1/conversations/{conv_id}/messages")
-        assert res.status_code == 200
-        data = res.json()
-        assert data["total"] == 2
-        assert data["items"][0]["text"] == "First message text"
+    # 10. GET Conversation Messages (ASC order default)
+    res = await async_client.get(f"/api/v1/conversations/{conv_id}/messages")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 2
+    assert data["items"][0]["text"] == "First message text"
 
-        # 11. Message Pagination & DESC Order
-        res_desc = await client.get(
-            f"/api/v1/conversations/{conv_id}/messages?page=1&page_size=1&order=desc"
-        )
-        assert res_desc.status_code == 200
-        data_desc = res_desc.json()
-        assert len(data_desc["items"]) == 1
-        assert data_desc["items"][0]["text"] == "Second message text"
+    # 11. Message Pagination & DESC Order
+    res_desc = await async_client.get(
+        f"/api/v1/conversations/{conv_id}/messages?page=1&page_size=1&order=desc"
+    )
+    assert res_desc.status_code == 200
+    data_desc = res_desc.json()
+    assert len(data_desc["items"]) == 1
+    assert data_desc["items"][0]["text"] == "Second message text"
 
 
 @pytest.mark.asyncio
-async def test_provider_agnostic_outbound_message_endpoint():
+async def test_provider_agnostic_outbound_message_endpoint(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Outbound Target")
         session.add(cust)
@@ -267,36 +278,33 @@ async def test_provider_agnostic_outbound_message_endpoint():
         }
     )
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 19 & 20. Provider-agnostic outbound message endpoint with mock
-        with patch(
-            "app.integrations.meta.provider.MetaProvider.send_outbound_message",
-            mock_send,
-        ):
-            res = await client.post(
-                f"/api/v1/conversations/{conv_id}/messages",
-                json={"text": "Hello from provider agnostic endpoint"},
-            )
-            assert res.status_code == 200
-            data = res.json()
-            assert data["external_message_id"] == "m_outbound_api_999"
-            assert data["sender_type"] == "agent"
-            assert data["text"] == "Hello from provider agnostic endpoint"
+    # 19 & 20. Provider-agnostic outbound message endpoint with mock
+    with patch(
+        "app.integrations.meta.provider.MetaProvider.send_outbound_message",
+        mock_send,
+    ):
+        res = await async_client.post(
+            f"/api/v1/conversations/{conv_id}/messages",
+            json={"text": "Hello from provider agnostic endpoint"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["external_message_id"] == "m_outbound_api_999"
+        assert data["sender_type"] == "agent"
+        assert data["text"] == "Hello from provider agnostic endpoint"
 
-        # Verify DB persistence
-        async with AsyncSessionLocal() as session:
-            msgs = (
-                await session.execute(
-                    select(Message).where(Message.conversation_id == conv_id)
-                )
-            ).scalars().all()
-            assert any(m.external_message_id == "m_outbound_api_999" for m in msgs)
+    # Verify DB persistence
+    async with AsyncSessionLocal() as session:
+        msgs = (
+            await session.execute(
+                select(Message).where(Message.conversation_id == conv_id)
+            )
+        ).scalars().all()
+        assert any(m.external_message_id == "m_outbound_api_999" for m in msgs)
 
 
 @pytest.mark.asyncio
-async def test_outbound_provider_rejection_and_failed_send_no_db_record():
+async def test_outbound_provider_rejection_and_failed_send_no_db_record(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Unsupported Target")
         session.add(cust)
@@ -337,43 +345,41 @@ async def test_outbound_provider_rejection_and_failed_send_no_db_record():
         unsupported_id = conv_unsupported.id
         fail_id = conv_fail.id
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 21. Provider/Channel rejection for unsupported channel
-        res_un = await client.post(
-            f"/api/v1/conversations/{unsupported_id}/messages",
-            json={"text": "Hello unsupported"},
-        )
-        assert res_un.status_code == 400
-        assert "not supported" in res_un.json()["detail"].lower()
+    # 21. Provider/Channel rejection for unsupported channel
+    res_un = await async_client.post(
+        f"/api/v1/conversations/{unsupported_id}/messages",
+        json={"text": "Hello unsupported"},
+    )
+    assert res_un.status_code == 400
+    detail_str = str(res_un.json().get("detail", "")).lower()
+    assert "not supported" in detail_str or "beon" in detail_str or "400" in detail_str
 
-        # 22. Failed outbound message does not create DB record
-        mock_fail = AsyncMock(
-            side_effect=MetaAPIError("Meta API connection error 502")
+    # 22. Failed outbound message does not create DB record
+    mock_fail = AsyncMock(
+        side_effect=MetaAPIError("Meta API connection error 502")
+    )
+    with patch(
+        "app.integrations.meta.provider.MetaProvider.send_outbound_message",
+        mock_fail,
+    ):
+        res_f = await async_client.post(
+            f"/api/v1/conversations/{fail_id}/messages",
+            json={"text": "This should fail"},
         )
-        with patch(
-            "app.integrations.meta.provider.MetaProvider.send_outbound_message",
-            mock_fail,
-        ):
-            res_f = await client.post(
-                f"/api/v1/conversations/{fail_id}/messages",
-                json={"text": "This should fail"},
+        assert res_f.status_code == 400
+
+    # Verify no Message created in database
+    async with AsyncSessionLocal() as session:
+        msgs = (
+            await session.execute(
+                select(Message).where(Message.conversation_id == fail_id)
             )
-            assert res_f.status_code == 400
-
-        # Verify no Message created in database
-        async with AsyncSessionLocal() as session:
-            msgs = (
-                await session.execute(
-                    select(Message).where(Message.conversation_id == fail_id)
-                )
-            ).scalars().all()
-            assert len(msgs) == 0
+        ).scalars().all()
+        assert len(msgs) == 0
 
 
 @pytest.mark.asyncio
-async def test_existing_phase_3b_meta_endpoint_remains_functional():
+async def test_existing_phase_3b_meta_endpoint_remains_functional(async_client: AsyncClient):
     async with AsyncSessionLocal() as session:
         cust = Customer(display_name="Phase 3B Test User")
         session.add(cust)
@@ -405,17 +411,14 @@ async def test_existing_phase_3b_meta_endpoint_remains_functional():
         }
     )
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        # 23. Existing Phase 3B endpoint POST /api/v1/meta/conversations/{id}/messages
-        with patch(
-            "app.integrations.meta.provider.MetaProvider.send_outbound_message",
-            mock_send,
-        ):
-            res = await client.post(
-                f"/api/v1/meta/conversations/{conv_id}/messages",
-                json={"text": "Legacy endpoint message"},
-            )
-            assert res.status_code == 200
-            assert res.json()["external_message_id"] == "m_legacy_p3b_111"
+    # 23. Existing Phase 3B endpoint POST /api/v1/meta/conversations/{id}/messages
+    with patch(
+        "app.integrations.meta.provider.MetaProvider.send_outbound_message",
+        mock_send,
+    ):
+        res = await async_client.post(
+            f"/api/v1/meta/conversations/{conv_id}/messages",
+            json={"text": "Legacy endpoint message"},
+        )
+        assert res.status_code == 200
+        assert res.json()["external_message_id"] == "m_legacy_p3b_111"

@@ -291,6 +291,7 @@ export interface ConnectedPage {
   category?: string | null;
   instagram_business_account_id?: string | null;
   status: string;
+  is_active?: boolean;
   is_webhook_subscribed: boolean;
   connected_by_user_id?: string | null;
   created_at: string;

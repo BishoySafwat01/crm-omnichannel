@@ -36,7 +36,9 @@ async def test_meta_client_subscribe_page_success():
         assert "123456789/subscribed_apps" in mock_post.call_args[0][0]
         assert call_kwargs["params"]["access_token"] == "test_token_xyz"
         assert "messages" in call_kwargs["params"]["subscribed_fields"]
-        assert "feed" in call_kwargs["params"]["subscribed_fields"]
+        assert "messaging_postbacks" in call_kwargs["params"]["subscribed_fields"]
+        assert "messaging_referrals" in call_kwargs["params"]["subscribed_fields"]
+        assert "message_echoes" in call_kwargs["params"]["subscribed_fields"]
 
 
 @pytest.mark.asyncio
@@ -279,10 +281,14 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
     test_app = FastAPI()
 
     # Test 1: When credentials present, subscribe_page_to_app is called
-    with patch(
-        "app.integrations.meta.MetaClient.subscribe_page_to_app",
-        new_callable=AsyncMock,
-    ) as mock_sub:
+    with (
+        patch.object(settings, "META_PAGE_ACCESS_TOKEN", "mock_page_token"),
+        patch.object(settings, "META_PAGE_ID", "mock_page_id"),
+        patch(
+            "app.integrations.meta.MetaClient.subscribe_page_to_app",
+            new_callable=AsyncMock,
+        ) as mock_sub,
+    ):
         mock_sub.return_value = {"success": True, "details": {"success": True}, "error": None}
 
         async with lifespan(test_app):
@@ -292,10 +298,14 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
         mock_sub.assert_awaited()
 
     # Test 2: When credentials cause exception, lifespan starts and exits cleanly without crashing
-    with patch(
-        "app.integrations.meta.MetaClient.subscribe_page_to_app",
-        new_callable=AsyncMock,
-    ) as mock_sub_err:
+    with (
+        patch.object(settings, "META_PAGE_ACCESS_TOKEN", "mock_page_token"),
+        patch.object(settings, "META_PAGE_ID", "mock_page_id"),
+        patch(
+            "app.integrations.meta.MetaClient.subscribe_page_to_app",
+            new_callable=AsyncMock,
+        ) as mock_sub_err,
+    ):
         mock_sub_err.side_effect = RuntimeError("Network totally unreachable")
 
         async with lifespan(test_app):

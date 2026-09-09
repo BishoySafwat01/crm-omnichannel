@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_optional_current_user, require_admin
+from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
@@ -34,6 +34,7 @@ async def list_customers(
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     search: Optional[str] = Query(None, description="Search by name, email, or phone"),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve paginated list of normalized CRM customers with optional search filtering."""
     customers, total = await CustomerService.list_customers(
@@ -49,6 +50,7 @@ async def list_customers(
 )
 async def get_customer_locations(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     stmt_c = (
         select(distinct(Customer.country))
@@ -79,6 +81,7 @@ async def get_customer_locations(
 async def get_customer(
     customer_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve detailed information for a specific customer, including linked identities and CRM activity."""
     customer_data = await CustomerService.get_customer_detail_by_id(session=db, customer_id=customer_id)
@@ -98,6 +101,7 @@ async def get_customer(
 async def get_customer_identities(
     customer_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve all normalized platform identities for a specific customer."""
     identities = await CustomerService.get_customer_identities(
@@ -144,11 +148,6 @@ async def update_customer_tags(
     response_model=CustomerResponse,
     summary="Update Customer Information & Attributes",
 )
-@router.put(
-    "/{customer_id}",
-    response_model=CustomerResponse,
-    summary="Update Customer Information & Attributes",
-)
 @router.patch(
     "/{customer_id}",
     response_model=CustomerResponse,
@@ -157,8 +156,9 @@ async def update_customer_tags(
 async def update_customer(
     customer_id: uuid.UUID,
     payload: CustomerUpdate,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Update customer profile information (name, email, phone, location, tier, skin_type, stage)."""
     customer = await CustomerService.get_customer_by_id(session=db, customer_id=customer_id)
@@ -190,9 +190,9 @@ async def update_customer(
 
     # If changes occurred, log audit & timeline
     if changes:
-        user_id = current_user.id if current_user else None
-        user_name = current_user.full_name if current_user else "النظام"
-        client_ip = request.client.host if request and request.client else None
+        user_id = current_user.id
+        user_name = current_user.full_name or "النظام"
+        client_ip = request.client.host if (request and request.client) else None
 
         # 1. Immutable UserAuditLog
         try:
@@ -261,6 +261,7 @@ async def get_customer_timeline(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve paginated Customer 360 timeline events ordered by created_at DESC."""
     from app.services.customer_timeline_service import CustomerTimelineService
@@ -276,6 +277,7 @@ async def get_customer_timeline(
 async def get_customer_notes(
     customer_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve all internal notes for a customer."""
     from app.services.customer_timeline_service import CustomerTimelineService

@@ -218,7 +218,7 @@ class MessageService:
 
         if identity and identity.external_user_id:
             clean_recipient = identity.external_user_id.strip()
-        elif conv.external_conversation_id:
+        elif conv.external_conversation_id and conv.provider != ProviderEnum.META:
             clean_recipient = conv.external_conversation_id.strip()
         else:
             raise ValueError(

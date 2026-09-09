@@ -21,7 +21,7 @@ from app.schemas.social_comment import (
 )
 from app.services.comment_moderation_service import CommentModerationService
 
-router = APIRouter()
+router = APIRouter(prefix="/comments", tags=["comments"])
 
 
 COMMENT_AUTOMATIONS_STORE = [

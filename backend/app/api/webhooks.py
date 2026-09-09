@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.meta import receive_meta_webhook, verify_meta_webhook
 
-router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 router.add_api_route(
     "/meta",

@@ -138,11 +138,12 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     }, 60000);
 
     try {
+      const defaultCallback = 'https://webluxira.com/api/v1/meta/oauth/callback';
       const redirectUri =
         customRedirectUri ||
-        (typeof window !== 'undefined'
-          ? `${window.location.origin}${window.location.pathname}`
-          : '');
+        (typeof window !== 'undefined' && window.location.origin
+          ? `${window.location.origin}/api/v1/meta/oauth/callback`
+          : defaultCallback);
 
       if (typeof window !== 'undefined' && redirectUri) {
         sessionStorage.setItem('meta_oauth_redirect_uri', redirectUri);
@@ -191,12 +192,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         typeof window !== 'undefined'
           ? sessionStorage.getItem('meta_oauth_redirect_uri')
           : null;
+      const defaultCallback = 'https://webluxira.com/api/v1/meta/oauth/callback';
       const redirectUri =
         customRedirectUri ||
         storedRedirect ||
-        (typeof window !== 'undefined'
-          ? `${window.location.origin}${window.location.pathname}`
-          : '');
+        (typeof window !== 'undefined' && window.location.origin
+          ? `${window.location.origin}/api/v1/meta/oauth/callback`
+          : defaultCallback);
 
       // Resolve active bearer token with opener fallback
       let activeToken = tokenOverride;

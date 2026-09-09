@@ -23,6 +23,16 @@ DEFAULT_SCOPES = [
     "pages_messaging",
     "instagram_basic",
     "instagram_manage_messages",
+    "pages_manage_posts",
+    "pages_read_user_content",
+    "instagram_manage_comments",
+]
+
+DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
+    "messages",
+    "messaging_postbacks",
+    "messaging_referrals",
+    "message_echoes",
 ]
 
 
@@ -80,14 +90,19 @@ class MetaOAuthService:
         version = settings.META_GRAPH_API_VERSION or "v23.0"
         base_url = f"https://www.facebook.com/{version}/dialog/oauth"
 
+        effective_redirect = (
+            str(redirect_uri).strip()
+            if (redirect_uri and str(redirect_uri).strip())
+            else "https://webluxira.com/api/v1/meta/oauth/callback"
+        )
+
         params = {
             "client_id": str(app_id).strip(),
             "state": state,
             "scope": ",".join(DEFAULT_SCOPES),
             "response_type": "code",
+            "redirect_uri": effective_redirect,
         }
-        if redirect_uri:
-            params["redirect_uri"] = redirect_uri
 
         encoded_params = urllib.parse.urlencode(params)
         return f"{base_url}?{encoded_params}"
@@ -157,7 +172,7 @@ class MetaOAuthService:
         version = settings.META_GRAPH_API_VERSION or "v23.0"
         url = f"https://graph.facebook.com/{version}/me/accounts"
         params = {
-            "fields": "id,name,category,access_token,instagram_business_account",
+            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,profile_picture_url}",
             "access_token": long_lived_user_token,
             "limit": 100,
         }
@@ -188,20 +203,34 @@ class MetaOAuthService:
         return pages
 
     @classmethod
-    async def subscribe_page_to_webhooks(cls, page_id: str, page_token: str) -> bool:
+    async def subscribe_page_to_webhooks(
+        cls,
+        page_id: str,
+        page_token: str,
+        subscribed_fields: Optional[list[str] | str] = None,
+    ) -> bool:
         """
         Autonomous Webhook App Subscription:
         Sends POST https://graph.facebook.com/v23.0/{page_id}/subscribed_apps
-        with subscribed_fields=messages,messaging_postbacks,message_reads,message_deliveries
-        using Bearer page_token. Returns True on success, handles Meta errors cleanly without crashing.
+        with subscribed_fields=messages,messaging_postbacks,messaging_referrals,message_echoes
+        using the specific Page access_token.
+        Returns True on {"success": true}, sets is_webhook_subscribed = True, handles Meta errors cleanly.
         """
         if not page_id or not page_token:
             return False
 
         version = settings.META_GRAPH_API_VERSION or "v23.0"
         url = f"https://graph.facebook.com/{version}/{page_id}/subscribed_apps"
-        payload = {
-            "subscribed_fields": "messages,messaging_postbacks,message_reads,message_deliveries",
+
+        if subscribed_fields is None:
+            fields_str = ",".join(DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS)
+        elif isinstance(subscribed_fields, list):
+            fields_str = ",".join(subscribed_fields)
+        else:
+            fields_str = str(subscribed_fields)
+
+        params = {
+            "subscribed_fields": fields_str,
             "access_token": page_token,
         }
         headers = {
@@ -210,12 +239,12 @@ class MetaOAuthService:
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(url, data=payload, headers=headers)
+                resp = await client.post(url, params=params, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     success = bool(data.get("success", False)) if isinstance(data, dict) else False
                     if success:
-                        logger.info("Successfully subscribed page %s to webhooks.", page_id)
+                        logger.info("Successfully subscribed page %s to webhooks with fields: %s", page_id, fields_str)
                     else:
                         logger.warning("Page %s webhook subscription returned non-true response: %s", page_id, data)
                     return success
@@ -255,7 +284,13 @@ class MetaOAuthService:
             ig_account = pdata.get("instagram_business_account")
             ig_id = None
             if ig_account:
-                ig_id = str(ig_account.get("id")) if isinstance(ig_account, dict) else str(ig_account)
+                if isinstance(ig_account, dict):
+                    ig_id = str(ig_account.get("id", "")).strip() or None
+                    ig_username = ig_account.get("username")
+                    if ig_username:
+                        logger.info("Discovered linked Instagram Business Account: @%s (ID: %s) for Page %s", ig_username, ig_id, name)
+                else:
+                    ig_id = str(ig_account).strip() or None
 
             # Milestone 2: Autonomous Webhook App Subscription
             is_subscribed = False
@@ -276,6 +311,7 @@ class MetaOAuthService:
                 existing.category = category
                 existing.instagram_business_account_id = ig_id
                 existing.status = "ACTIVE"
+                existing.is_active = True
                 if is_subscribed:
                     existing.is_webhook_subscribed = True
                 existing.connected_by_user_id = user_id

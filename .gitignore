@@ -55,6 +55,7 @@ dist/
 # IDEs & System files
 .vscode/
 .idea/
+.gemini/
 *.swp
 *.swo
 .DS_Store

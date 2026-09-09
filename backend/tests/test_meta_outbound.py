@@ -68,10 +68,19 @@ async def test_outbound_unsupported_provider_and_channel_rejected():
         await session.commit()
 
         # Should route or fail gracefully
-        res = await MessageService.send_agent_reply(
-            session=session, conversation_id=conv_tiktok.id, text="Hello TikTok"
-        )
-        assert res is not None
+        with patch(
+            "app.integrations.beon.BeonOmnichannelProvider.send_outbound_message",
+            new_callable=AsyncMock,
+        ) as mock_send:
+            mock_send.return_value = {
+                "external_message_id": "beon_tiktok_msg_1",
+                "recipient_id": "tiktok_123",
+                "raw": {"status": 200},
+            }
+            res = await MessageService.send_agent_reply(
+                session=session, conversation_id=conv_tiktok.id, text="Hello TikTok"
+            )
+            assert res is not None
 
 
 @pytest.mark.asyncio

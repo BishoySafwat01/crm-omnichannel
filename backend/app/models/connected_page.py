@@ -58,3 +58,11 @@ class ConnectedPage(Base):
         from app.core.security import encrypt_token
         self.encrypted_access_token = encrypt_token(value)
 
+    @property
+    def is_active(self) -> bool:
+        return self.status == "ACTIVE"
+
+    @is_active.setter
+    def is_active(self, value: bool) -> None:
+        self.status = "ACTIVE" if value else "INACTIVE"
+
