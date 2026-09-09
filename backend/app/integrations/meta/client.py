@@ -411,8 +411,9 @@ class MetaClient:
                 db=active_db,
             )
         except MetaAPIError as exc:
-            # If tag is unapproved on Meta App dashboard (#100), retry with RESPONSE
-            if tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message):
+            # If tag is unapproved on Meta App dashboard (#100), retry with standard RESPONSE
+            if tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message or "tag" in exc.message.lower()):
+                logger.info("[MetaClient] Message tag '%s' rejected (%s). Retrying with messaging_type='RESPONSE'.", tag, exc.message)
                 fallback_payload = {
                     "recipient": {"id": recipient_id},
                     "messaging_type": "RESPONSE",
@@ -426,6 +427,26 @@ class MetaClient:
                     access_token=token,
                     db=active_db,
                 )
+            # If standard RESPONSE rejected because 24-hour window closed, attempt fallback with HUMAN_AGENT tag
+            elif not tag and ("24 hours" in exc.message.lower() or "2018001" in exc.message or "2018278" in exc.message or "outside the allowed window" in exc.message.lower()):
+                logger.info("[MetaClient] 24-hour window closed for recipient %s. Attempting fallback with HUMAN_AGENT tag.", recipient_id)
+                try:
+                    ha_payload = {
+                        "recipient": {"id": recipient_id},
+                        "messaging_type": "MESSAGE_TAG",
+                        "tag": "HUMAN_AGENT",
+                        "message": {"text": text},
+                    }
+                    return await self._request(
+                        "POST",
+                        f"/{target_page_id}/messages",
+                        json_data=ha_payload,
+                        page_id=target_page_id,
+                        access_token=token,
+                        db=active_db,
+                    )
+                except MetaAPIError:
+                    raise exc
             raise
 
     async def send_text_message(
@@ -534,9 +555,14 @@ class MetaClient:
                 except Exception:
                     pass
 
-                if tag and ("#100" in err_detail or "HUMAN_AGENT" in err_detail):
+                if tag and ("#100" in str(err_detail) or "HUMAN_AGENT" in str(err_detail) or "tag" in str(err_detail).lower()):
                     payload_data["messaging_type"] = "RESPONSE"
                     payload_data.pop("tag", None)
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        response = await client.post(url, data=payload_data, files=files)
+                elif not tag and ("24 hours" in str(err_detail).lower() or "2018001" in str(err_detail) or "2018278" in str(err_detail) or "outside the allowed window" in str(err_detail).lower()):
+                    payload_data["messaging_type"] = "MESSAGE_TAG"
+                    payload_data["tag"] = "HUMAN_AGENT"
                     async with httpx.AsyncClient(timeout=self.timeout) as client:
                         response = await client.post(url, data=payload_data, files=files)
 

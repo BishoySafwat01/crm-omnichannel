@@ -320,3 +320,108 @@ async def test_duplicate_external_message_id_does_not_create_duplicate():
             )
         ).scalars().all()
         assert len(msgs) == 1
+
+
+@pytest.mark.asyncio
+async def test_dynamic_page_resolution_from_connected_page_by_brand():
+    from app.models.connected_page import ConnectedPage
+    from app.core.security import encrypt_token
+
+    async with AsyncSessionLocal() as session:
+        # Create ConnectedPage with specific brand
+        brand_name = f"Brand_{uuid.uuid4().hex[:6]}"
+        test_page_id = f"page_{uuid.uuid4().hex[:8]}"
+        cp = ConnectedPage(
+            page_id=test_page_id,
+            name=brand_name,
+            encrypted_access_token=encrypt_token("test_page_access_token_123"),
+            status="ACTIVE",
+        )
+        session.add(cp)
+        await session.commit()
+
+        cust = Customer(display_name="Brand Customer")
+        session.add(cust)
+        await session.commit()
+
+        ident = CustomerIdentity(
+            customer_id=cust.id,
+            provider=ProviderEnum.META,
+            channel=ChannelEnum.MESSENGER,
+            external_user_id="psid_98765",
+        )
+        session.add(ident)
+
+        conv = Conversation(
+            customer_id=cust.id,
+            provider=ProviderEnum.META,
+            channel=ChannelEnum.MESSENGER,
+            external_conversation_id=f"t_brand_{uuid.uuid4().hex[:8]}",
+            brand=brand_name,
+        )
+        session.add(conv)
+        await session.commit()
+
+        mock_provider = MagicMock()
+        mock_provider.send_outbound_message = AsyncMock(
+            return_value={
+                "external_message_id": "m_brand_success",
+                "recipient_id": "psid_98765",
+                "raw": {"message_id": "m_brand_success"},
+            }
+        )
+
+        msg = await MessageService.send_agent_reply(
+            session=session,
+            conversation_id=conv.id,
+            text="Testing dynamic brand resolution",
+            provider_adapter=mock_provider,
+        )
+
+        assert msg.external_message_id == "m_brand_success"
+        # Assert provider was called with the resolved page_id from ConnectedPage
+        mock_provider.send_outbound_message.assert_called_once()
+        call_kwargs = mock_provider.send_outbound_message.call_args.kwargs
+        assert call_kwargs.get("page_id") == test_page_id
+        assert call_kwargs.get("tag") is None
+
+
+@pytest.mark.asyncio
+async def test_meta_client_messaging_type_response_and_unapproved_tag_fallback():
+    client = MetaClient(access_token="test_token_456", page_id="1302055352987458")
+
+    # 1. Default send_message should dispatch messaging_type: RESPONSE
+    mock_resp_success = MagicMock()
+    mock_resp_success.is_error = False
+    mock_resp_success.json.return_value = {"message_id": "m_resp_1", "recipient_id": "r1"}
+
+    with patch("httpx.AsyncClient.request", AsyncMock(return_value=mock_resp_success)) as mock_req:
+        res = await client.send_message(recipient_id="r1", text="Hello default RESPONSE")
+        assert res["message_id"] == "m_resp_1"
+        called_json = mock_req.call_args.kwargs.get("json")
+        assert called_json["messaging_type"] == "RESPONSE"
+        assert "tag" not in called_json
+
+    # 2. Tag send with unapproved tag error (#100) should automatically retry with RESPONSE
+    mock_resp_tag_fail = MagicMock()
+    mock_resp_tag_fail.is_error = True
+    mock_resp_tag_fail.status_code = 400
+    mock_resp_tag_fail.json.return_value = {
+        "error": {
+            "message": "(#100) The parameter messaging_type: MESSAGE_TAG requires tag",
+            "type": "OAuthException",
+            "code": 100,
+        }
+    }
+
+    with patch("httpx.AsyncClient.request", AsyncMock(side_effect=[mock_resp_tag_fail, mock_resp_success])) as mock_req_retry:
+        res = await client.send_message(recipient_id="r1", text="Hello tag retry", tag="HUMAN_AGENT")
+        assert res["message_id"] == "m_resp_1"
+        assert mock_req_retry.call_count == 2
+        first_payload = mock_req_retry.call_args_list[0].kwargs.get("json")
+        second_payload = mock_req_retry.call_args_list[1].kwargs.get("json")
+        assert first_payload["messaging_type"] == "MESSAGE_TAG"
+        assert first_payload["tag"] == "HUMAN_AGENT"
+        assert second_payload["messaging_type"] == "RESPONSE"
+        assert "tag" not in second_payload
+

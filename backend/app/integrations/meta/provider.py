@@ -179,7 +179,7 @@ class MetaProvider(BaseMessagingProvider):
         recipient_external_id: str,
         text: str,
         page_id: Optional[str] = None,
-        tag: Optional[str] = "HUMAN_AGENT",
+        tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -203,7 +203,7 @@ class MetaProvider(BaseMessagingProvider):
         file_path: str,
         attachment_type: str = "audio",
         page_id: Optional[str] = None,
-        tag: Optional[str] = "HUMAN_AGENT",
+        tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:

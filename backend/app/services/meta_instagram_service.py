@@ -10,13 +10,80 @@ class MetaInstagramService:
     GRAPH_API_VERSION = getattr(settings, "META_GRAPH_API_VERSION", "v23.0")
 
     @classmethod
-    async def send_text_message(cls, recipient_id: str, text: str) -> Dict[str, Any]:
+    async def send_text_message(
+        cls,
+        recipient_id: str,
+        text: str,
+        page_id: Optional[str] = None,
+        session: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """Send outbound text message to Instagram Direct recipient using Meta Graph API."""
         clean_id = recipient_id.strip()
         if clean_id.startswith("t_"):
             clean_id = clean_id[2:]
 
-        token = settings.META_PAGE_ACCESS_TOKEN
+        token = None
+        if session:
+            try:
+                from sqlalchemy import select, or_
+                from app.models.connected_page import ConnectedPage
+                if page_id:
+                    stmt = select(ConnectedPage).where(
+                        or_(
+                            ConnectedPage.page_id == str(page_id).strip(),
+                            ConnectedPage.instagram_business_account_id == str(page_id).strip(),
+                        ),
+                        ConnectedPage.status == "ACTIVE",
+                    )
+                    cp = (await session.execute(stmt)).scalars().first()
+                    if cp and cp.encrypted_access_token:
+                        token = cp.decrypted_access_token
+                if not token:
+                    stmt = select(ConnectedPage).where(
+                        ConnectedPage.instagram_business_account_id.isnot(None),
+                        ConnectedPage.status == "ACTIVE",
+                    ).limit(1)
+                    cp = (await session.execute(stmt)).scalars().first()
+                    if cp and cp.encrypted_access_token:
+                        token = cp.decrypted_access_token
+                if not token:
+                    stmt = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE").limit(1)
+                    cp = (await session.execute(stmt)).scalars().first()
+                    if cp and cp.encrypted_access_token:
+                        token = cp.decrypted_access_token
+            except Exception as exc:
+                logger.warning("[Instagram Send] DB token lookup failed: %s", exc)
+
+        if not token:
+            try:
+                from app.core.database import AsyncSessionLocal
+                from sqlalchemy import select, or_
+                from app.models.connected_page import ConnectedPage
+                async with AsyncSessionLocal() as eph_session:
+                    if page_id:
+                        stmt = select(ConnectedPage).where(
+                            or_(
+                                ConnectedPage.page_id == str(page_id).strip(),
+                                ConnectedPage.instagram_business_account_id == str(page_id).strip(),
+                            ),
+                            ConnectedPage.status == "ACTIVE",
+                        )
+                        cp = (await eph_session.execute(stmt)).scalars().first()
+                        if cp and cp.encrypted_access_token:
+                            token = cp.decrypted_access_token
+                    if not token:
+                        stmt = select(ConnectedPage).where(
+                            ConnectedPage.instagram_business_account_id.isnot(None),
+                            ConnectedPage.status == "ACTIVE",
+                        ).limit(1)
+                        cp = (await eph_session.execute(stmt)).scalars().first()
+                        if cp and cp.encrypted_access_token:
+                            token = cp.decrypted_access_token
+            except Exception:
+                pass
+
+        if not token:
+            token = settings.META_PAGE_ACCESS_TOKEN
 
         url = f"https://graph.facebook.com/{cls.GRAPH_API_VERSION}/me/messages"
         headers = {
