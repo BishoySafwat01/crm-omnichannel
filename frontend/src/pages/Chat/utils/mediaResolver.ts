@@ -14,6 +14,9 @@ export const getProxiedMediaUrl = (url: string | null | undefined): string => {
   if (url.startsWith('blob:') || url.startsWith('data:')) {
     return url;
   }
+  if (url.startsWith('/uploads/http://') || url.startsWith('/uploads/https://')) {
+    url = url.substring('/uploads/'.length);
+  }
   const rootBase = (API_BASE || '').replace(/\/api\/v1\/?$/, '');
   if (url.startsWith('/uploads/')) {
     return `${rootBase}${url}`;
