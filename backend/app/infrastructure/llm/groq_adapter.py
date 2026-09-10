@@ -18,25 +18,27 @@ class GroqAdapter:
     ) -> Dict[str, Any]:
         """
         Adapts the LLMProviderPort interface to invoke the Groq cascade client.
-        Extracts pre-formatted messages if supplied in kwargs or reconstructs from transcript.
+
+        Args:
+            transcript (str): Serialized conversation transcript string.
+            brand_name (str): Tenant/brand identifier for context.
+            **kwargs:
+                messages (List[Dict[str, str]], optional): Structured message list
+                    with schema [{"sender": str, "text": str}, ...]. Universally
+                    supplied by AIService.analyze_conversation.
+
+        Returns:
+            Dict[str, Any]: Dict containing summary, intent, sentiment, and suggested replies.
         """
         messages: Optional[List[Dict[str, str]]] = kwargs.get("messages")
 
+        # In standard CRM operation, AIService universally supplies structured messages.
+        # If omitted by an external caller, gracefully fallback to single-turn transcript payload.
         if messages is None:
-            messages = []
-            if transcript:
-                for line in transcript.strip().split("\n"):
-                    line = line.strip()
-                    if line.startswith("[") and "]:" in line:
-                        parts = line[1:].split("]:", 1)
-                        messages.append({
-                            "sender": parts[0].strip(),
-                            "text": parts[1].strip(),
-                        })
-                    elif line:
-                        messages.append({
-                            "sender": "customer",
-                            "text": line,
-                        })
+            messages = (
+                [{"sender": "customer", "text": transcript.strip()}]
+                if transcript and transcript.strip()
+                else []
+            )
 
         return await analyze_with_groq_cascade(messages=messages, brand_name=brand_name)
