@@ -28,15 +28,25 @@ const DEFAULT_BRANDING: PortalBranding = {
 interface PortalBrandingState {
   branding: PortalBranding;
   isLoading: boolean;
+  isSaving: boolean;
   error: string | null;
+  saveSuccess: boolean;
   fetchBranding: () => Promise<void>;
+  updateBranding: (payload: Partial<PortalBranding>) => Promise<void>;
   applyBrandingToDom: (data: PortalBranding) => void;
+  clearSaveState: () => void;
 }
 
 export const usePortalBrandingStore = create<PortalBrandingState>((set, get) => ({
   branding: DEFAULT_BRANDING,
   isLoading: false,
+  isSaving: false,
   error: null,
+  saveSuccess: false,
+
+  clearSaveState: () => {
+    set({ saveSuccess: false, error: null });
+  },
 
   applyBrandingToDom: (data: PortalBranding) => {
     if (typeof document === 'undefined') return;
@@ -78,4 +88,31 @@ export const usePortalBrandingStore = create<PortalBrandingState>((set, get) => 
       get().applyBrandingToDom(DEFAULT_BRANDING);
     }
   },
+
+  updateBranding: async (payload: Partial<PortalBranding>) => {
+    set({ isSaving: true, error: null, saveSuccess: false });
+    try {
+      const res = await fetch(`${API_BASE}/portal/branding`, {
+        method: 'PATCH',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${res.status}`);
+      }
+
+      const updatedData: PortalBranding = await res.json();
+      set({ branding: updatedData, isSaving: false, saveSuccess: true });
+      get().applyBrandingToDom(updatedData);
+    } catch (err: any) {
+      set({ isSaving: false, error: err?.message || 'Failed to update branding', saveSuccess: false });
+      throw err;
+    }
+  },
 }));
+

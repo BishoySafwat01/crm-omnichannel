@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Globe,
   Layers,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
@@ -29,8 +30,8 @@ import luxiraLogo from '../../assets/luxira-logo.png';
 import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
-  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels') => void;
+  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings';
+  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
@@ -164,7 +165,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   // Main navigation tabs ordered by workflow priority
   const navItems: {
-    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments';
+    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments' | 'settings';
     label: string;
     icon: React.ReactNode;
   }[] = [
@@ -175,6 +176,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
     { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+    { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -211,9 +213,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 <button
                   key={item.id}
                   onClick={() => setActiveMainView(item.id)}
+                  style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
                   className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
                     isActive
-                      ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
+                      ? 'text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium rounded-xl px-3.5 py-1.5 transition-colors'
                   }`}
                 >

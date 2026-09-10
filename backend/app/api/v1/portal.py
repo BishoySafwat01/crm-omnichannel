@@ -2,12 +2,12 @@ import logging
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_optional_current_user
+from app.api.deps import get_optional_current_user, require_admin
 from app.core.database import get_db
 from app.models.user import User
 from app.models.workspace import DEFAULT_WORKSPACE_ID, Workspace
@@ -27,6 +27,14 @@ class PortalBrandingResponse(BaseModel):
     theme_primary_color: str = "#1A73E8"
     canned_responses: Optional[dict[str, Any]] = None
     custom_domain: Optional[str] = None
+
+
+class PortalBrandingUpdateRequest(BaseModel):
+    brand_display_name: Optional[str] = Field(None, max_length=255)
+    brand_logo_url: Optional[str] = Field(None, max_length=500)
+    favicon_url: Optional[str] = Field(None, max_length=500)
+    theme_primary_color: Optional[str] = Field(None, max_length=20)
+    canned_responses: Optional[dict[str, Any]] = None
 
 
 @router.get(
@@ -110,3 +118,65 @@ async def get_portal_branding(
         canned_responses=None,
         custom_domain=None,
     )
+
+
+@router.patch(
+    "/branding",
+    response_model=PortalBrandingResponse,
+    summary="Update enterprise portal branding & theme settings",
+)
+async def update_portal_branding(
+    payload: PortalBrandingUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> PortalBrandingResponse:
+    """Updates division / workspace branding parameters for the active corporate portal."""
+    workspace_id = current_user.workspace_id or DEFAULT_WORKSPACE_ID
+
+    stmt = select(Workspace).where(Workspace.id == workspace_id)
+    res = await db.execute(stmt)
+    workspace = res.scalar_one_or_none()
+
+    if not workspace:
+        # Fallback to default workspace
+        stmt = select(Workspace).where(Workspace.id == DEFAULT_WORKSPACE_ID)
+        res = await db.execute(stmt)
+        workspace = res.scalar_one_or_none()
+
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Corporate workspace not found.",
+        )
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if "theme_primary_color" in update_data and not update_data["theme_primary_color"]:
+        update_data["theme_primary_color"] = "#1A73E8"
+
+    for field, value in update_data.items():
+        if hasattr(workspace, field):
+            setattr(workspace, field, value)
+
+    await db.commit()
+    await db.refresh(workspace)
+
+    logger.info(
+        "Updated portal branding for workspace %s (%s) by admin user %s: %s",
+        workspace.id,
+        workspace.name,
+        current_user.id,
+        list(update_data.keys()),
+    )
+
+    return PortalBrandingResponse(
+        workspace_id=workspace.id,
+        workspace_name=workspace.name,
+        workspace_slug=workspace.slug,
+        brand_display_name=workspace.brand_display_name or "مجموعة لوكسيرا - نظام إدارة العملاء الموحد",
+        brand_logo_url=workspace.brand_logo_url,
+        favicon_url=workspace.favicon_url,
+        theme_primary_color=workspace.theme_primary_color or "#1A73E8",
+        canned_responses=workspace.canned_responses,
+        custom_domain=workspace.custom_domain,
+    )
+
