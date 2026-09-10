@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Lock, Mail, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
 import luxiraLogo from '../../assets/luxira-logo.png';
 
 export const LoginModal: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuthStore();
+  const { branding } = usePortalBrandingStore();
 
   const [email, setEmail] = useState('admin@luxira.com');
   const [password, setPassword] = useState('admin123456');
@@ -21,15 +23,22 @@ export const LoginModal: React.FC = () => {
       <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl border border-slate-100 space-y-6 animate-in fade-in zoom-in-95 duration-200">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-950 to-slate-900 p-2.5 flex items-center justify-center shadow-xl shadow-teal-900/20 border border-teal-500/30">
-            <img src={luxiraLogo} alt="LUXIRA HOLDING" className="w-11 h-11 object-contain drop-shadow-md" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-950 to-slate-900 p-2.5 flex items-center justify-center shadow-xl shadow-teal-900/20 border border-teal-500/30 overflow-hidden">
+            <img
+              src={branding.brand_logo_url || luxiraLogo}
+              alt={branding.brand_display_name || "LUXIRA HOLDING"}
+              className="w-11 h-11 object-contain drop-shadow-md"
+            />
           </div>
           <div>
             <div className="flex items-center justify-center gap-1.5">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">LUXIRA</h2>
-              <span className="text-xl font-bold text-teal-600 tracking-wide">HOLDING</span>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                {branding.brand_display_name || "LUXIRA HOLDING"}
+              </h2>
             </div>
-            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">Omnichannel CRM System</p>
+            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">
+              {branding.workspace_name && branding.workspace_name !== 'Default Organization' ? branding.workspace_name : 'Omnichannel CRM System'}
+            </p>
           </div>
         </div>
 

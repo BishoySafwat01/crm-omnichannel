@@ -16,8 +16,12 @@ import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
 import { MetaOAuthCallbackHandler } from './components/oauth/MetaOAuthCallbackHandler';
+import { usePortalBranding } from './hooks/usePortalBranding';
 
 export const App: React.FC = () => {
+  // Initialize Enterprise Multi-Brand Dynamic Theme & Metadata
+  usePortalBranding();
+
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
   });
