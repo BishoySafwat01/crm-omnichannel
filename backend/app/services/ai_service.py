@@ -13,10 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class AIService:
-    """Enterprise AI Engine Service for CRM Copilot Intelligence with Decoupled LLM Provider."""
+    """
+    Enterprise AI Engine Service for CRM Copilot Intelligence.
 
-    def __init__(self, llm_provider: Optional[LLMProviderPort] = None) -> None:
-        self.llm_provider: LLMProviderPort = llm_provider or GroqAdapter()
+    Operates statelessly following Clean Architecture principles.
+    Accepts an optional LLMProviderPort via method dependency injection for test mocking
+    and dynamic provider swapping, defaulting to GroqAdapter.
+    """
 
     @classmethod
     async def analyze_conversation(
@@ -28,8 +31,12 @@ class AIService:
         """
         Analyzes recent conversation transcript using configured LLMProviderPort
         (defaulting to GroqAdapter) with automatic fallback to local rule-based NLP engine.
+
+        Stateless Dependency Injection:
+            Pass `llm_provider` to override the default GroqAdapter with an alternative
+            adapter or mock implementation during testing.
         """
-        provider = llm_provider or GroqAdapter()
+        provider: LLMProviderPort = llm_provider or GroqAdapter()
 
         stmt = (
             select(Message)
