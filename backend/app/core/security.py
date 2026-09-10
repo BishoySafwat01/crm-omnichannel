@@ -22,6 +22,8 @@ except ImportError:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if not plain_password or not hashed_password:
+        return False
     try:
         if HAS_BCRYPT and hashed_password.startswith(("$2b$", "$2a$", "$2y$")):
             pwd_bytes = plain_password.encode("utf-8")
@@ -37,10 +39,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
                     "sha256", plain_password.encode("utf-8"), salt, 100000
                 ).hex()
                 return hmac.compare_digest(computed, target_hash)
-        computed_sha = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
-        if hmac.compare_digest(computed_sha, hashed_password):
-            return True
-        return plain_password == hashed_password
+        return False
     except Exception:
         return False
 

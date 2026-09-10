@@ -26,7 +26,6 @@ ALLOWED_MIME_TYPES: dict[str, str] = {
     "image/png": ".png",
     "image/gif": ".gif",
     "image/webp": ".webp",
-    "image/svg+xml": ".svg",
     # Audio
     "audio/mpeg": ".mp3",
     "audio/mp3": ".mp3",

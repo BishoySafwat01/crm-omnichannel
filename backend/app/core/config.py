@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     # Provider Switching & BeOn V3 Omnichannel Settings
     ENABLE_DIRECT_META: bool = False
     DEFAULT_PROVIDER: str = "BEON"
-    BEON_API_KEY: str = "ZUiczQBL4Ymh7E6qjkNS"
+    BEON_API_KEY: str = ""
     BEON_API_BASE_URL: str = "https://v3.api.beon.chat/api"
     BEON_WEBHOOK_SECRET: str | None = None
     BEON_SYNC_INTERVAL_SECONDS: int = 15
@@ -124,10 +124,13 @@ class Settings(BaseSettings):
     @classmethod
     def validate_secret_key(cls, v: str, info: Any) -> str:
         _INSECURE_DEFAULT = "change_this_to_a_secure_random_secret_key_in_production"
-        if not v or v == _INSECURE_DEFAULT:
-            env = (info.data or {}).get("ENVIRONMENT", "development")
-            if env not in ("development", "testing"):
-                return "4d71c9b69a027039bb284cdb829124970205d60a4eb031a566285cbbab984925"
+        env = (info.data or {}).get("ENVIRONMENT", "development")
+        if env not in ("development", "testing"):
+            if not v or v == _INSECURE_DEFAULT:
+                raise ValueError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_KEY must be securely configured in production! "
+                    "Cannot use empty or default insecure key."
+                )
         return v
 
     @field_validator("CORS_ORIGINS", mode="before")

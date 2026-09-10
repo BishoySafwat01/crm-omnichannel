@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -112,11 +113,84 @@ async def lifespan(app: FastAPI):
                 logger.exception("[SLAEngine] Unhandled exception in SLA evaluation loop")
             await asyncio.sleep(30)
 
-    auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
-    meta_task = asyncio.create_task(meta_sync_loop())
-    sla_task = asyncio.create_task(sla_eval_loop())
-    interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
-    beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
+    # Multi-Worker Safe Background Tasks Coordination via Redis Leader Lock
+    worker_id = f"worker_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    leader_lock_key = "crm:leader_lock"
+    leader_lock_ttl = 60
+    is_leader = False
+    leader_tasks: list[asyncio.Task] = []
+    heartbeat_task: asyncio.Task | None = None
+
+    def start_leader_tasks():
+        nonlocal leader_tasks
+        if leader_tasks:
+            return
+        logger.info("👑 [LeaderElection] Worker %s starting singleton background tasks...", worker_id)
+        auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
+        meta_task = asyncio.create_task(meta_sync_loop())
+        sla_task = asyncio.create_task(sla_eval_loop())
+        interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
+        beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
+        leader_tasks = [auto_sub_task, meta_task, sla_task, beon_task]
+
+    def stop_leader_tasks():
+        nonlocal leader_tasks
+        for t in leader_tasks:
+            if not t.done():
+                t.cancel()
+        leader_tasks = []
+
+    async def leader_heartbeat_loop():
+        nonlocal is_leader
+        while True:
+            await asyncio.sleep(20)
+            try:
+                r = await get_redis_client()
+                if is_leader:
+                    current_holder = await r.get(leader_lock_key)
+                    if current_holder == worker_id:
+                        await r.expire(leader_lock_key, leader_lock_ttl)
+                    else:
+                        logger.warning(
+                            "[LeaderElection] Worker %s lost leader lock to %s. Stopping singleton background tasks.",
+                            worker_id,
+                            current_holder,
+                        )
+                        is_leader = False
+                        stop_leader_tasks()
+                else:
+                    acquired = await r.set(leader_lock_key, worker_id, nx=True, ex=leader_lock_ttl)
+                    if acquired:
+                        is_leader = True
+                        logger.info("👑 [LeaderElection] Worker %s promoted to leader.", worker_id)
+                        start_leader_tasks()
+            except Exception as exc:
+                logger.warning("[LeaderElection] Redis heartbeat check error: %s", exc)
+
+    # Initial Leader Election Attempt
+    try:
+        r = await get_redis_client()
+        acquired = await r.set(leader_lock_key, worker_id, nx=True, ex=leader_lock_ttl)
+        if acquired:
+            is_leader = True
+            logger.info("👑 [LeaderElection] Worker %s acquired initial leader lock.", worker_id)
+            start_leader_tasks()
+        else:
+            current_leader = await r.get(leader_lock_key)
+            logger.info(
+                "[LeaderElection] Worker %s operating as follower (Active Leader: %s). Background polling delegated to leader.",
+                worker_id,
+                current_leader,
+            )
+    except Exception as exc:
+        logger.warning(
+            "[LeaderElection] Redis unavailable on startup (%s). Defaulting to standalone leader mode.",
+            exc,
+        )
+        is_leader = True
+        start_leader_tasks()
+
+    heartbeat_task = asyncio.create_task(leader_heartbeat_loop())
 
     from app.api.v1.ws import start_redis_listener
     redis_listener_task = asyncio.create_task(start_redis_listener())
@@ -124,14 +198,24 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    auto_sub_task.cancel()
-    meta_task.cancel()
-    sla_task.cancel()
-    beon_task.cancel()
+    if heartbeat_task:
+        heartbeat_task.cancel()
+    stop_leader_tasks()
     redis_listener_task.cancel()
-    await asyncio.gather(
-        auto_sub_task, meta_task, sla_task, beon_task, redis_listener_task, return_exceptions=True
-    )
+
+    try:
+        r = await get_redis_client()
+        current_holder = await r.get(leader_lock_key)
+        if current_holder == worker_id:
+            await r.delete(leader_lock_key)
+    except Exception:
+        pass
+
+    all_shutdown_tasks = [t for t in leader_tasks] + [redis_listener_task]
+    if heartbeat_task:
+        all_shutdown_tasks.append(heartbeat_task)
+    if all_shutdown_tasks:
+        await asyncio.gather(*all_shutdown_tasks, return_exceptions=True)
     await close_redis_client()
 
 
