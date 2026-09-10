@@ -272,6 +272,32 @@ class ConversationService:
         res = await session.execute(stmt)
         conversations = list(res.scalars().all())
 
+        # Batch load the latest message for each conversation in a single round-trip (PERF-01)
+        latest_msg_map: dict[uuid.UUID, Message] = {}
+        conv_ids = [conv.id for conv in conversations]
+        if conv_ids:
+            rn_col = (
+                func.row_number()
+                .over(
+                    partition_by=Message.conversation_id,
+                    order_by=(Message.created_at.desc(), Message.id.desc()),
+                )
+                .label("rn")
+            )
+            subq = (
+                select(Message.id.label("mid"), rn_col)
+                .where(Message.conversation_id.in_(conv_ids))
+                .subquery()
+            )
+            msg_stmt = (
+                select(Message)
+                .join(subq, Message.id == subq.c.mid)
+                .where(subq.c.rn == 1)
+            )
+            msg_res = await session.execute(msg_stmt)
+            for m in msg_res.scalars().all():
+                latest_msg_map[m.conversation_id] = m
+
         items = []
         for conv in conversations:
             cust = conv.customer
@@ -280,13 +306,7 @@ class ConversationService:
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
             prio = getattr(conv, 'priority', "normal") or "normal"
-            msg_stmt = (
-                select(Message)
-                .where(Message.conversation_id == conv.id)
-                .order_by(Message.created_at.desc(), Message.id.desc())
-                .limit(1)
-            )
-            latest_msg = (await session.execute(msg_stmt)).scalars().first()
+            latest_msg = latest_msg_map.get(conv.id)
             last_sender_type = None
             if latest_msg:
                 last_sender_type = str(latest_msg.sender_type.value if hasattr(latest_msg.sender_type, "value") else latest_msg.sender_type)

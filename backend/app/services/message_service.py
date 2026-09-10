@@ -124,7 +124,7 @@ class MessageService:
 
     @staticmethod
     async def list_messages_for_conversation(
-        session: AsyncSession, conversation_id: uuid.UUID
+        session: AsyncSession, conversation_id: uuid.UUID, limit: Optional[int] = 100
     ) -> list[Message]:
         stmt = (
             select(Message)
@@ -132,6 +132,8 @@ class MessageService:
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at.asc())
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
