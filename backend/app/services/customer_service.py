@@ -24,11 +24,13 @@ class CustomerService:
         display_name: Optional[str] = None,
         email: Optional[str] = None,
         phone: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Customer:
         customer = Customer(
             display_name=display_name,
             email=email,
             phone=phone,
+            workspace_id=workspace_id,
         )
         session.add(customer)
         await session.commit()
@@ -472,11 +474,16 @@ class CustomerService:
         email: Optional[str] = None,
         phone: Optional[str] = None,
         metadata_: Optional[dict[str, Any]] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> tuple[Customer, CustomerIdentity]:
         existing_customer = await CustomerService.find_customer_by_identity(
             session, provider, channel, external_user_id
         )
         if existing_customer:
+            if workspace_id and not existing_customer.workspace_id:
+                existing_customer.workspace_id = workspace_id
+                session.add(existing_customer)
+                await session.flush()
             stmt = select(CustomerIdentity).where(
                 CustomerIdentity.customer_id == existing_customer.id,
                 CustomerIdentity.provider == provider,
@@ -487,7 +494,12 @@ class CustomerService:
             identity = res.scalar_one()
             return existing_customer, identity
 
-        customer = Customer(display_name=display_name, email=email, phone=phone)
+        customer = Customer(
+            display_name=display_name,
+            email=email,
+            phone=phone,
+            workspace_id=workspace_id,
+        )
         session.add(customer)
         await session.flush()
 

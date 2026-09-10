@@ -20,8 +20,11 @@ from app.models.migration import MigrationJob
 from app.models.raw_event import RawEvent
 from app.models.social_comment import CommentModerationLog, CommentModerationSetting, SocialComment
 from app.models.user import User
+from app.models.workspace import DEFAULT_WORKSPACE_ID, Workspace
 
 __all__ = [
+    "Workspace",
+    "DEFAULT_WORKSPACE_ID",
     "ConnectedPage",
     "Customer",
     "CustomerIdentity",

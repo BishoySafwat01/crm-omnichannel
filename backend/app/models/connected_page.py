@@ -15,6 +15,12 @@ class ConnectedPage(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     page_id: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, nullable=False
     )

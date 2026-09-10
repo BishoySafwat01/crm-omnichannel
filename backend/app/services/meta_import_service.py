@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.integrations.meta import MetaAPIError, MetaNormalizer, MetaProvider
 from app.models import (
+    DEFAULT_WORKSPACE_ID,
     ChannelEnum,
     ConnectedPage,
     Conversation,
@@ -620,6 +621,24 @@ class MetaImportService:
                     logger.warning("Meta webhook: ignoring entry for ID '%s' (valid IDs: %s)", entry_page_id, valid_page_ids)
                     continue
 
+            # Resolve ConnectedPage workspace_id context for inbound event routing
+            pid_clean = entry_page_id.strip()
+            entry_workspace_id = None
+            if pid_clean in active_connected_pages and active_connected_pages[pid_clean].workspace_id:
+                entry_workspace_id = active_connected_pages[pid_clean].workspace_id
+            elif pid_clean:
+                stmt_lookup = select(ConnectedPage).where(
+                    or_(
+                        ConnectedPage.page_id == pid_clean,
+                        ConnectedPage.instagram_business_account_id == pid_clean,
+                    )
+                )
+                cp_found = (await session.execute(stmt_lookup)).scalars().first()
+                if cp_found and cp_found.workspace_id:
+                    entry_workspace_id = cp_found.workspace_id
+            if not entry_workspace_id:
+                entry_workspace_id = DEFAULT_WORKSPACE_ID
+
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
             items = []
             channel_hint = ChannelEnum.MESSENGER
@@ -895,6 +914,7 @@ class MetaImportService:
                     provider=ProviderEnum.META,
                     channel=norm_event.channel,
                     external_user_id=norm_event.sender_psid,
+                    workspace_id=entry_workspace_id,
                 )
 
                 if norm_event.sender_name and (not customer.display_name or customer.display_name == "عميل"):
@@ -922,6 +942,7 @@ class MetaImportService:
                     session=session,
                     identity=identity,
                     brand=brand_name,
+                    workspace_id=entry_workspace_id,
                 )
 
                 if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
@@ -1215,6 +1236,7 @@ class MetaImportService:
                         "param": None,
                         "token": token,
                         "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
                     })
                     platforms.append({
                         "name": f"instagram_{pid}",
@@ -1223,6 +1245,7 @@ class MetaImportService:
                         "param": "instagram",
                         "token": token,
                         "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
                     })
                 if cp.instagram_business_account_id:
                     ig_id = str(cp.instagram_business_account_id).strip()
@@ -1234,6 +1257,7 @@ class MetaImportService:
                         "param": None,
                         "token": token,
                         "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
                     })
 
         # Safe fallback if no ConnectedPage in DB but settings exist
@@ -1250,6 +1274,7 @@ class MetaImportService:
                 "param": None,
                 "token": settings.META_PAGE_ACCESS_TOKEN,
                 "brand": brand_fallback,
+                "workspace_id": DEFAULT_WORKSPACE_ID,
             })
             platforms.append({
                 "name": f"instagram_{pid}",
@@ -1258,6 +1283,7 @@ class MetaImportService:
                 "param": "instagram",
                 "token": settings.META_PAGE_ACCESS_TOKEN,
                 "brand": brand_fallback,
+                "workspace_id": DEFAULT_WORKSPACE_ID,
             })
             if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
                 ig_id = str(settings.INSTAGRAM_ACCOUNT_ID).strip()
@@ -1268,6 +1294,7 @@ class MetaImportService:
                     "param": None,
                     "token": settings.META_PAGE_ACCESS_TOKEN,
                     "brand": brand_fallback,
+                    "workspace_id": DEFAULT_WORKSPACE_ID,
                 })
 
         if not platforms:
@@ -1322,11 +1349,13 @@ class MetaImportService:
                         )
                         identity = (await session.execute(id_stmt)).scalars().first()
 
+                        plat_ws_id = plat.get("workspace_id") or DEFAULT_WORKSPACE_ID
                         if not identity:
                             customer = Customer(
                                 id=uuid.uuid4(),
                                 display_name=name,
                                 avatar_url=None,
+                                workspace_id=plat_ws_id,
                             )
                             session.add(customer)
                             await session.flush()
@@ -1347,6 +1376,10 @@ class MetaImportService:
                         if not customer:
                             continue
 
+                        if plat_ws_id and not customer.workspace_id:
+                            customer.workspace_id = plat_ws_id
+                            session.add(customer)
+
                         # 2. Resolve or Create Conversation
                         conv_stmt = select(Conversation).where(
                             Conversation.customer_id == customer.id,
@@ -1365,12 +1398,21 @@ class MetaImportService:
                                 priority="normal",
                                 subject=f"{plat['name'].capitalize()} Conversation {ext_conv_id or psid}",
                                 brand=plat.get("brand") or "Default Business Page",
-                                last_message_at=datetime.utcnow()
+                                last_message_at=datetime.utcnow(),
+                                workspace_id=plat_ws_id,
                             )
                             session.add(conversation)
                             await session.flush()
-                        elif plat.get("brand") and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
-                            conversation.brand = plat["brand"]
+                        else:
+                            modified = False
+                            if plat.get("brand") and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
+                                conversation.brand = plat["brand"]
+                                modified = True
+                            if plat_ws_id and not conversation.workspace_id:
+                                conversation.workspace_id = plat_ws_id
+                                modified = True
+                            if modified:
+                                await session.flush()
 
                         # 3. Ingest Messages & Update Denormalized Preview Fields
                         msgs_data = conv_data.get("messages", {}).get("data", [])

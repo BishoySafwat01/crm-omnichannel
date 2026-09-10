@@ -75,6 +75,9 @@ async def get_current_user(
             detail="Inactive user account.",
         )
 
+    # Attach workspace tenant context to request state
+    request.state.workspace_id = user.workspace_id
+
     return user
 
 
@@ -87,6 +90,13 @@ async def get_optional_current_user(
         return await get_current_user(request=request, db=db, token=token)
     except HTTPException:
         return None
+
+
+async def get_current_workspace_id(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> Optional[uuid.UUID]:
+    return current_user.workspace_id
 
 
 async def require_admin(

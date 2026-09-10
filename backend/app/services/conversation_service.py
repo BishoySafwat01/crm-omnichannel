@@ -21,6 +21,7 @@ class ConversationService:
         subject: Optional[str] = None,
         status: ConversationStatusEnum = ConversationStatusEnum.OPEN,
         brand: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Conversation:
         conversation = Conversation(
             customer_id=customer_id,
@@ -30,6 +31,7 @@ class ConversationService:
             subject=subject,
             status=status,
             brand=brand or "Default Business Page",
+            workspace_id=workspace_id,
         )
         session.add(conversation)
         await session.commit()
@@ -42,6 +44,7 @@ class ConversationService:
         identity: CustomerIdentity,
         subject: Optional[str] = None,
         brand: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Conversation:
         # First check if customer ALREADY has an existing conversation thread
         stmt_cust = (
@@ -53,8 +56,14 @@ class ConversationService:
         res_cust = await session.execute(stmt_cust)
         existing_cust_conv = res_cust.scalar_one_or_none()
         if existing_cust_conv:
+            modified = False
             if brand and (not existing_cust_conv.brand or existing_cust_conv.brand in ("LAVVA", "Default Business Page") or str(existing_cust_conv.brand).startswith("Page ")):
                 existing_cust_conv.brand = brand
+                modified = True
+            if workspace_id and not existing_cust_conv.workspace_id:
+                existing_cust_conv.workspace_id = workspace_id
+                modified = True
+            if modified:
                 await session.flush()
             return existing_cust_conv
 
@@ -66,8 +75,14 @@ class ConversationService:
             external_conversation_id=ext_conv_id,
         )
         if existing:
+            modified = False
             if brand and (not existing.brand or existing.brand in ("LAVVA", "Default Business Page") or str(existing.brand).startswith("Page ")):
                 existing.brand = brand
+                modified = True
+            if workspace_id and not existing.workspace_id:
+                existing.workspace_id = workspace_id
+                modified = True
+            if modified:
                 await session.flush()
             return existing
 
@@ -79,6 +94,7 @@ class ConversationService:
             external_conversation_id=ext_conv_id,
             subject=subject or f"Conversation ({identity.external_user_id})",
             brand=brand,
+            workspace_id=workspace_id,
         )
 
     @staticmethod
