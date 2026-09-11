@@ -1,12 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Layers,
-  Facebook,
   Radio,
   Plug,
   RefreshCw,
   CheckCircle2,
-  Clock,
   AlertCircle,
   Copy,
   Check,
@@ -14,51 +11,37 @@ import {
   Lock,
   Loader2,
   Instagram,
-  Sparkles,
   X,
   MessageSquare,
   Globe,
   Send,
-  Search,
-  Trash2,
-  Power,
   Zap,
-  Tag,
-  ExternalLink,
-  ChevronDown,
+  Facebook,
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { useChannelsStore } from '../../store/useChannelsStore';
-import { useBrandStore } from '../../store/useBrandStore';
 import { metaApi } from '../../services/api';
+import { MetaChannelsSettings } from '../../components/settings/MetaChannelsSettings';
 
 type ChannelsTab = 'pages' | 'providers' | 'webhooks';
 
 export const ChannelsPage: React.FC = () => {
   const { user } = useAuthStore();
   const isAdmin = isAdminUser(user);
-  const brands = useBrandStore((state) => state.brands);
 
   const {
     connectedPages,
     isLoadingPages,
     isConnecting,
-    actionLoadingMap,
     error,
     successMessage,
     fetchConnectedPages,
     initiateMetaConnect,
     cancelMetaConnect,
-    subscribePageWebhook,
-    togglePageStatus,
-    disconnectPage,
-    syncPageHistory,
     clearFeedback,
   } = useChannelsStore();
 
   const [activeTab, setActiveTab] = useState<ChannelsTab>('pages');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
   const [copiedVerifyToken, setCopiedVerifyToken] = useState(false);
 
@@ -67,19 +50,6 @@ export const ChannelsPage: React.FC = () => {
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [testPingLoading, setTestPingLoading] = useState<Record<string, boolean>>({});
   const [testPingFeedback, setTestPingFeedback] = useState<Record<string, string>>({});
-
-  // Page-to-Brand association mapping (saved in localStorage for persistence)
-  const [pageBrandMap, setPageBrandMap] = useState<Record<string, string>>(() => {
-    try {
-      const stored = localStorage.getItem('crm_page_brand_associations');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  // Disconnect confirmation modal state
-  const [pageToDelete, setPageToDelete] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (isAdmin) {
@@ -122,22 +92,6 @@ export const ChannelsPage: React.FC = () => {
     }
   };
 
-  const handleBrandChange = (pageId: string, brandId: string) => {
-    const updated = { ...pageBrandMap, [pageId]: brandId };
-    setPageBrandMap(updated);
-    try {
-      localStorage.setItem('crm_page_brand_associations', JSON.stringify(updated));
-    } catch {}
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-    }
-  };
-
   const copyWebhookInfo = (text: string, type: 'url' | 'token') => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(text);
@@ -150,17 +104,6 @@ export const ChannelsPage: React.FC = () => {
       }
     }
   };
-
-  const filteredPages = useMemo(() => {
-    if (!searchQuery.trim()) return connectedPages;
-    const q = searchQuery.toLowerCase();
-    return connectedPages.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.page_id.toLowerCase().includes(q) ||
-        (p.category && p.category.toLowerCase().includes(q))
-    );
-  }, [connectedPages, searchQuery]);
 
   // Strict RBAC Protection: Non-Admins blocked
   if (!isAdmin) {
@@ -196,7 +139,7 @@ export const ChannelsPage: React.FC = () => {
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center font-bold shadow-lg">
+              <div className="w-10 h-10 rounded-2xl bg-theme-primary text-white flex items-center justify-center font-bold shadow-lg">
                 <Radio className="w-5 h-5 text-white animate-pulse" />
               </div>
               <div>
@@ -341,9 +284,9 @@ export const ChannelsPage: React.FC = () => {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveTab('pages')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'pages'
-              ? 'bg-[#1877F2] text-white shadow-md shadow-blue-500/20'
+              ? 'bg-theme-primary text-white shadow-md shadow-theme-primary/20'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
@@ -353,9 +296,9 @@ export const ChannelsPage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('providers')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'providers'
-              ? 'bg-teal-600 text-white shadow-md shadow-teal-500/20'
+              ? 'bg-theme-primary text-white shadow-md shadow-theme-primary/20'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
@@ -365,9 +308,9 @@ export const ChannelsPage: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('webhooks')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer ${
             activeTab === 'webhooks'
-              ? 'bg-slate-900 text-white shadow-md'
+              ? 'bg-theme-primary text-white shadow-md shadow-theme-primary/20'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
@@ -378,246 +321,7 @@ export const ChannelsPage: React.FC = () => {
 
       {/* TAB 1: Connected Facebook Pages */}
       {activeTab === 'pages' && (
-        <div className="space-y-4">
-          {/* Subheader & Search filter */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="البحث باسم الصفحة أو معرف Page ID..."
-                className="w-full bg-white border border-slate-200/80 rounded-2xl pr-10 pl-4 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1877F2]/20 focus:border-[#1877F2] shadow-2xs"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 font-medium">
-                يتم تحديث البيانات وتشفير المفاتيح لحظياً في قاعدة البيانات
-              </span>
-            </div>
-          </div>
-
-          {/* Page Cards Grid */}
-          {isLoadingPages && connectedPages.length === 0 ? (
-            <div className="p-16 text-center bg-white border border-slate-200/80 rounded-3xl space-y-3">
-              <Loader2 className="w-8 h-8 text-[#1877F2] animate-spin mx-auto" />
-              <p className="text-xs text-slate-500 font-bold">جارٍ تحميل قائمة الصفحات المتصلة...</p>
-            </div>
-          ) : filteredPages.length === 0 ? (
-            <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center space-y-4 shadow-xs">
-              <div className="w-16 h-16 rounded-3xl bg-blue-50 text-[#1877F2] mx-auto flex items-center justify-center">
-                <Facebook className="w-8 h-8 fill-[#1877F2]" />
-              </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h3 className="text-sm font-extrabold text-slate-800">
-                  {searchQuery ? 'لا توجد صفحات مطابقة لنتيجة البحث' : 'لا توجد صفحات فيسبوك متصلة حتى الآن'}
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  {searchQuery
-                    ? 'جرب البحث بمعرف أو اسم مختلف.'
-                    : 'ابدأ بالضغط على زر "ربط صفحة فيسبوك جديدة" أعلاه لفتح نافذة OAuth الآمنة واختيار الصفحات المصرح بها.'}
-                </p>
-              </div>
-
-              {!searchQuery && (
-                <button
-                  onClick={() => initiateMetaConnect()}
-                  disabled={isConnecting}
-                  className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold rounded-xl shadow-md transition inline-flex items-center gap-2"
-                >
-                  <Plug className="w-4 h-4" />
-                  <span>بدء عملية الربط الآن</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {filteredPages.map((page) => {
-                const isSubscribed = page.is_webhook_subscribed;
-                const isActive = page.status === 'ACTIVE';
-                const isSubscribing = actionLoadingMap[`sub_${page.page_id}`];
-                const isStatusToggling = actionLoadingMap[`status_${page.page_id}`];
-                const isSyncing = actionLoadingMap[`sync_${page.page_id}`];
-                const isDeleting = actionLoadingMap[`del_${page.page_id}`];
-                const selectedBrand = pageBrandMap[page.page_id] || 'LAVVA';
-
-                return (
-                  <div
-                    key={page.id}
-                    className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all space-y-4 flex flex-col justify-between relative overflow-hidden"
-                  >
-                    {/* Top Row: Avatar, Page Name, Category & Status Pill */}
-                    <div>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#1877F2] shrink-0 font-bold shadow-2xs">
-                            <Facebook className="w-6 h-6 fill-[#1877F2]" />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                              {page.name}
-                            </h3>
-                            <span className="text-[11px] text-slate-400 font-medium">
-                              {page.category || 'Business Page'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Status Toggle Badge */}
-                        <button
-                          onClick={() => togglePageStatus(page.page_id, page.status)}
-                          disabled={isStatusToggling}
-                          className={`text-[11px] px-3 py-1 rounded-full font-extrabold flex items-center gap-1.5 transition border cursor-pointer ${
-                            isActive
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                          }`}
-                          title="اضغط لتغيير حالة تشغيل الصفحة"
-                        >
-                          {isStatusToggling ? (
-                            <Loader2 className="w-3 h-3 animate-spin text-slate-600" />
-                          ) : (
-                            <Power className={`w-3 h-3 ${isActive ? 'text-emerald-500' : 'text-slate-400'}`} />
-                          )}
-                          <span>{isActive ? 'نشط (Active)' : 'معطل (Inactive)'}</span>
-                        </button>
-                      </div>
-
-                      {/* Detail Metrics & IDs */}
-                      <div className="mt-4 pt-3.5 border-t border-slate-100 space-y-2 text-xs text-slate-600">
-                        {/* Page ID with quick copy */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400 text-[11px]">معرف الصفحة (Page ID):</span>
-                          <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/60">
-                            <span>{page.page_id}</span>
-                            <button
-                              onClick={() => copyToClipboard(page.page_id, page.id)}
-                              className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-white transition"
-                              title="نسخ معرف الصفحة"
-                            >
-                              {copiedId === page.id ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Linked Instagram Account if exists */}
-                        {page.instagram_business_account_id && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-400 text-[11px] flex items-center gap-1">
-                              <Instagram className="w-3 h-3 text-pink-600" />
-                              حساب إنستغرام المرتبط:
-                            </span>
-                            <span className="font-mono text-[11px] font-bold text-pink-700 bg-pink-50 px-2 py-0.5 rounded-md border border-pink-100">
-                              {page.instagram_business_account_id}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Webhook Subscription Status */}
-                        <div className="flex items-center justify-between pt-0.5">
-                          <span className="text-slate-400 text-[11px]">اشتراك الويب هـوك:</span>
-                          {isSubscribed ? (
-                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span>مفعّل تلقائياً (Subscribed)</span>
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              <span>معلق (Pending Subscription)</span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Brand Association Selector */}
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                          <span className="text-slate-400 text-[11px] flex items-center gap-1">
-                            <Tag className="w-3 h-3 text-slate-400" />
-                            ربط العلامة التجارية (Brand):
-                          </span>
-                          <select
-                            value={selectedBrand}
-                            onChange={(e) => handleBrandChange(page.page_id, e.target.value)}
-                            className="bg-slate-50 text-[11px] font-bold text-slate-700 px-2.5 py-1 rounded-xl border border-slate-200 focus:outline-none cursor-pointer"
-                          >
-                            {brands.filter((b) => b.id !== 'all').map((b) => (
-                              <option key={b.id} value={b.name}>
-                                {b.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action Controls: Sync Webhook, Pull History & Disconnect */}
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Sync Webhook Button */}
-                        <button
-                          onClick={() => subscribePageWebhook(page.page_id)}
-                          disabled={isSubscribing}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-xl transition flex items-center gap-1.5 border border-slate-200/80 disabled:opacity-50"
-                          title="تحديث وإعادة تفعيل اشتراك الويب هـوك عبر Meta Graph API"
-                        >
-                          {isSubscribing ? (
-                            <Loader2 className="w-3 h-3 animate-spin text-slate-600" />
-                          ) : (
-                            <RefreshCw className="w-3 h-3 text-slate-500" />
-                          )}
-                          <span>تحديث الويب هـوك</span>
-                        </button>
-
-                        {/* Pull History Button */}
-                        <button
-                          onClick={() => syncPageHistory(page.page_id)}
-                          disabled={isSyncing}
-                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1877F2] text-[11px] font-bold rounded-xl transition flex items-center gap-1.5 border border-blue-200/60 disabled:opacity-50"
-                          title="سحب واستيراد المحادثات والرسائل التاريخية من فيسبوك"
-                        >
-                          {isSyncing ? (
-                            <Loader2 className="w-3 h-3 animate-spin text-[#1877F2]" />
-                          ) : (
-                            <Sparkles className="w-3 h-3 text-[#1877F2]" />
-                          )}
-                          <span>مزامنة المحادثات</span>
-                        </button>
-                      </div>
-
-                      {/* Disconnect Action Button */}
-                      <button
-                        onClick={() => setPageToDelete({ id: page.page_id, name: page.name })}
-                        disabled={isDeleting}
-                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition disabled:opacity-50"
-                        title="إلغاء ربط الصفحة وحذفها من النظام"
-                      >
-                        {isDeleting ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
-                        ) : (
-                          <Trash2 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <MetaChannelsSettings showHeader={false} />
       )}
 
       {/* TAB 2: Cloud Providers & Test Pings */}
@@ -806,7 +510,7 @@ export const ChannelsPage: React.FC = () => {
                 <button
                   onClick={() => handleTestPing('messenger')}
                   disabled={testPingLoading['messenger']}
-                  className="w-full py-2 bg-[#1877F2] hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-2xs disabled:opacity-50"
+                  className="w-full py-2 bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
                 >
                   {testPingLoading['messenger'] ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -889,7 +593,7 @@ export const ChannelsPage: React.FC = () => {
                 />
                 <button
                   onClick={() => copyWebhookInfo(webhookUrl, 'url')}
-                  className="px-4 py-2.5 bg-[#1877F2] hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs shrink-0"
+                  className="px-4 py-2.5 bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer"
                 >
                   {copiedWebhookUrl ? (
                     <>
@@ -918,7 +622,7 @@ export const ChannelsPage: React.FC = () => {
                 />
                 <button
                   onClick={() => copyWebhookInfo(verifyToken, 'token')}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs shrink-0"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer"
                 >
                   {copiedVerifyToken ? (
                     <>
@@ -942,7 +646,7 @@ export const ChannelsPage: React.FC = () => {
                 {['messages', 'messaging_postbacks', 'message_reads', 'message_deliveries', 'feed'].map((field) => (
                   <span
                     key={field}
-                    className="text-[11px] font-mono font-bold bg-blue-50 text-[#1877F2] border border-blue-200/60 px-2.5 py-1 rounded-lg"
+                    className="text-[11px] font-mono font-bold bg-theme-primary-tint text-theme-primary border border-theme-primary/20 px-2.5 py-1 rounded-lg"
                   >
                     ✓ {field}
                   </span>
@@ -966,44 +670,6 @@ export const ChannelsPage: React.FC = () => {
                 لا يتم إطلاقاً إرسال المفاتيح بصيغتها المجردة إلى المتصفح أو تضمينها في سجلات النظام (Logs)،
                 ويتم فك التشفير لحظياً في الذاكرة العابرة فقط عند توجيه رسائل الرد عبر Graph API.
               </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Disconnect Confirmation Modal */}
-      {pageToDelete && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 dir-rtl text-right animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <div className="text-center space-y-1">
-              <h3 className="text-base font-black text-slate-900">تأكيد إلغاء ربط الصفحة</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                هل أنت متأكد من رغبتك في إلغاء ربط الصفحة <strong className="text-slate-800 font-extrabold">{pageToDelete.name}</strong>؟
-                سيتم حذف مفاتيح الوصول الخاصة بها وإيقاف استلام الرسائل عبرها.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setPageToDelete(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
-              >
-                إلغاء التراجع
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const pid = pageToDelete.id;
-                  setPageToDelete(null);
-                  await disconnectPage(pid);
-                }}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-500/20"
-              >
-                نعم، إلغاء الربط الآن
-              </button>
             </div>
           </div>
         </div>
