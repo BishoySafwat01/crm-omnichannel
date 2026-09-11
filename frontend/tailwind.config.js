@@ -7,6 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        theme: {
+          primary: 'var(--theme-primary-color, var(--primary-color, #1A73E8))',
+          'primary-hover': 'color-mix(in srgb, var(--theme-primary-color, var(--primary-color, #1A73E8)) 85%, black)',
+          'primary-tint': 'color-mix(in srgb, var(--theme-primary-color, var(--primary-color, #1A73E8)) 12%, transparent)',
+          'primary-subtle': 'color-mix(in srgb, var(--theme-primary-color, var(--primary-color, #1A73E8)) 6%, transparent)',
+        },
         brand: {
           teal: '#18A484',
           'teal-hover': '#14896e',
