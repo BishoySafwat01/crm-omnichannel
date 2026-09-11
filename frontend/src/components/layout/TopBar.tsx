@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Globe,
   Layers,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
@@ -26,10 +27,11 @@ import { metaApi } from '../../services/api';
 import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
 import luxiraLogo from '../../assets/luxira-logo.png';
+import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
-  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels') => void;
+  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings';
+  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
@@ -48,6 +50,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     conversations,
   } = useCrmStore();
   const { user, logout } = useAuthStore();
+  const { branding } = usePortalBrandingStore();
 
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postMessage, setPostMessage] = useState('');
@@ -162,7 +165,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   // Main navigation tabs ordered by workflow priority
   const navItems: {
-    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments';
+    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments' | 'settings';
     label: string;
     icon: React.ReactNode;
   }[] = [
@@ -173,27 +176,31 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
     { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+    { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
 
   return (
     <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-4 py-2 flex items-center justify-between select-none">
       {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark + Primary Navigation */}
       <div className="flex items-center gap-4">
-        {/* LUXIRA HOLDING Brand Mark & Typographic Branding */}
+        {/* Corporate Brand Mark & Dynamic Typographic Branding */}
         <div className="flex items-center gap-2.5 shrink-0 group cursor-default">
-          <div className="h-9 w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105">
+          <div className="h-9 w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105 overflow-hidden">
             <img
-              src={luxiraLogo}
-              alt="LUXIRA HOLDING"
+              src={branding.brand_logo_url || luxiraLogo}
+              alt={branding.brand_display_name || "LUXIRA HOLDING"}
               className="h-7 w-7 object-contain drop-shadow-xs"
             />
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1 leading-none">
-              <span className="text-sm font-black text-slate-900 tracking-tight">LUXIRA</span>
-              <span className="text-xs font-bold text-teal-600 tracking-wide">HOLDING</span>
+              <span className="text-sm font-black text-slate-900 tracking-tight">
+                {branding.brand_display_name || "LUXIRA HOLDING"}
+              </span>
             </div>
-            <span className="text-[8px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">OMNICHANNEL CRM</span>
+            <span className="text-[8px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">
+              {branding.workspace_name && branding.workspace_name !== 'Default Organization' ? branding.workspace_name : 'OMNICHANNEL CRM'}
+            </span>
           </div>
         </div>
 
@@ -206,9 +213,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 <button
                   key={item.id}
                   onClick={() => setActiveMainView(item.id)}
+                  style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
                   className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
                     isActive
-                      ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
+                      ? 'text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium rounded-xl px-3.5 py-1.5 transition-colors'
                   }`}
                 >

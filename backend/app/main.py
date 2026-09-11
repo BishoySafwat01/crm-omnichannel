@@ -24,6 +24,7 @@ from app.api.v1.meta import router as meta_router
 from app.api.v1.meta_oauth import router as meta_oauth_router
 from app.api.v1.moderation import router as moderation_router
 from app.api.v1.beon import router as beon_router
+from app.api.v1.portal import router as portal_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
 from app.api.legal import router as legal_router
@@ -311,6 +312,7 @@ app.include_router(beon_router, prefix="/api/v1")
 app.include_router(moderation_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api")
+app.include_router(portal_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 
 # Admin Routers

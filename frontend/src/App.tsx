@@ -11,13 +11,18 @@ import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { TeamPage } from './pages/Team/TeamPage';
 import { ChannelsPage } from './pages/Channels/ChannelsPage';
+import { SettingsPage } from './pages/Settings';
 import { PrivacyPolicyPage, TermsPage, DataDeletionPage } from './pages/Legal';
 import { useCrmStore } from './store/useCrmStore';
 import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
 import { MetaOAuthCallbackHandler } from './components/oauth/MetaOAuthCallbackHandler';
+import { usePortalBranding } from './hooks/usePortalBranding';
 
 export const App: React.FC = () => {
+  // Initialize Enterprise Multi-Brand Dynamic Theme & Metadata
+  usePortalBranding();
+
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
   });
@@ -46,7 +51,7 @@ export const App: React.FC = () => {
     dismissLocationAlert,
   } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
-  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels'>('chat');
+  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(wsConnected);
@@ -159,7 +164,9 @@ export const App: React.FC = () => {
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
 
       {/* Main View Area (Feature / Page-Based Routing) */}
-      {isUserAdmin && activeMainView === 'channels' ? (
+      {isUserAdmin && activeMainView === 'settings' ? (
+        <SettingsPage />
+      ) : isUserAdmin && activeMainView === 'channels' ? (
         <ChannelsPage />
       ) : isUserAdmin && activeMainView === 'comments' ? (
         <CommentsPage />

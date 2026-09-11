@@ -66,7 +66,7 @@ fi
 
 "$PYTHON_BIN" -m py_compile \
     "${ROOT_DIR}/backend/app/main.py" \
-    $(find "${ROOT_DIR}/backend/app/api" "${ROOT_DIR}/backend/app/services" "${ROOT_DIR}/backend/app/models" -name "*.py")
+    $(find "${ROOT_DIR}/backend/app/api" "${ROOT_DIR}/backend/app/services" "${ROOT_DIR}/backend/app/models" "${ROOT_DIR}/backend/app/repositories" -name "*.py")
 echo "[+] Python backend syntax verified successfully."
 
 # 2b. Vite Production Build Gate
