@@ -268,7 +268,7 @@ class MetaImportService:
         # 3. Fetch all conversations from Meta Graph API
         try:
             norm_conversations = await adapter.get_all_conversations(
-                page_id=target_page_id, channel=channel
+                page_id=target_page_id, channel=channel, since_days=since_days
             )
             job.total_conversations = len(norm_conversations)
             await session.commit()

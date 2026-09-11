@@ -183,6 +183,21 @@ export const getUnreadSummaryDirect = async (): Promise<any> => {
   return { total_unread: 0, channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 }, brands: {} };
 };
 
+export const fetchActiveBrandsDirect = async (): Promise<{ id: string; name: string; page_id?: string }[]> => {
+  try {
+    const res = await safeFetch('/conversations/brands', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' })
+    });
+    if (res && res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn('[API] fetchActiveBrandsDirect error:', e);
+  }
+  return [];
+};
+
 export const markConversationReadDirect = async (conversationId: string): Promise<boolean> => {
   try {
     const res = await safeFetch(`/conversations/${conversationId}/read`, {

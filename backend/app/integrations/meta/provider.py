@@ -64,7 +64,8 @@ class MetaProvider(BaseMessagingProvider):
         self,
         page_id: Optional[str] = None,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
-        max_pages: int = 500,
+        since_days: Optional[int] = 30,
+        max_pages: int = 50,
     ) -> list[NormalizedConversation]:
         target_page_id = page_id or self.client.page_id or ""
         conversations: list[NormalizedConversation] = []
@@ -72,9 +73,14 @@ class MetaProvider(BaseMessagingProvider):
         seen_cursors: set[str] = set()
         page_count = 0
 
+        cutoff_time: Optional[datetime] = None
+        if since_days is not None and since_days > 0:
+            cutoff_time = datetime.now(timezone.utc) - timedelta(days=since_days)
+
         from urllib.parse import parse_qs, urlparse
 
-        while page_count < max_pages:
+        should_stop = False
+        while page_count < max_pages and not should_stop:
             page_count += 1
             res = await self.client.get_conversations(
                 page_id=target_page_id, limit=25, after=after_cursor
@@ -98,9 +104,16 @@ class MetaProvider(BaseMessagingProvider):
                 norm_conv = MetaNormalizer.normalize_conversation(
                     raw_conv, page_id=target_page_id, channel=channel
                 )
+                if cutoff_time and norm_conv.last_message_at:
+                    msg_time = norm_conv.last_message_at
+                    if msg_time.tzinfo is None:
+                        msg_time = msg_time.replace(tzinfo=timezone.utc)
+                    if msg_time < cutoff_time:
+                        should_stop = True
+                        break
                 conversations.append(norm_conv)
 
-            if not next_cursor or not raw_list or ("next" not in paging and "after" not in cursors):
+            if should_stop or not next_cursor or not raw_list or ("next" not in paging and "after" not in cursors):
                 break
 
             after_cursor = next_cursor

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import urllib.parse
 import uuid
@@ -337,5 +338,35 @@ class MetaOAuthService:
             await db.refresh(record)
 
         logger.info("Successfully saved/updated %d ConnectedPage records.", len(saved_records))
+
+        # Milestone 3: Trigger immediate background historical sync (30 days) for newly onboarded active pages
+        for record in saved_records:
+            if record.status == "ACTIVE" and record.page_id:
+                asyncio.create_task(cls._trigger_background_sync(page_id=record.page_id, since_days=30))
+
         return saved_records
+
+    @staticmethod
+    async def _trigger_background_sync(page_id: str, since_days: int = 30) -> None:
+        """Run historical sync for newly onboarded page in isolated session without blocking HTTP flow."""
+        try:
+            from app.core.database import AsyncSessionLocal
+            from app.services.meta_import_service import MetaImportService
+
+            async with AsyncSessionLocal() as bg_session:
+                logger.info("[AutoOnboarding] Triggering background historical sync for page %s (since_days=%d)...", page_id, since_days)
+                job = await MetaImportService.run_import(
+                    session=bg_session,
+                    page_id=page_id,
+                    since_days=since_days,
+                )
+                logger.info(
+                    "[AutoOnboarding] Finished background sync for page %s: %d convs, %d msgs (status: %s)",
+                    page_id,
+                    job.processed_conversations,
+                    job.processed_messages,
+                    job.status,
+                )
+        except Exception as exc:
+            logger.error("[AutoOnboarding] Error in background sync for page %s: %s", page_id, exc)
 

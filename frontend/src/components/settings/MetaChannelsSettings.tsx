@@ -358,7 +358,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
               const isStatusToggling = actionLoadingMap[`status_${page.page_id}`];
               const isSyncing = actionLoadingMap[`sync_${page.page_id}`];
               const isDeleting = actionLoadingMap[`del_${page.page_id}`];
-              const selectedBrand = pageBrandMap[page.page_id] || 'LAVVA';
+              const selectedBrand = pageBrandMap[page.page_id] || page.name || 'Default';
 
               return (
                 <div
@@ -471,6 +471,9 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                           onChange={(e) => handleBrandChange(page.page_id, e.target.value)}
                           className="bg-slate-50 text-[11px] font-bold text-slate-700 px-2.5 py-1 rounded-xl border border-slate-200 focus:outline-none cursor-pointer"
                         >
+                          {page.name && !brands.some((b) => b.name.toLowerCase() === page.name.toLowerCase()) && (
+                            <option value={page.name}>{page.name}</option>
+                          )}
                           {brands.filter((b) => b.id !== 'all').map((b) => (
                             <option key={b.id} value={b.name}>
                               {b.name}

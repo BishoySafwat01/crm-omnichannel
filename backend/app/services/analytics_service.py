@@ -5,6 +5,7 @@ from sqlalchemy import func, select, case, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.automation import AutomationExecutionLog
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.enums import ChannelEnum, ConversationStatusEnum, SenderTypeEnum
 from app.models.message import Message
@@ -136,7 +137,6 @@ class AnalyticsService:
         msg_map = {r[0] or "LAVVA": r[1] for r in msg_rows}
 
         brand_items = []
-        known_brands = ["LAVVA", "FLARE", "MOON LIGHT", "LOTUS BLUE", "BEAUTY CENTER", "LOXX KING"]
         seen_brands = set()
 
         for b_name, tot_c, unread_c in conv_rows:
@@ -151,14 +151,19 @@ class AnalyticsService:
                 )
             )
 
-        for kb in known_brands:
-            if kb not in seen_brands:
+        # Ingest active connected pages dynamically as brands
+        page_stmt = select(ConnectedPage.name).where(ConnectedPage.status == "ACTIVE")
+        page_names = (await session.execute(page_stmt)).scalars().all()
+        for p_name in page_names:
+            clean_name = str(p_name or "").strip()
+            if clean_name and not clean_name.startswith("Page ") and clean_name not in seen_brands:
+                seen_brands.add(clean_name)
                 brand_items.append(
                     BrandItem(
-                        brand=kb,
+                        brand=clean_name,
                         total_conversations=0,
                         active_unread=0,
-                        total_messages=msg_map.get(kb, 0),
+                        total_messages=msg_map.get(clean_name, 0),
                     )
                 )
 

@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.message import Message
@@ -553,6 +554,18 @@ class ConversationService:
                 brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + count_val
             elif "lavva" in norm_b or "lava" in norm_b:
                 brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + count_val
+
+        # Ensure all active connected Facebook Pages are present in brands_map
+        try:
+            active_pages_stmt = select(ConnectedPage.name).where(ConnectedPage.status == "ACTIVE")
+            active_page_names = (await session.execute(active_pages_stmt)).scalars().all()
+            for p_name in active_page_names:
+                clean_name = str(p_name or "").strip()
+                if clean_name and not clean_name.startswith("Page "):
+                    if clean_name not in brands_map:
+                        brands_map[clean_name] = 0
+        except Exception:
+            pass
 
         channels_map["all"] = total_unread
 

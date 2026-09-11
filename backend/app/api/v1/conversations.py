@@ -14,6 +14,7 @@ from app.api.deps import (
 from app.core.database import get_db
 from app.integrations.beon.client import BeonAPIError
 from app.integrations.meta import MetaAPIError
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.enums import ChannelEnum, ConversationStatusEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum, UserRole
 from app.models.message import Message
@@ -37,6 +38,51 @@ from app.services.message_actions_service import MessageActionsService
 from app.services.message_service import MessageService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+@router.get(
+    "/brands",
+    summary="Get All Active Dynamic Brands across Conversations and Connected Pages",
+)
+async def get_active_brands(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all active distinct brand names derived from connected Facebook Pages and active conversations."""
+    seen_brands = set()
+    brands_list = []
+
+    # 1. Fetch active ConnectedPage names
+    page_stmt = select(ConnectedPage.name, ConnectedPage.page_id).where(ConnectedPage.status == "ACTIVE")
+    pages = (await db.execute(page_stmt)).all()
+    for p_name, p_id in pages:
+        clean_name = str(p_name or "").strip()
+        if clean_name and not clean_name.startswith("Page ") and clean_name.lower() not in seen_brands:
+            seen_brands.add(clean_name.lower())
+            brands_list.append({
+                "id": clean_name,
+                "name": clean_name,
+                "page_id": p_id,
+            })
+
+    # 2. Fetch distinct brands from Conversations
+    conv_stmt = select(Conversation.brand).where(Conversation.brand.isnot(None)).distinct()
+    conv_brands = (await db.execute(conv_stmt)).scalars().all()
+    for b in conv_brands:
+        clean_b = str(b or "").strip()
+        if clean_b and clean_b.lower() not in seen_brands and clean_b not in ("LAVVA", "Default Business Page") and not clean_b.startswith("Page "):
+            seen_brands.add(clean_b.lower())
+            brands_list.append({
+                "id": clean_b,
+                "name": clean_b,
+                "page_id": "",
+            })
+
+    # If list is empty, provide fallback default
+    if not brands_list:
+        brands_list.append({"id": "LUXIRA", "name": "LUXIRA", "page_id": ""})
+
+    return brands_list
 
 
 @router.get(

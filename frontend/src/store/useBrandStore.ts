@@ -4,6 +4,7 @@ import { getBrandMetadata } from '../constants/brands';
 import { useCrmStore } from './useCrmStore';
 import { useChannelsStore } from './useChannelsStore';
 import { useAuthStore } from './useAuthStore';
+import { fetchActiveBrandsDirect } from '../services/api';
 
 interface BrandState {
   selectedBrandId: string;
@@ -11,7 +12,10 @@ interface BrandState {
   brands: Brand[];
   getDynamicBrands: () => Brand[];
   refreshBrands: () => void;
+  fetchBackendBrands: () => Promise<void>;
 }
+
+const cachedBackendBrandNames = new Set<string>();
 
 const computeDynamicBrands = (): Brand[] => {
   const list: Brand[] = [
@@ -37,6 +41,9 @@ const computeDynamicBrands = (): Brand[] => {
       logo_url: meta.logo_url,
     });
   };
+
+  // 0. Ingest cached brands from backend /conversations/brands
+  cachedBackendBrandNames.forEach(addBrand);
 
   // 1. Ingest connected pages from useChannelsStore
   try {
@@ -94,6 +101,21 @@ export const useBrandStore = create<BrandState>((set, get) => ({
     const updated = computeDynamicBrands();
     set({ brands: updated });
   },
+
+  fetchBackendBrands: async () => {
+    try {
+      const backendBrands = await fetchActiveBrandsDirect();
+      if (backendBrands && Array.isArray(backendBrands)) {
+        backendBrands.forEach((b) => {
+          if (b.name) cachedBackendBrandNames.add(b.name);
+        });
+        const updated = computeDynamicBrands();
+        set({ brands: updated });
+      }
+    } catch (e) {
+      console.warn('[useBrandStore] fetchBackendBrands error:', e);
+    }
+  },
 }));
 
 // Automatic reactivity: whenever channels or CRM stores update, refresh the dynamic brand list
@@ -107,4 +129,11 @@ try {
   useCrmStore.subscribe(() => {
     useBrandStore.getState().refreshBrands();
   });
+} catch {}
+
+// Initialize backend brands on application load
+try {
+  setTimeout(() => {
+    useBrandStore.getState().fetchBackendBrands();
+  }, 100);
 } catch {}
