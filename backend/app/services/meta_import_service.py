@@ -828,7 +828,11 @@ class MetaImportService:
                     single_msg_type = norm_event.message_type
                     if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
                         single_msg_type = MessageTypeEnum.IMAGE
-                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("reel", "ig_reel")):
+                        single_msg_type = MessageTypeEnum.SHARE_REEL
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.SHARE_POST
+                    elif first_att and "video" in str(first_att.get("type", "")).lower():
                         single_msg_type = MessageTypeEnum.VIDEO
 
                     outbound_metadata = {
@@ -837,6 +841,7 @@ class MetaImportService:
                         "is_echo": True,
                         "attachments": attachments_list,
                         "media_url": single_att_url,
+                        "share_url": (norm_event.metadata_ or {}).get("share_url") or (single_att_url if single_msg_type in (MessageTypeEnum.SHARE_REEL, MessageTypeEnum.SHARE_POST) else None),
                         "raw": item,
                     }
 
@@ -984,7 +989,11 @@ class MetaImportService:
                         att_type = att.get("type", norm_event.message_type) if isinstance(att, dict) else norm_event.message_type
                         if isinstance(att, dict) and (att.get("image_data") or (att.get("mime_type") or "").startswith("image/")):
                             att_type = "image"
-                        elif isinstance(att, dict) and any(k in str(att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                        elif isinstance(att, dict) and any(k in str(att.get("type", "")).lower() for k in ("reel", "ig_reel")):
+                            att_type = "share_reel"
+                        elif isinstance(att, dict) and any(k in str(att.get("type", "")).lower() for k in ("share", "story_mention")):
+                            att_type = "share_post"
+                        elif isinstance(att, dict) and "video" in str(att.get("type", "")).lower():
                             att_type = "video"
                         att_url = (
                             att.get("url")
@@ -1006,6 +1015,7 @@ class MetaImportService:
                             metadata_={
                                 "attachments": [att],
                                 "media_url": att_url,
+                                "share_url": att_url if att_type in ("share_reel", "share_post") else None,
                                 "referral": norm_event.metadata_.get("referral"),
                                 "raw": item,
                             },
@@ -1063,7 +1073,11 @@ class MetaImportService:
                     single_msg_type = norm_event.message_type
                     if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
                         single_msg_type = MessageTypeEnum.IMAGE
-                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("reel", "ig_reel")):
+                        single_msg_type = MessageTypeEnum.SHARE_REEL
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.SHARE_POST
+                    elif first_att and "video" in str(first_att.get("type", "")).lower():
                         single_msg_type = MessageTypeEnum.VIDEO
 
                     msg = Message(
@@ -1077,6 +1091,7 @@ class MetaImportService:
                         metadata_={
                             "attachments": attachments_list,
                             "media_url": single_att_url,
+                            "share_url": (norm_event.metadata_ or {}).get("share_url") or (single_att_url if single_msg_type in (MessageTypeEnum.SHARE_REEL, MessageTypeEnum.SHARE_POST) else None),
                             "referral": norm_event.metadata_.get("referral"),
                             "raw": item,
                         },

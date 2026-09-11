@@ -352,19 +352,6 @@ class MetaNormalizer:
             first_att = raw_attachments[0] if isinstance(raw_attachments[0], dict) else {}
             att_type_str = str(first_att.get("type", "")).lower()
 
-            if "image" in att_type_str:
-                msg_type = MessageTypeEnum.IMAGE
-            elif any(k in att_type_str for k in ("video", "reel", "ig_reel")):
-                msg_type = MessageTypeEnum.VIDEO
-            elif "audio" in att_type_str or "voice" in att_type_str:
-                msg_type = MessageTypeEnum.AUDIO
-            elif "file" in att_type_str or "doc" in att_type_str:
-                msg_type = MessageTypeEnum.FILE
-            elif any(k in att_type_str for k in ("share", "story_mention")):
-                msg_type = MessageTypeEnum.VIDEO
-            else:
-                msg_type = MessageTypeEnum.UNKNOWN
-
             for att in raw_attachments:
                 if not isinstance(att, dict):
                     continue
@@ -387,11 +374,39 @@ class MetaNormalizer:
                     "payload": payload,
                 })
 
+            is_reel_att = (
+                any(k in att_type_str for k in ("reel", "ig_reel"))
+                or (extracted_share_url and "/reel" in extracted_share_url.lower())
+            )
+            is_share_att = (
+                any(k in att_type_str for k in ("share", "story_mention"))
+                or (extracted_share_url and any(k in extracted_share_url.lower() for k in ("/p/", "/stories/")))
+            )
+
+            if is_reel_att:
+                msg_type = MessageTypeEnum.SHARE_REEL
+            elif is_share_att:
+                msg_type = MessageTypeEnum.SHARE_POST
+            elif "image" in att_type_str:
+                msg_type = MessageTypeEnum.IMAGE
+            elif "video" in att_type_str:
+                msg_type = MessageTypeEnum.VIDEO
+            elif "audio" in att_type_str or "voice" in att_type_str:
+                msg_type = MessageTypeEnum.AUDIO
+            elif "file" in att_type_str or "doc" in att_type_str:
+                msg_type = MessageTypeEnum.FILE
+            else:
+                msg_type = MessageTypeEnum.UNKNOWN
+
         if not text_content:
             if extracted_share_url:
                 text_content = f"[Instagram Reel/Share: {extracted_share_url}]"
                 if msg_type in (MessageTypeEnum.UNKNOWN, MessageTypeEnum.TEXT):
-                    msg_type = MessageTypeEnum.VIDEO
+                    msg_type = (
+                        MessageTypeEnum.SHARE_REEL
+                        if ("/reel" in extracted_share_url.lower())
+                        else MessageTypeEnum.SHARE_POST
+                    )
             elif normalized_attachments:
                 pass
             else:
@@ -412,6 +427,14 @@ class MetaNormalizer:
                 "ad_id": referral.get("ad_id")
             }
 
+        event_metadata = {
+            "referral": ref_metadata,
+            "raw": raw_item,
+        }
+        if extracted_share_url:
+            event_metadata["share_url"] = extracted_share_url
+            event_metadata["media_url"] = extracted_share_url
+
         return NormalizedMetaWebhookEvent(
             page_id=page_id,
             sender_psid=sender_psid,
@@ -423,7 +446,7 @@ class MetaNormalizer:
             created_at=created_at,
             channel=channel,
             attachments=normalized_attachments,
-            metadata_={"referral": ref_metadata, "raw": raw_item},
+            metadata_=event_metadata,
             is_echo=is_echo,
         )
 

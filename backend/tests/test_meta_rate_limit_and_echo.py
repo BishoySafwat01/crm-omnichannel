@@ -327,7 +327,7 @@ def test_normalize_webhook_event_reels_and_shares():
         },
     }
     norm_reel = MetaNormalizer.normalize_webhook_event(reel_item, page_id="444555666")
-    assert norm_reel.message_type == MessageTypeEnum.VIDEO
+    assert norm_reel.message_type == MessageTypeEnum.SHARE_REEL
     assert norm_reel.text == "[Instagram Reel/Share: https://instagram.com/reel/xyz123]"
     assert norm_reel.attachments[0]["url"] == "https://instagram.com/reel/xyz123"
 
@@ -347,7 +347,7 @@ def test_normalize_webhook_event_reels_and_shares():
         },
     }
     norm_share = MetaNormalizer.normalize_webhook_event(share_item, page_id="444555666")
-    assert norm_share.message_type == MessageTypeEnum.VIDEO
+    assert norm_share.message_type == MessageTypeEnum.SHARE_POST
     assert norm_share.text == "[Instagram Reel/Share: https://instagram.com/p/abc456]"
     assert norm_share.attachments[0]["url"] == "https://instagram.com/p/abc456"
 

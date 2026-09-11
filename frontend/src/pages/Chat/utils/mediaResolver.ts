@@ -5,13 +5,34 @@ export interface ResolvedMedia {
   isImage: boolean;
   isVideo: boolean;
   isDoc: boolean;
+  isShare: boolean;
+  shareUrl?: string | null;
+  shareType?: 'reel' | 'post' | 'story' | null;
   url: string | null;
   fileName: string;
 }
 
+export const isSocialWebLink = (url: string | undefined | null): boolean => {
+  if (!url) return false;
+  return (
+    url.includes('instagram.com/reel/') ||
+    url.includes('instagram.com/reels/') ||
+    url.includes('instagram.com/p/') ||
+    url.includes('instagram.com/stories/') ||
+    url.includes('facebook.com/watch') ||
+    url.includes('facebook.com/story') ||
+    url.includes('facebook.com/reel/') ||
+    url.includes('fb.watch')
+  );
+};
+
 export const getProxiedMediaUrl = (url: string | null | undefined): string => {
   if (!url) return '';
   if (url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  // External social web pages must NEVER be routed through the binary media proxy
+  if (isSocialWebLink(url)) {
     return url;
   }
   if (url.startsWith('/uploads/http://') || url.startsWith('/uploads/https://')) {
@@ -36,17 +57,6 @@ export const getProxiedMediaUrl = (url: string | null | undefined): string => {
   return url;
 };
 
-export const isSocialWebLink = (url: string | undefined | null): boolean => {
-  if (!url) return false;
-  return (
-    url.includes('instagram.com/reel/') ||
-    url.includes('instagram.com/p/') ||
-    url.includes('instagram.com/stories/') ||
-    url.includes('facebook.com/watch') ||
-    url.includes('facebook.com/story')
-  );
-};
-
 export const resolveMedia = (msg: any): ResolvedMedia => {
   let url: string | null = null;
   let mime = '';
@@ -58,6 +68,8 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     url =
       first.url ||
       first.payload?.url ||
+      first.payload?.reel_video_url ||
+      first.share?.link ||
       first.image_data?.url ||
       first.image_data?.preview_url ||
       first.file_url;
@@ -75,6 +87,8 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     url =
       att.url ||
       att.payload?.url ||
+      att.payload?.reel_video_url ||
+      att.share?.link ||
       att.image_data?.url ||
       att.image_data?.preview_url ||
       att.file_url;
@@ -83,7 +97,28 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     fileName = att.filename || att.name || att.title || '';
   }
 
+  // Check metadata for direct share_url
+  if (!url && (msg.metadata_?.share_url || msg.metadata?.share_url)) {
+    url = msg.metadata_?.share_url || msg.metadata?.share_url;
+  }
+
   const textVal = (msg.text || '').trim();
+
+  // Extract share links from text if present (e.g. [Instagram Reel/Share: https://...])
+  let extractedShareFromText: string | null = null;
+  if (textVal) {
+    const bracketMatch = textVal.match(/\[(?:Instagram Reel\/Share|Reel\/Share|Share):\s*(https?:\/\/[^\]\s]+)\]/i);
+    if (bracketMatch && bracketMatch[1]) {
+      extractedShareFromText = bracketMatch[1];
+    } else if (isSocialWebLink(textVal)) {
+      extractedShareFromText = textVal;
+    }
+  }
+
+  if (!url && extractedShareFromText) {
+    url = extractedShareFromText;
+  }
+
   if (!url && textVal) {
     const msgTypeLower = (msg.message_type || msg.media_type || type || '').toLowerCase();
     if (textVal.startsWith('http://') || textVal.startsWith('https://')) {
@@ -111,24 +146,51 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     }
   }
 
-  if (!url) {
+  if (!url && !extractedShareFromText) {
     return {
       isAudio: false,
       isImage: false,
       isVideo: false,
       isDoc: false,
+      isShare: false,
+      shareUrl: null,
+      shareType: null,
       url: null,
       fileName: '',
     };
   }
 
-  url = getProxiedMediaUrl(url);
-
-  const lower = url.toLowerCase();
-  const isSocial = isSocialWebLink(url);
+  const rawUrl = url || extractedShareFromText || '';
+  const rawLower = rawUrl.toLowerCase();
+  const isSocial = isSocialWebLink(rawUrl);
   const msgType = (msg.message_type || type || '').toLowerCase();
 
+  const isShare =
+    isSocial ||
+    Boolean(extractedShareFromText) ||
+    msgType === 'share_reel' ||
+    msgType === 'share_post' ||
+    msgType === 'share' ||
+    (rawLower.includes('instagram.com') &&
+      (rawLower.includes('/reel') || rawLower.includes('/p/') || rawLower.includes('/stories/')));
+
+  let shareType: 'reel' | 'post' | 'story' | null = null;
+  if (isShare) {
+    if (msgType === 'share_reel' || rawLower.includes('/reel')) {
+      shareType = 'reel';
+    } else if (rawLower.includes('/stories/')) {
+      shareType = 'story';
+    } else {
+      shareType = 'post';
+    }
+  }
+
+  // Proxied URL for binary assets only, NEVER proxy social web links
+  const finalUrl = isShare ? rawUrl : getProxiedMediaUrl(rawUrl);
+  const lower = finalUrl.toLowerCase();
+
   const isAudio =
+    !isShare &&
     !isSocial &&
     (msgType === 'audio' ||
       type === 'audio' ||
@@ -141,6 +203,7 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
         (lower.includes('voice') || mime.startsWith('audio/') || msgType === 'audio')));
 
   const isVideo =
+    !isShare &&
     !isSocial &&
     !isAudio &&
     (msgType === 'video' ||
@@ -151,6 +214,7 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
       (lower.includes('.webm') && !lower.includes('voice')));
 
   const isImage =
+    !isShare &&
     !isSocial &&
     !isAudio &&
     !isVideo &&
@@ -166,13 +230,6 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
         lower.includes('cdninstagram.com')) &&
         !/\.(ogg|m4a|mp3|webm|wav|aac|mp4|mov)/i.test(lower)));
 
-  const isShare =
-    isSocial ||
-    msg.message_type === 'share_reel' ||
-    msg.message_type === 'share_post' ||
-    msg.message_type === 'share' ||
-    lower.includes('instagram.com');
-
   const isDoc = !isImage && !isAudio && !isVideo && !isShare;
 
   return {
@@ -180,7 +237,10 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     isImage,
     isVideo,
     isDoc,
-    url,
-    fileName: fileName || url.split('/').pop() || 'file',
+    isShare,
+    shareUrl: isShare ? rawUrl : null,
+    shareType,
+    url: finalUrl,
+    fileName: fileName || finalUrl.split('/').pop() || (isShare ? 'share' : 'file'),
   };
 };
