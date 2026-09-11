@@ -138,7 +138,7 @@ export const PortalIdentitySettings: React.FC = () => {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="مجموعة لوكسيرا - نظام إدارة العملاء الموحد"
-                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-bold text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition"
+                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-bold text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary transition"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 الاسم الظاهر في الشريط العلوي، شاشة تسجيل الدخول، وعنوان تبويب المتصفح.
@@ -156,7 +156,7 @@ export const PortalIdentitySettings: React.FC = () => {
                 value={logoUrl}
                 onChange={(e) => setLogoUrl(e.target.value)}
                 placeholder="https://your-domain.com/assets/logo.png"
-                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition"
+                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary transition"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 رابط مباشر لصورة الشعار (PNG أو SVG بخلفية شفافة). اتركه فارغاً للاحتفاظ بشعار LUXIRA.
@@ -174,7 +174,7 @@ export const PortalIdentitySettings: React.FC = () => {
                 value={faviconUrl}
                 onChange={(e) => setFaviconUrl(e.target.value)}
                 placeholder="https://your-domain.com/assets/favicon.ico"
-                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition"
+                className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary transition"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 أيقونة الموقع التي تظهر في شريط متصفح المستخدم (.ico أو .png).
@@ -280,7 +280,7 @@ export const PortalIdentitySettings: React.FC = () => {
               <span className="text-[10px] font-bold text-slate-400">شريط الواجهة الرئيسي (Top Bar Preview):</span>
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-lg bg-slate-950 p-1 flex items-center justify-center border border-teal-500/20 overflow-hidden">
+                  <div className="h-8 w-8 rounded-lg bg-slate-950 p-1 flex items-center justify-center border border-theme-primary/20 overflow-hidden">
                     <img
                       src={logoUrl || luxiraLogo}
                       alt="Brand Preview"
@@ -346,7 +346,7 @@ export const PortalIdentitySettings: React.FC = () => {
             <div className="space-y-1.5">
               <span className="text-[10px] font-bold text-slate-400">بطاقة الدخول (Login Branding):</span>
               <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm text-center space-y-2">
-                <div className="w-10 h-10 rounded-xl bg-slate-950 p-1.5 mx-auto flex items-center justify-center border border-teal-500/20 overflow-hidden">
+                <div className="w-10 h-10 rounded-xl bg-slate-950 p-1.5 mx-auto flex items-center justify-center border border-theme-primary/20 overflow-hidden">
                   <img
                     src={logoUrl || luxiraLogo}
                     alt="Brand Preview"

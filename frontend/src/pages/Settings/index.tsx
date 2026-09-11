@@ -60,7 +60,7 @@ export const SettingsPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
-              <Palette className="w-3.5 h-3.5 text-teal-600" />
+              <Palette className="w-3.5 h-3.5 text-theme-primary" />
               <span>هوية ومظهر المنظومة</span>
             </button>
 
