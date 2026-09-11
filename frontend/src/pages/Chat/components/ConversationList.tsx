@@ -280,8 +280,14 @@ export const ConversationList: React.FC = () => {
       }
 
       // 3. Status Tab Filter
+      const statusLower = (conv.status as string)?.toLowerCase();
+      const isClosedStatus = statusLower === 'closed' || statusLower === 'completed';
+      if (activeFilterTab === 'completed') {
+        if (!isClosedStatus) return false;
+      } else {
+        if (isClosedStatus) return false;
+      }
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
-      if (activeFilterTab === 'completed' && conv.status !== 'closed' && conv.status !== 'completed') return false;
       if (activeFilterTab === 'sla_breached' && !isConversationLate(conv, messages[conv.id])) return false;
 
       // 4. Country / Location Filter

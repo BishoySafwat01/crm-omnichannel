@@ -104,7 +104,16 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
   },
 
   setActiveFilterTab: (tab) => {
+    const previousTab = get().activeFilterTab;
     set({ activeFilterTab: tab });
+
+    // Automatically re-fetch conversations when switching between active inbox and completed archive
+    const wasCompleted = previousTab === 'completed';
+    const isCompleted = tab === 'completed';
+    if (wasCompleted !== isCompleted) {
+      set({ conversationsPage: 1 });
+      get().fetchConversations();
+    }
   },
 
   setSelectedMetaTag: (tag) => {

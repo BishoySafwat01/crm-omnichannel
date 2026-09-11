@@ -128,7 +128,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
       const selectedProvider = get().selectedProvider;
-      const showArchived = get().showArchived;
+      const isCompletedTab = get().activeFilterTab === 'completed';
+      const showArchived = isCompletedTab || Boolean(get().showArchived);
       const raw = await getConversationsDirect(
         selectedBrand,
         selectedChannel,
@@ -233,6 +234,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     try {
       const nextPage = conversationsPage + 1;
       const targetBrand = selectedBrand || selectedBrandId;
+      const isCompletedTab = get().activeFilterTab === 'completed';
+      const effectiveShowArchived = isCompletedTab || Boolean(showArchived);
       const raw = await getConversationsDirect(
         targetBrand,
         selectedChannel,
@@ -241,7 +244,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         nextPage,
         50,
         selectedProvider,
-        showArchived
+        effectiveShowArchived
       );
 
       let newItems: Conversation[] = [];
