@@ -470,7 +470,7 @@ class MetaClient:
         self,
         recipient_id: str,
         file_path: str,
-        attachment_type: str = "audio",
+        attachment_type: str = "file",
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
@@ -506,21 +506,33 @@ class MetaClient:
             mime_type = "image/webp"
         elif ext_lower.endswith(".gif"):
             mime_type = "image/gif"
+        elif ext_lower.endswith((".mp4", ".m4v")):
+            mime_type = "video/mp4"
+        elif ext_lower.endswith(".mov"):
+            mime_type = "video/quicktime"
+        elif ext_lower.endswith(".avi"):
+            mime_type = "video/x-msvideo"
+        elif ext_lower.endswith(".mkv"):
+            mime_type = "video/x-matroska"
         elif ext_lower.endswith(".ogg") or ext_lower.endswith(".opus"):
             mime_type = "audio/ogg"
         elif ext_lower.endswith(".mp3"):
             mime_type = "audio/mp3"
-        elif ext_lower.endswith(".m4a") or ext_lower.endswith(".mp4"):
+        elif ext_lower.endswith(".m4a"):
             mime_type = "audio/mp4"
         elif ext_lower.endswith(".webm"):
-            mime_type = "audio/webm"
+            mime_type = "video/webm" if attachment_type == "video" else "audio/webm"
         elif ext_lower.endswith(".pdf"):
             mime_type = "application/pdf"
 
         if mime_type.startswith("image/"):
             attachment_type = "image"
+        elif mime_type.startswith("video/") or attachment_type == "video":
+            attachment_type = "video"
         elif mime_type.startswith("audio/"):
             attachment_type = "audio"
+        elif not attachment_type or attachment_type == "file":
+            attachment_type = "file"
 
         with open(file_path, "rb") as f:
             file_bytes = f.read()

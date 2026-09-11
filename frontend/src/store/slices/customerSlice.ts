@@ -7,13 +7,24 @@ export const createCustomerSlice: StateCreator<CrmState, [], [], CustomerSlice> 
   locationAlerts: [],
 
   addLocationAlert: (alertData) => {
+    if (alertData.type === 'detected' && !alertData.location) return;
+
+    const existing = get().locationAlerts;
+    const isDuplicate = existing.some(
+      (a) =>
+        a.type === alertData.type &&
+        a.location === alertData.location &&
+        Date.now() - a.timestamp < 15000
+    );
+    if (isDuplicate) return;
+
     const alert: LocationAlert = {
       ...alertData,
       id: `loc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: Date.now(),
     };
     set((state) => ({
-      locationAlerts: [alert, ...state.locationAlerts.slice(0, 3)],
+      locationAlerts: [alert, ...state.locationAlerts.slice(0, 2)],
     }));
   },
 

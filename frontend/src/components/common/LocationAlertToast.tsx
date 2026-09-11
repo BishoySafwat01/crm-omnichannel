@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapPin, MapPinOff, Globe, X } from 'lucide-react';
+import { MapPin, Globe, X } from 'lucide-react';
 import { LocationAlert } from '../../types/crm';
 
 interface LocationAlertToastProps {
@@ -28,82 +28,52 @@ export const LocationAlertToast: React.FC<LocationAlertToastProps> = ({
   if (!alerts || alerts.length === 0) return null;
 
   return (
-    <div className="fixed top-20 left-6 z-[99999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none select-none dir-rtl text-right">
+    <div className="fixed bottom-6 left-6 z-[99999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none select-none dir-rtl text-right">
       {alerts.map((alert) => {
-        const isDetected = alert.type === 'detected';
-
         return (
           <div
             key={alert.id}
-            className={`pointer-events-auto backdrop-blur-xl shadow-2xl rounded-2xl p-4 space-y-2 animate-in slide-in-from-top-4 fade-in duration-200 border transition-all ${
-              isDetected
-                ? 'bg-emerald-950/95 text-emerald-50 border-emerald-500/60 shadow-emerald-950/50'
-                : 'bg-slate-950/95 text-slate-100 border-emerald-500/30 shadow-slate-950/50'
-            }`}
+            className="pointer-events-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-900/10 dark:shadow-black/40 rounded-2xl p-4 space-y-2.5 animate-in slide-in-from-bottom-5 fade-in duration-300 transition-all"
           >
             {/* Header */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-3 w-3 relative">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      isDetected ? 'bg-emerald-400' : 'bg-emerald-600'
-                    }`}
-                  />
-                  <span
-                    className={`relative inline-flex rounded-full h-3 w-3 ${
-                      isDetected ? 'bg-emerald-500' : 'bg-emerald-400'
-                    }`}
-                  />
-                </span>
-                <div
-                  className={`flex items-center gap-1.5 font-black text-xs ${
-                    isDetected ? 'text-emerald-400' : 'text-emerald-300'
-                  }`}
-                >
-                  {isDetected ? (
-                    <MapPin className="w-4 h-4 text-emerald-400 animate-bounce" />
-                  ) : (
-                    <MapPinOff className="w-4 h-4 text-emerald-300" />
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 text-emerald-600 dark:text-emerald-400">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                    تم التعرف على الموقع
+                  </h4>
+                  {alert.customerName && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      العميل: <span className="font-semibold text-slate-700 dark:text-slate-200">{alert.customerName}</span>
+                    </p>
                   )}
-                  <span>{isDetected ? 'تم التعرف علي الموقع' : 'لم يتم التعرف علي الموقع'}</span>
                 </div>
               </div>
 
               <button
                 onClick={() => onDismiss(alert.id)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                 title="إغلاق الإشعار"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Body */}
-            <div className="text-xs space-y-1">
-              {isDetected ? (
-                <div className="p-2 bg-emerald-900/40 border border-emerald-500/30 rounded-xl text-emerald-200 font-bold flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Globe className="w-4 h-4 text-emerald-400" />
-                    <span>الموقع المسجل:</span>
-                  </div>
-                  <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-lg text-xs font-black border border-emerald-400/40">
-                    {alert.location || 'محدد'}
-                  </span>
-                </div>
-              ) : (
-                <p className="text-slate-300 text-xs font-medium leading-relaxed">
-                  لم يتم العثور على اسم دولة أو عنوان واضح في المحتوى.
-                </p>
-              )}
-
-              {alert.customerName && (
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
-                  <span>العميل: <span className="text-slate-200 font-bold">{alert.customerName}</span></span>
-                  <span className="text-emerald-400 font-medium">نظام التتبع الجغرافي</span>
-                </div>
-              )}
-            </div>
+            {/* Location Pill */}
+            {alert.location && (
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/70">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  الموقع المسجل:
+                </span>
+                <span className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/70 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-bold">
+                  <Globe className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                  {alert.location}
+                </span>
+              </div>
+            )}
           </div>
         );
       })}

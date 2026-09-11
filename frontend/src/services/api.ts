@@ -152,12 +152,18 @@ export const getConversationsDirect = async (
 };
 
 export const getMessagesDirect = async (conversationId: string): Promise<any> => {
-  const res = await safeFetch(`/conversations/${conversationId}/messages?page_size=200&order=asc`, {
+  const res = await safeFetch(`/conversations/${conversationId}/messages?page_size=200&order=desc`, {
     method: 'GET',
     headers: { 'Accept': 'application/json' },
   });
   if (res && res.ok) {
-    return await res.json();
+    const data = await res.json();
+    if (data && Array.isArray(data.items)) {
+      data.items.sort(
+        (a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+      );
+    }
+    return data;
   }
   return { items: [], total: 0 };
 };

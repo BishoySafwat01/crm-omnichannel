@@ -17,6 +17,8 @@ import {
   sortConversationsByLatest,
 } from './chatHelpers';
 
+const sessionNotifiedLocations = new Set<string>();
+
 export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, get) => ({
   conversations: [],
   activeConversationId: null,
@@ -468,25 +470,23 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         };
       });
 
-      // Location Detection Notification Trigger
+      // Location Detection Notification Trigger (fires only once per genuine new location)
       const activeConv = get().conversations.find((c) => c.id === activeConversationId);
       const custName = activeConv?.customer_display_name || activeConv?.customer?.display_name || 'العميل';
       const locDetected = newLoc || (persistedMsg as any)?.detected_location;
-      const locStatus = (persistedMsg as any)?.location_detection_status;
+      const previousLoc = activeConv?.customer?.location || '';
 
-      if (locDetected) {
-        get().addLocationAlert({
-          type: 'detected',
-          location: locDetected,
-          customerName: custName,
-          conversationId: activeConversationId,
-        });
-      } else if (locStatus === 'not_detected' && !activeConv?.customer?.location && text.trim().length > 3) {
-        get().addLocationAlert({
-          type: 'not_detected',
-          customerName: custName,
-          conversationId: activeConversationId,
-        });
+      if (locDetected && locDetected !== previousLoc) {
+        const sessionKey = `${activeConversationId}:${locDetected}`;
+        if (!sessionNotifiedLocations.has(sessionKey)) {
+          sessionNotifiedLocations.add(sessionKey);
+          get().addLocationAlert({
+            type: 'detected',
+            location: locDetected,
+            customerName: custName,
+            conversationId: activeConversationId,
+          });
+        }
       }
     } catch (err: any) {
       console.warn('Outbound API send failed. Transitioning bubble to failed:', err);
@@ -876,15 +876,24 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       // Transition to 'sent'
       set((state) => {
         const list = state.messages[activeConversationId] || [];
-        let replaced = list.map((m) =>
-          m.id === tempId ? { ...persistedMsg, delivery_status: 'sent' as const } : m
-        );
+        const alreadyHasPersisted = list.some((m) => m.id === persistedMsg.id);
+        let replaced: Message[];
+        if (alreadyHasPersisted) {
+          replaced = list.filter((m) => m.id !== tempId);
+        } else {
+          replaced = list.map((m) =>
+            m.id === tempId ? { ...persistedMsg, delivery_status: 'sent' as const } : m
+          );
+        }
 
         const seenIds = new Set<string>();
+        const seenExtIds = new Set<string>();
         replaced = replaced.filter((m) => {
           if (!m.id) return true;
           if (seenIds.has(m.id)) return false;
+          if (m.external_message_id && seenExtIds.has(m.external_message_id)) return false;
           seenIds.add(m.id);
+          if (m.external_message_id) seenExtIds.add(m.external_message_id);
           return true;
         });
 
@@ -1108,8 +1117,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         const matchingTempIndex = convMsgs.findIndex(
           (m) =>
             m.id.startsWith('temp-') &&
-            m.text === msg.text &&
-            m.sender_type === msg.sender_type
+            ((m.text && msg.text && m.text === msg.text) || (!m.text && !msg.text)) &&
+            m.sender_type?.toLowerCase() === msg.sender_type?.toLowerCase()
         );
 
         let updatedMsgs: Message[];

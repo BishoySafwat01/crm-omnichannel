@@ -127,26 +127,31 @@ class MessageResponse(MessageBase):
 
         if not atts and url:
             is_img = "image" in str(m_type) or str(url).endswith((".jpg", ".png", ".jpeg", ".webp", ".gif"))
+            is_vid = "video" in str(m_type) or any(str(url).endswith(ext) for ext in [".mp4", ".mov", ".avi", ".mkv", ".m4v"])
+            resolved_type = "image" if is_img else ("video" if is_vid else "file")
             atts = [{
                 "url": url,
-                "type": "image" if is_img else "file",
+                "type": resolved_type,
                 "filename": text_val or "attachment",
             }]
 
         if not atts and text_val:
-            if text_val.startswith("image-") or text_val.startswith("/uploads/") or any(text_val.endswith(ext) for ext in [".ogg", ".mp4", ".m4a", ".webm", ".jpg", ".png", ".jpeg", ".webp"]):
+            if text_val.startswith("image-") or text_val.startswith("/uploads/") or any(text_val.endswith(ext) for ext in [".ogg", ".mp4", ".mov", ".avi", ".mkv", ".m4a", ".webm", ".jpg", ".png", ".jpeg", ".webp", ".gif"]):
                 url_val = text_val if text_val.startswith("/uploads/") else f"/uploads/{text_val}"
-                is_img = "image" in url_val or url_val.endswith((".jpg", ".png", ".jpeg", ".webp"))
+                is_img = "image" in url_val or url_val.endswith((".jpg", ".png", ".jpeg", ".webp", ".gif"))
+                is_vid = any(url_val.endswith(ext) for ext in [".mp4", ".mov", ".avi", ".mkv", ".m4v"])
+                resolved_type = "image" if is_img else ("video" if is_vid else "audio")
+                mime = "image/jpeg" if is_img else ("video/mp4" if is_vid else "audio/m4a")
                 atts = [{
                     "url": url_val,
-                    "type": "image" if is_img else "audio",
+                    "type": resolved_type,
                     "filename": text_val,
-                    "mime_type": "image/jpeg" if is_img else "audio/m4a"
+                    "mime_type": mime
                 }]
                 if not url:
                     url = url_val
                 if not m_type:
-                    m_type = "image" if is_img else "audio"
+                    m_type = resolved_type
 
         # Action metadata extraction from metadata JSONB
         meta_dict = metadata if isinstance(metadata, dict) else {}

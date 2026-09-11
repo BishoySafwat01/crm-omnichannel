@@ -16,7 +16,7 @@ export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Messa
     result.push(msg);
   });
 
-  // 2. Only keep recent pending optimistic messages from existing state that are not yet in server list
+  // 2. Keep recent pending optimistic messages and retain existing non-temp messages
   const now = Date.now();
   existing.forEach((msg) => {
     if (!msg || !msg.id) return;
@@ -26,18 +26,23 @@ export const mergeAndDeduplicateMessages = (existing: Message[], incoming: Messa
     const isTemp = msg.id.startsWith('temp-') || msg.delivery_status === 'pending';
     if (isTemp) {
       const msgTime = new Date(msg.created_at || now).getTime();
-      const isRecent = (now - msgTime) < 30000;
-      const alreadyHasSameText = incoming.some(
+      const isRecent = (now - msgTime) < 60000;
+      const alreadyHasSameTextOrMedia = incoming.some(
         (inc) =>
-          inc.text === msg.text &&
-          inc.sender_type === msg.sender_type &&
-          Math.abs(new Date(inc.created_at || now).getTime() - msgTime) < 30000
+          ((inc.text && msg.text && inc.text === msg.text) || (!inc.text && !msg.text)) &&
+          inc.sender_type?.toLowerCase() === msg.sender_type?.toLowerCase() &&
+          Math.abs(new Date(inc.created_at || now).getTime() - msgTime) < 60000
       );
 
-      if (isRecent && !alreadyHasSameText) {
+      if (isRecent && !alreadyHasSameTextOrMedia) {
         seenIds.add(msg.id);
         result.push(msg);
       }
+    } else {
+      // Non-temp existing message that wasn't in incoming page: preserve it so history is not lost
+      seenIds.add(msg.id);
+      if (msg.external_message_id) seenExternalIds.add(msg.external_message_id);
+      result.push(msg);
     }
   });
 

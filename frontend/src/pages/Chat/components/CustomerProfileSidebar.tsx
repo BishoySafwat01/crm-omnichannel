@@ -151,15 +151,11 @@ export const CustomerProfileSidebar: React.FC = () => {
         await updateConversationBrand(activeConversation.id, formData.brand);
       }
 
-      if (locVal) {
+      const prevLocation = (customer.location || customer.country || '').trim();
+      if (locVal && locVal !== prevLocation) {
         addLocationAlert({
           type: 'detected',
           location: locVal,
-          customerName: formData.display_name.trim() || customer.display_name,
-        });
-      } else {
-        addLocationAlert({
-          type: 'not_detected',
           customerName: formData.display_name.trim() || customer.display_name,
         });
       }

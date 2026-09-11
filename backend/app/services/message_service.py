@@ -727,11 +727,13 @@ class MessageService:
                 if detected_country:
                     cust = await session.get(Customer, conv.customer_id)
                     if cust:
-                        cust.location = detected_country
-                        session.add(cust)
-                        await session.flush()
-                        updated_loc = detected_country
-                        location_status = "detected"
+                        current_loc = getattr(cust, "location", None)
+                        if current_loc != detected_country:
+                            cust.location = detected_country
+                            session.add(cust)
+                            await session.flush()
+                            updated_loc = detected_country
+                            location_status = "detected"
             except Exception as e:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
@@ -745,22 +747,18 @@ class MessageService:
             if user_obj:
                 sender_name = user_obj.full_name
 
-        final_customer_location = updated_loc or (
-            conv.customer.location if (conv.customer and getattr(conv.customer, "location", None)) else None
-        )
-
         msg_resp = MessageResponse.model_validate(new_message)
         if sender_user_id:
             msg_resp.sender_user_id = sender_user_id
         if sender_name:
             msg_resp.sender_name = sender_name
-        if final_customer_location:
-            msg_resp.updated_customer_location = final_customer_location
+        if updated_loc:
+            msg_resp.updated_customer_location = updated_loc
 
         return AgentReplyResultDTO(
             message=msg_resp,
             sender_user_id=sender_user_id,
             sender_name=sender_name,
-            updated_customer_location=final_customer_location,
+            updated_customer_location=updated_loc,
             location_detection_status=location_status,
         )
