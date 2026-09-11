@@ -258,24 +258,6 @@ export const MemoizedMessageBubble = React.memo<{
                 if (!msg.text) return null;
                 if (media.isAudio) return null;
                 if (
-                  media.isImage &&
-                  (msg.text === media.url ||
-                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
-                    msg.text === msg.media_url ||
-                    (String(msg.message_type).toLowerCase() === 'image' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
-                ) {
-                  return null;
-                }
-                if (
-                  media.isVideo &&
-                  (msg.text === media.url ||
-                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
-                    msg.text === msg.media_url ||
-                    (String(msg.message_type).toLowerCase() === 'video' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
-                ) {
-                  return null;
-                }
-                if (
                   msg.text.startsWith('voice_') ||
                   msg.text.startsWith('img_') ||
                   msg.text.startsWith('vid_') ||
@@ -285,16 +267,58 @@ export const MemoizedMessageBubble = React.memo<{
                   return null;
                 }
 
-                let displayTxt = msg.text;
-                if (isReelOrShare) {
-                  displayTxt = displayTxt
-                    .replace(/\[(?:Instagram Reel\/Share|Reel\/Share|Share):\s*https?:\/\/[^\]]+\]/gi, '')
-                    .trim();
-                  if (displayTxt === shareTargetUrl) {
-                    displayTxt = '';
+                // 1. Unconditionally strip synthetic share / reel bracket notations from any message text
+                let displayTxt = (msg.text || '').trim();
+                displayTxt = displayTxt
+                  .replace(/\[?(?:Instagram Reel\/Share|Reel\/Share|Share):\s*https?:\/\/[^\]\s]+\]?/gi, '')
+                  .trim();
+
+                // 2. If message contains media (image, video, or audio), check for redundancy
+                const hasMediaAsset = media.isImage || media.isVideo || media.isAudio;
+                if (hasMediaAsset) {
+                  if (!displayTxt) return null;
+
+                  // If text directly matches the media url or proxy url
+                  if (
+                    displayTxt === media.url ||
+                    displayTxt === msg.media_url ||
+                    (media.url && media.url.includes(encodeURIComponent(displayTxt)))
+                  ) {
+                    return null;
+                  }
+
+                  // If text is solely a CDN link or file URL
+                  const lowerTxt = displayTxt.toLowerCase();
+                  const isSoleCdnLink =
+                    (lowerTxt.startsWith('http://') || lowerTxt.startsWith('https://')) &&
+                    (lowerTxt.includes('fbcdn.net') ||
+                      lowerTxt.includes('fbsbx.com') ||
+                      lowerTxt.includes('cdninstagram.com') ||
+                      lowerTxt.includes('amazonaws.com') ||
+                      /\.(jpg|jpeg|png|webp|gif|svg|mp4|mov|webm|ogg|mp3|wav|m4a|aac)($|\?)/i.test(lowerTxt));
+
+                  if (isSoleCdnLink) {
+                    return null;
+                  }
+
+                  // Also check if message_type is image/video and text is a raw URL
+                  const mType = String(msg.message_type || '').toLowerCase();
+                  if (
+                    (mType === 'image' || mType === 'video') &&
+                    (lowerTxt.startsWith('http://') || lowerTxt.startsWith('https://'))
+                  ) {
+                    return null;
                   }
                 }
 
+                // 3. If it's a dedicated Reel or Share card, suppress text if it matches shareTargetUrl
+                if (isReelOrShare) {
+                  if (!displayTxt || displayTxt === shareTargetUrl) {
+                    return null;
+                  }
+                }
+
+                // 4. If nothing remains, suppress
                 if (!displayTxt) return null;
 
                 return (
