@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserCheck, Ban, AlertTriangle } from 'lucide-react';
+import { UserCheck, Ban, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Conversation, MetaMessageTag } from '../../../../types/crm';
 import { ConversationAvatar, getBrandObject } from '../../../../components/ConversationAvatar';
 import { PresenceState } from '../../../../utils/presence';
@@ -74,6 +74,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
   const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
+  const currentNormalizedStatus =
+    (activeConv.status?.toLowerCase() === 'closed' || activeConv.status?.toLowerCase() === 'completed')
+      ? 'completed'
+      : (activeConv.status?.toLowerCase() === 'pending')
+      ? 'pending'
+      : 'open';
 
   return (
     <header className="h-13 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-4 flex items-center justify-between shrink-0 z-20">
@@ -162,24 +168,43 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Status Dropdown Pill */}
         <select
-          value={activeConv.status || 'open'}
-          onChange={(e) => setConversationStatus(activeConv.id, e.target.value as any)}
-          className="bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-full px-3 py-1 focus:outline-none cursor-pointer"
+          value={currentNormalizedStatus}
+          onChange={(e) => setConversationStatus(activeConv.id, e.target.value)}
+          className={`text-xs font-bold rounded-full px-3 py-1 focus:outline-none cursor-pointer border transition-colors ${
+            currentNormalizedStatus === 'completed'
+              ? 'bg-slate-100 text-slate-700 border-slate-300'
+              : currentNormalizedStatus === 'pending'
+              ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : 'bg-[#E8F0FE] text-[#1A73E8] border-[#1A73E8]/20'
+          }`}
         >
           <option value="open">مفتوحة</option>
           <option value="pending">قيد الانتظار</option>
           <option value="completed">المغلقة</option>
         </select>
 
-        {/* Complete Action Button */}
-        <button
-          type="button"
-          onClick={() => setConversationStatus(activeConv.id, 'completed')}
-          className="px-3 py-1 text-xs font-bold bg-[#1A73E8] hover:bg-[#1557B0] text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>إكمال</span>
-        </button>
+        {/* Complete / Reopen Action Button */}
+        {currentNormalizedStatus === 'completed' ? (
+          <button
+            type="button"
+            onClick={() => setConversationStatus(activeConv.id, 'open')}
+            className="px-3 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
+            title="إعادة فتح المحادثة"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>إعادة فتح</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConversationStatus(activeConv.id, 'completed')}
+            className="px-3 py-1 text-xs font-bold bg-[#1A73E8] hover:bg-[#1557B0] text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
+            title="إكمال وإغلاق المحادثة"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>إكمال</span>
+          </button>
+        )}
 
         {/* Block / Unblock Customer Header Action */}
         {activeConv.customer?.is_blocked ? (

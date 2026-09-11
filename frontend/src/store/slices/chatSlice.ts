@@ -934,12 +934,28 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
   },
 
   setConversationStatus: async (conversationId, statusStr) => {
+    const rawStatus = (statusStr || '').toLowerCase();
+    const isTargetClosed = rawStatus === 'completed' || rawStatus === 'closed';
+    const isTargetPending = rawStatus === 'pending';
+    const storeStatus: any = isTargetClosed ? 'closed' : isTargetPending ? 'pending' : 'open';
+    const apiStatus = isTargetClosed ? 'closed' : isTargetPending ? 'pending' : 'open';
+
     set((state) => ({
       conversations: state.conversations.map((c) =>
-        c.id === conversationId ? { ...c, status: statusStr as any } : c
+        c.id === conversationId ? { ...c, status: storeStatus } : c
       ),
     }));
-    await apiService.updateConversationStatus(conversationId, statusStr);
+
+    await apiService.updateConversationStatus(conversationId, apiStatus);
+
+    const activeFilterTab = get().activeFilterTab;
+    const isCompletedTab = activeFilterTab === 'completed';
+
+    // If conversation transitioned across the active/completed boundary,
+    // re-fetch to maintain synchronized pagination and queue lists
+    if ((isCompletedTab && !isTargetClosed) || (!isCompletedTab && isTargetClosed)) {
+      get().fetchConversations();
+    }
   },
 
   assignAgentToConversation: async (conversationId, agentId) => {
