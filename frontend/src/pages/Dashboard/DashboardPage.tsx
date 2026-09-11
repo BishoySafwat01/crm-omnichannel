@@ -84,7 +84,7 @@ export const ExecutiveDashboard: React.FC = () => {
       {/* Header Toolbar */}
       <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-teal-600 to-teal-700 text-white flex items-center justify-center shadow-md">
+          <div className="w-12 h-12 rounded-xl bg-theme-primary text-white flex items-center justify-center shadow-md shadow-theme-primary/20">
             <Activity className="w-6 h-6" />
           </div>
           <div>
@@ -126,7 +126,7 @@ export const ExecutiveDashboard: React.FC = () => {
                 onClick={() => setSelectedDays(item.days)}
                 className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold ${
                   selectedDays === item.days
-                    ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80'
+                    ? 'bg-white text-theme-primary shadow-xs border border-slate-200/80'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -142,7 +142,7 @@ export const ExecutiveDashboard: React.FC = () => {
             className="p-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 rounded-xl transition-all shadow-xs flex items-center justify-center disabled:opacity-50"
             title="تحديث البيانات"
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-teal-600' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-theme-primary' : ''}`} />
           </button>
         </div>
       </div>
@@ -153,7 +153,7 @@ export const ExecutiveDashboard: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">إجمالي المحادثات</span>
-            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center">
               <MessageSquare className="w-4 h-4" />
             </div>
           </div>
@@ -192,7 +192,7 @@ export const ExecutiveDashboard: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">متوسط وقت الرد الأول</span>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>
           </div>
@@ -201,7 +201,7 @@ export const ExecutiveDashboard: React.FC = () => {
               <span>{slaMetrics?.avg_first_response_minutes.toFixed(1) || '0.0'}</span>
               <span className="text-sm font-bold text-slate-500">دقيقة</span>
             </div>
-            <div className="mt-1 text-[11px] text-blue-700 font-bold">
+            <div className="mt-1 text-[11px] text-theme-primary font-bold">
               مقياس سرعة استجابة فريق خدمة العملاء
             </div>
           </div>
@@ -232,7 +232,7 @@ export const ExecutiveDashboard: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-teal-600" />
+              <BarChart3 className="w-5 h-5 text-theme-primary" />
               <h2 className="text-base font-bold text-slate-900">توزيع القنوات (Channel Share)</h2>
             </div>
             <span className="text-xs font-bold text-slate-500">
@@ -276,7 +276,7 @@ export const ExecutiveDashboard: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <Layers className="w-5 h-5 text-teal-600" />
+              <Layers className="w-5 h-5 text-theme-primary" />
               <h2 className="text-base font-bold text-slate-900">حجم العمليات حسب البراند (Brand Volume)</h2>
             </div>
             <span className="text-xs font-bold text-slate-500">مقارنة براندات مجموعة Luxira</span>
@@ -290,7 +290,7 @@ export const ExecutiveDashboard: React.FC = () => {
                   className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 border border-slate-200/60 hover:border-slate-300 transition-all"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                    <div className="w-8 h-8 rounded-lg bg-theme-primary text-white font-bold text-xs flex items-center justify-center shadow-xs">
                       {b.brand.charAt(0)}
                     </div>
                     <div>
@@ -365,7 +365,7 @@ export const ExecutiveDashboard: React.FC = () => {
                           isPeak
                             ? 'bg-gradient-to-t from-amber-500 to-amber-400 shadow-md'
                             : item.message_count > 0
-                            ? 'bg-teal-600 hover:bg-teal-500'
+                            ? 'bg-theme-primary hover:bg-theme-primary-hover'
                             : 'bg-slate-200/60'
                         }`}
                         style={{ height: `${heightPct}%` }}

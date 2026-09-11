@@ -278,7 +278,7 @@ export const SocialCommentsManager: React.FC = () => {
         {/* Header Title & Quick Actions */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#1A73E8] to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
               <MessageCircle className="w-6 h-6" />
             </div>
             <div>
@@ -286,7 +286,7 @@ export const SocialCommentsManager: React.FC = () => {
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">
                   إدارة التعليقات والأتمتة الذكية (AI Auto-Moderation)
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#E8F0FE] text-[#1A73E8] border border-[#1A73E8]/20">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-theme-primary-tint text-theme-primary border border-theme-primary/20">
                   Meta Graph v20.0
                 </span>
               </div>
@@ -304,22 +304,22 @@ export const SocialCommentsManager: React.FC = () => {
               className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 transition border border-slate-200/60 shadow-2xs"
               title="تحديث البيانات"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoadingComments ? 'animate-spin text-[#1A73E8]' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isLoadingComments ? 'animate-spin text-theme-primary' : ''}`} />
             </button>
 
             {/* AI Sandbox Simulator Trigger */}
             <button
               onClick={() => setIsSimulatorModalOpen(true)}
-              className="px-3.5 py-2 rounded-2xl bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 border border-indigo-200/60 shadow-2xs"
+              className="px-3.5 py-2 rounded-2xl bg-theme-primary-tint hover:bg-theme-primary-subtle text-theme-primary text-xs font-bold transition flex items-center gap-1.5 border border-theme-primary/20 shadow-2xs"
             >
-              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <Sparkles className="w-4 h-4 text-theme-primary" />
               <span>محاكي فحص AI</span>
             </button>
 
             {/* AI Audit Logs Modal Trigger */}
             <button
               onClick={() => setIsLogsModalOpen(true)}
-              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60 shadow-2xs"
+              className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 hover:text-theme-primary text-xs font-bold transition flex items-center gap-1.5 border border-slate-200/60 shadow-2xs"
             >
               <Activity className="w-4 h-4 text-slate-600" />
               <span>سجل العمليات ({autoDeletedCount + autoRepliedCount})</span>
@@ -399,7 +399,7 @@ export const SocialCommentsManager: React.FC = () => {
                 </span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#1A73E8] flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">
               <MessageSquare className="w-5 h-5" />
             </div>
           </div>
@@ -461,7 +461,7 @@ export const SocialCommentsManager: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="ابحث في نص التعليقات، اسم العميل، أو عنوان المنشور..."
-                className="w-full bg-slate-50 text-xs font-medium text-slate-900 pr-10 pl-4 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]"
+                className="w-full bg-slate-50 text-xs font-medium text-slate-900 pr-10 pl-4 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
               />
               {searchQuery && (
                 <button
@@ -478,7 +478,7 @@ export const SocialCommentsManager: React.FC = () => {
               <select
                 value={selectedPostId}
                 onChange={(e) => setSelectedPostId(e.target.value)}
-                className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 cursor-pointer"
+                className="w-full bg-slate-50 text-xs font-bold text-slate-800 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 cursor-pointer"
               >
                 <option value="all">جميع المنشورات (All Posts)</option>
                 {Array.from(new Set(safeComments.map((c) => c.post_id).filter(Boolean))).map((pid) => {
@@ -608,7 +608,7 @@ export const SocialCommentsManager: React.FC = () => {
         <div className="space-y-3.5">
           {isLoadingComments ? (
             <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
-              <Loader2 className="w-8 h-8 text-[#1A73E8] animate-spin mx-auto" />
+              <Loader2 className="w-8 h-8 text-theme-primary animate-spin mx-auto" />
               <h3 className="text-sm font-bold text-slate-800">جاري تحميل التعليقات من الخادم...</h3>
             </div>
           ) : apiError ? (
@@ -652,7 +652,7 @@ export const SocialCommentsManager: React.FC = () => {
                       ? 'border-rose-200 bg-rose-50/20'
                       : isHidden
                       ? 'border-amber-200 bg-amber-50/20'
-                      : 'border-slate-200 hover:border-blue-300'
+                      : 'border-slate-200 hover:border-theme-primary/40'
                   }`}
                 >
                   {/* Top Bar: Author, Platform, Sentiment & Status */}
@@ -694,7 +694,7 @@ export const SocialCommentsManager: React.FC = () => {
                         </span>
                       )}
                       {comment.sentiment === 'neutral_inquiry' && (
-                        <span className="px-2.5 py-1 bg-blue-50 text-[#1A73E8] text-[11px] font-bold rounded-xl border border-blue-200 flex items-center gap-1">
+                        <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-xl border border-blue-200 flex items-center gap-1">
                           <span>💬 استفسار/سعر</span>
                         </span>
                       )}
@@ -754,8 +754,8 @@ export const SocialCommentsManager: React.FC = () => {
                           className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-blue-50 text-[#1A73E8] border border-blue-200/60 flex items-center justify-center font-bold text-xs shrink-0">
-                          <ImageIcon className="w-5 h-5 text-blue-500" />
+                        <div className="w-12 h-12 rounded-lg bg-theme-primary-tint text-theme-primary border border-theme-primary/20 flex items-center justify-center font-bold text-xs shrink-0">
+                          <ImageIcon className="w-5 h-5 text-theme-primary" />
                         </div>
                       )}
                       <div className="min-w-0">
@@ -774,7 +774,7 @@ export const SocialCommentsManager: React.FC = () => {
                         href={postUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-white hover:bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl transition shrink-0 shadow-2xs"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-theme-primary hover:text-theme-primary-hover bg-white hover:bg-theme-primary-tint border border-theme-primary/20 px-3 py-1.5 rounded-xl transition shrink-0 shadow-2xs"
                         title="فتح المنشور الأصلي في نافذة جديدة"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
@@ -809,9 +809,9 @@ export const SocialCommentsManager: React.FC = () => {
                           setReplyModalComment(comment);
                           setReplyText('');
                         }}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                        className="px-3 py-1.5 bg-theme-primary-tint hover:bg-theme-primary-subtle text-theme-primary border border-theme-primary/20 text-xs font-bold rounded-xl transition flex items-center gap-1.5"
                       >
-                        <MessageSquare className="w-3.5 h-3.5 text-[#1A73E8]" />
+                        <MessageSquare className="w-3.5 h-3.5 text-theme-primary" />
                         <span>رد على التعليق</span>
                       </button>
 
@@ -851,7 +851,7 @@ export const SocialCommentsManager: React.FC = () => {
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-[#1A73E8] text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
+                <div className="w-10 h-10 rounded-2xl bg-theme-primary text-white flex items-center justify-center font-bold shadow-md shadow-theme-primary/20">
                   <Bot className="w-5 h-5" />
                 </div>
                 <div>
@@ -928,7 +928,7 @@ export const SocialCommentsManager: React.FC = () => {
                       setSettings({ ...settings, autoReplyInquiries: !settings.autoReplyInquiries })
                     }
                     className={`w-11 h-6 rounded-full transition-colors p-0.5 flex items-center ${
-                      settings.autoReplyInquiries ? 'bg-[#1A73E8] justify-end' : 'bg-slate-300 justify-start'
+                      settings.autoReplyInquiries ? 'bg-theme-primary justify-end' : 'bg-slate-300 justify-start'
                     }`}
                   >
                     <span className="w-5 h-5 rounded-full bg-white shadow-md block" />
@@ -945,7 +945,7 @@ export const SocialCommentsManager: React.FC = () => {
                   <select
                     value={settings.strictnessLevel}
                     onChange={(e) => setSettings({ ...settings, strictnessLevel: e.target.value as any })}
-                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                   >
                     <option value="strict">صارم جداً (حذف فوري لأي نبرة استياء أو إساءة)</option>
                     <option value="balanced">متوازن (حذف الشتائم والاتهامات المباشرة فقط)</option>
@@ -960,7 +960,7 @@ export const SocialCommentsManager: React.FC = () => {
                   <select
                     value={settings.actionForNegative}
                     onChange={(e) => setSettings({ ...settings, actionForNegative: e.target.value as any })}
-                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                   >
                     <option value="delete">حذف فوري نهائي من فيسبوك وإنستغرام</option>
                     <option value="hide">إخفاء عن الجمهور مع بقائه لمديري الصفحة</option>
@@ -986,7 +986,7 @@ export const SocialCommentsManager: React.FC = () => {
                       }
                     }}
                     placeholder="اكتب الكلمة المسيئة واضغط إضافة (مثل: مقلب، نصابين)..."
-                    className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                    className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                   />
                   <button
                     type="button"
@@ -1025,7 +1025,7 @@ export const SocialCommentsManager: React.FC = () => {
                   type="text"
                   value={settings.inquiryReplyText}
                   onChange={(e) => setSettings({ ...settings, inquiryReplyText: e.target.value })}
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                 />
               </div>
 
@@ -1037,7 +1037,7 @@ export const SocialCommentsManager: React.FC = () => {
                   rows={2}
                   value={settings.inquiryDmText}
                   onChange={(e) => setSettings({ ...settings, inquiryDmText: e.target.value })}
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20"
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                 />
               </div>
             </div>
@@ -1046,7 +1046,7 @@ export const SocialCommentsManager: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsSettingsModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold transition shadow-xs"
+                className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold transition shadow-xs"
               >
                 حفظ الإعدادات والتطبيق
               </button>
@@ -1061,7 +1061,7 @@ export const SocialCommentsManager: React.FC = () => {
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                <div className="w-8 h-8 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
@@ -1085,7 +1085,7 @@ export const SocialCommentsManager: React.FC = () => {
                   value={simulatorInput}
                   onChange={(e) => setSimulatorInput(e.target.value)}
                   placeholder="مثال 1: المنتج بتاعكم زفت ونصابين ومحدش يشتري منكم&#10;مثال 2: بكام الفستان ده وفيه مقاس لارج؟"
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                 />
               </div>
 
@@ -1119,7 +1119,7 @@ export const SocialCommentsManager: React.FC = () => {
                   type="button"
                   disabled={isSimulating || !simulatorInput.trim()}
                   onClick={handleRunSimulation}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 bg-theme-primary hover:bg-theme-primary-hover text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Play className="w-3.5 h-3.5" />
                   <span>{isSimulating ? 'جاري الفحص...' : 'فحص بالذكاء الاصطناعي'}</span>
@@ -1159,7 +1159,7 @@ export const SocialCommentsManager: React.FC = () => {
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#1A73E8] flex items-center justify-center font-bold">
+                <div className="w-8 h-8 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">
                   <Send className="w-4 h-4" />
                 </div>
                 <div>
@@ -1193,7 +1193,7 @@ export const SocialCommentsManager: React.FC = () => {
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   placeholder="اكتب ردك هنا..."
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 focus:border-[#1A73E8]"
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                 />
               </div>
 
@@ -1202,7 +1202,7 @@ export const SocialCommentsManager: React.FC = () => {
                   type="checkbox"
                   checked={replyAsDm}
                   onChange={(e) => setReplyAsDm(e.target.checked)}
-                  className="rounded text-[#1A73E8] focus:ring-[#1A73E8]"
+                  className="rounded text-theme-primary focus:ring-theme-primary accent-theme-primary"
                 />
                 <span>إرسال نفس الرسالة في محادثة خاصة (Messenger / Direct) أيضاً</span>
               </label>
@@ -1218,7 +1218,7 @@ export const SocialCommentsManager: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingReply || !replyText.trim()}
-                  className="px-5 py-2 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>{isSubmittingReply ? 'جاري الإرسال...' : 'إرسال الرد'}</span>
@@ -1235,7 +1235,7 @@ export const SocialCommentsManager: React.FC = () => {
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-indigo-600" />
+                <Activity className="w-5 h-5 text-theme-primary" />
                 <h3 className="text-sm font-bold text-slate-900">سجل إجراءات الذكاء الاصطناعي على التعليقات</h3>
               </div>
               <button
@@ -1263,7 +1263,7 @@ export const SocialCommentsManager: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-slate-700 font-medium italic">"{c.text || (c as any).commentText}"</p>
-                    <div className="pt-1 text-[11px] font-bold text-[#1A73E8]">
+                    <div className="pt-1 text-[11px] font-bold text-theme-primary">
                       ⚡ {c.reply_text ? `تم الرد: ${c.reply_text}` : c.is_hidden ? 'تم إخفاء التعليق' : 'تمت المعالجة'}
                     </div>
                   </div>
