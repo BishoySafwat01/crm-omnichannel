@@ -388,7 +388,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                   setLocalDraftText(resp);
                   setShowCannedPicker(false);
                 }}
-                className="text-right text-xs p-2 rounded-xl hover:bg-blue-50 text-slate-700 hover:text-blue-900 transition font-medium cursor-pointer"
+                className="text-right text-xs p-2 rounded-xl hover:bg-theme-primary-tint text-slate-700 hover:text-theme-primary transition font-medium cursor-pointer"
               >
                 {resp}
               </button>
@@ -422,14 +422,14 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           </button>
         </div>
       ) : (
-        <div className="border border-slate-200/80 focus-within:border-[#1A73E8] focus-within:ring-2 focus-within:ring-[#1A73E8]/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5 relative">
+        <div className="border border-slate-200/80 focus-within:border-theme-primary focus-within:ring-2 focus-within:ring-theme-primary/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5 relative">
           {/* Staged Reply Preview Bar */}
           {replyingToMessage && !editingMessage && (
-            <div className="flex items-center justify-between p-2 px-3 bg-blue-50/80 rounded-xl border border-blue-100 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between p-2 px-3 bg-theme-primary-tint/80 rounded-xl border border-theme-primary/20 animate-in fade-in duration-150">
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <CornerUpLeft className="w-4 h-4 text-[#1A73E8] shrink-0" />
+                <CornerUpLeft className="w-4 h-4 text-theme-primary shrink-0" />
                 <div className="text-right truncate">
-                  <span className="text-[10px] font-bold text-[#1A73E8] block">
+                  <span className="text-[10px] font-bold text-theme-primary block">
                     الرد على{' '}
                     {replyingToMessage.sender_name ||
                       (replyingToMessage.sender_type === 'customer'
@@ -444,7 +444,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               <button
                 type="button"
                 onClick={() => setReplyingToMessage(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-blue-100 transition cursor-pointer"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-theme-primary-tint transition cursor-pointer"
                 title="إلغاء الرد"
               >
                 <X className="w-4 h-4" />
@@ -467,7 +467,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     <Video className="w-6 h-6" />
                   </div>
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-blue-50 text-[#1A73E8] border border-blue-200 flex items-center justify-center font-bold shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-theme-primary-tint text-theme-primary border border-theme-primary/20 flex items-center justify-center font-bold shrink-0">
                     <FileText className="w-6 h-6" />
                   </div>
                 )}
@@ -641,7 +641,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
                     className={`p-1.5 rounded-full transition cursor-pointer ${
                       showAttachmentMenu
-                        ? 'bg-blue-100 text-[#1A73E8]'
+                        ? 'bg-theme-primary-tint text-theme-primary'
                         : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
                     }`}
                     title="إرفاق وسائط وملفات"
@@ -682,9 +682,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                           docInputRef.current?.click();
                           setShowAttachmentMenu(false);
                         }}
-                        className="w-full text-right px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-[#1A73E8] flex items-center gap-2.5 transition cursor-pointer"
+                        className="w-full text-right px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-theme-primary-tint hover:text-theme-primary flex items-center gap-2.5 transition cursor-pointer"
                       >
-                        <FileText className="w-4 h-4 text-[#1A73E8]" />
+                        <FileText className="w-4 h-4 text-theme-primary" />
                         <span>إرفاق ملف / مستند (PDF, Word)</span>
                       </button>
                     </div>
@@ -705,7 +705,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowCannedPicker(!showCannedPicker)}
-                  className="p-1.5 rounded-full text-slate-400 hover:text-[#1A73E8] hover:bg-blue-50 transition cursor-pointer"
+                  className="p-1.5 rounded-full text-slate-400 hover:text-theme-primary hover:bg-theme-primary-tint transition cursor-pointer"
                   title="ردود جاهزة"
                 >
                   <Zap className="w-4 h-4" />
@@ -719,7 +719,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 disabled={(!localDraftText.trim() && !stagedMedia) || isUploadingMedia}
                 className={`px-3 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5 ${
                   localDraftText.trim() || stagedMedia
-                    ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-xs active:scale-95 cursor-pointer'
+                    ? 'bg-theme-primary hover:bg-theme-primary-hover text-white shadow-xs active:scale-95 cursor-pointer'
                     : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 }`}
                 title="إرسال"

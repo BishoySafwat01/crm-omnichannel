@@ -105,7 +105,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 محادثة خاصة (Direct)
               </span>
             ) : (
-              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+              <span className="text-[10px] bg-theme-primary-tint text-theme-primary border border-theme-primary/20 px-2 py-0.5 rounded-full font-bold">
                 {brandObj.name}
               </span>
             )}
@@ -175,7 +175,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               ? 'bg-slate-100 text-slate-700 border-slate-300'
               : currentNormalizedStatus === 'pending'
               ? 'bg-amber-50 text-amber-700 border-amber-200'
-              : 'bg-[#E8F0FE] text-[#1A73E8] border-[#1A73E8]/20'
+              : 'bg-theme-primary-tint text-theme-primary border-theme-primary/20'
           }`}
         >
           <option value="open">مفتوحة</option>
@@ -198,7 +198,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           <button
             type="button"
             onClick={() => setConversationStatus(activeConv.id, 'completed')}
-            className="px-3 py-1 text-xs font-bold bg-[#1A73E8] hover:bg-[#1557B0] text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
+            className="px-3 py-1 text-xs font-bold bg-theme-primary hover:bg-theme-primary-hover text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
             title="إكمال وإغلاق المحادثة"
           >
             <UserCheck className="w-3.5 h-3.5" />

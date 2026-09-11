@@ -238,13 +238,13 @@ export const CustomerProfileSidebar: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-              <User className="w-4 h-4 text-[#1A73E8]" />
+              <User className="w-4 h-4 text-theme-primary" />
               <span>بيانات العميل</span>
             </h4>
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}
-                className="text-[11px] font-bold text-[#1A73E8] hover:underline transition flex items-center gap-0.5"
+                className="text-[11px] font-bold text-theme-primary hover:text-theme-primary-hover hover:underline transition flex items-center gap-0.5"
               >
                 <Edit2 className="w-3 h-3" />
                 <span>تعديل</span>
@@ -253,7 +253,7 @@ export const CustomerProfileSidebar: React.FC = () => {
               <div className="flex items-center gap-1">
                 <button
                   onClick={handleSaveContact}
-                  className="text-teal-700 hover:bg-teal-50 p-1 rounded-lg transition"
+                  className="text-theme-primary hover:bg-theme-primary-tint p-1 rounded-lg transition"
                 >
                   <Check className="w-3.5 h-3.5 font-bold" />
                 </button>
@@ -289,7 +289,7 @@ export const CustomerProfileSidebar: React.FC = () => {
                 value={formData.display_name}
                 onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
                 placeholder="اسم العميل"
-                className="w-full text-xs font-bold text-center border border-blue-300 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 bg-blue-50/40"
+                className="w-full text-xs font-bold text-center border border-theme-primary/30 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 bg-theme-primary-subtle"
               />
             ) : (
               <div className="space-y-1">
@@ -320,14 +320,14 @@ export const CustomerProfileSidebar: React.FC = () => {
           <div className="space-y-2 pt-1 border-t border-slate-100 text-xs">
             {/* Phone */}
             <div className="flex items-center gap-2.5 text-slate-700">
-              <Phone className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <Phone className="w-3.5 h-3.5 text-theme-primary shrink-0" />
               {isEditing ? (
                 <input
                   type="text"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="رقم الهاتف"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
                 />
               ) : (
                 <span className="font-mono text-slate-800 font-semibold">{customer.phone || 'غير مسجل'}</span>
@@ -336,14 +336,14 @@ export const CustomerProfileSidebar: React.FC = () => {
 
             {/* Email */}
             <div className="flex items-center gap-2.5 text-slate-700">
-              <Mail className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <Mail className="w-3.5 h-3.5 text-theme-primary shrink-0" />
               {isEditing ? (
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="البريد الإلكتروني"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
                 />
               ) : (
                 <span className="font-medium text-slate-700 truncate">{customer.email || 'غير مسجل'}</span>
@@ -352,14 +352,14 @@ export const CustomerProfileSidebar: React.FC = () => {
 
             {/* Location */}
             <div className="flex items-center gap-2.5 text-slate-700">
-              <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <MapPin className="w-3.5 h-3.5 text-theme-primary shrink-0" />
               {isEditing ? (
                 <input
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   placeholder="الموقع"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-[#1A73E8] outline-none"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
                 />
               ) : (
                 <span className="font-semibold text-slate-800">{formattedLocation}</span>
@@ -368,12 +368,12 @@ export const CustomerProfileSidebar: React.FC = () => {
 
             {/* Store / Brand Selection */}
             <div className="flex items-center gap-2.5 text-slate-700">
-              <Store className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <Store className="w-3.5 h-3.5 text-theme-primary shrink-0" />
               {isEditing ? (
                 <select
                   value={formData.brand}
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                  className="w-full rounded-lg border border-blue-300 bg-blue-50/60 px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-[#1A73E8] outline-none cursor-pointer"
+                  className="w-full rounded-lg border border-theme-primary/30 bg-theme-primary-subtle px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-theme-primary outline-none cursor-pointer"
                 >
                   {brands.filter((b) => b.id !== 'all').map((b) => (
                     <option key={b.id} value={b.id}>
@@ -390,7 +390,7 @@ export const CustomerProfileSidebar: React.FC = () => {
 
             {/* Join Date */}
             <div className="flex items-center gap-2.5 text-slate-700">
-              <History className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+              <History className="w-3.5 h-3.5 text-theme-primary shrink-0" />
               <span className="font-medium text-slate-500 text-[11px]">العميل منذ: {formatJoinDate(customer.created_at)}</span>
             </div>
           </div>
@@ -455,9 +455,9 @@ export const CustomerProfileSidebar: React.FC = () => {
               </div>
               <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                 <span className="text-slate-600 font-bold">إجمالي المبلغ:</span>
-                <span className="font-extrabold text-[#1A73E8] text-sm">{customerOrder.amount || '0.00 EGP'}</span>
+                <span className="font-extrabold text-theme-primary text-sm">{customerOrder.amount || '0.00 EGP'}</span>
               </div>
-              <button className="w-full mt-2 py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5">
+              <button className="w-full mt-2 py-1.5 bg-theme-primary-tint hover:bg-theme-primary-subtle text-theme-primary border border-theme-primary/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5">
                 <span>عرض تفاصيل الطلب</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </button>
@@ -467,7 +467,7 @@ export const CustomerProfileSidebar: React.FC = () => {
               <p>لا توجد طلبات مسجلة حالياً</p>
               <button
                 type="button"
-                className="w-full py-1.5 bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border border-[#1A73E8]/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5"
+                className="w-full py-1.5 bg-theme-primary-tint hover:bg-theme-primary-subtle text-theme-primary border border-theme-primary/20 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5"
               >
                 <span>+ تسجيل طلب جديد</span>
               </button>
@@ -479,7 +479,7 @@ export const CustomerProfileSidebar: React.FC = () => {
         <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 border border-white/80 shadow-2xs space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <h4 className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-[#1A73E8]" />
+              <FileText className="w-4 h-4 text-theme-primary" />
               <span>ملاحظات فريق العمل</span>
             </h4>
           </div>
@@ -491,12 +491,12 @@ export const CustomerProfileSidebar: React.FC = () => {
               onChange={(e) => setNewNoteText(e.target.value)}
               placeholder="أضف ملاحظة خاصة بفريق الدعم..."
               rows={2}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-[#1A73E8] focus:outline-none bg-slate-50 font-medium placeholder-slate-400"
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-theme-primary focus:ring-2 focus:ring-theme-primary/20 focus:outline-none bg-slate-50 font-medium placeholder-slate-400"
             />
             <button
               type="submit"
               disabled={!newNoteText.trim() || isSubmittingNote}
-              className="w-full bg-[#1A73E8] text-white text-xs font-bold py-1.5 px-3 rounded-xl hover:bg-[#1557B0] disabled:opacity-50 transition shadow-2xs flex items-center justify-center gap-1.5"
+              className="w-full bg-theme-primary text-white text-xs font-bold py-1.5 px-3 rounded-xl hover:bg-theme-primary-hover disabled:opacity-50 transition shadow-2xs flex items-center justify-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5" />
               <span>إضافة ملاحظة</span>

@@ -385,7 +385,7 @@ export const ConversationList: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="بحث في المحادثات..."
-              className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-800 text-xs rounded-full pr-9 pl-4 py-2 border border-transparent focus:border-[#1A73E8] focus:outline-none focus:ring-2 focus:ring-[#1A73E8]/20 transition-all font-medium placeholder-slate-400"
+              className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-800 text-xs rounded-full pr-9 pl-4 py-2 border border-transparent focus:border-theme-primary focus:outline-none focus:ring-2 focus:ring-theme-primary/20 transition-all font-medium placeholder-slate-400"
             />
             <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
             {searchQuery && (
@@ -406,7 +406,7 @@ export const ConversationList: React.FC = () => {
               onClick={() => setIsEmployeeMenuOpen(!isEmployeeMenuOpen)}
               className={`p-2 rounded-full border transition flex items-center gap-1 text-xs font-bold ${
                 selectedEmployeeId
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                  ? 'bg-theme-primary text-white border-theme-primary shadow-2xs'
                   : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600 border-slate-200/60'
               }`}
               title="تصفية حسب الموظف"
@@ -435,7 +435,7 @@ export const ConversationList: React.FC = () => {
                     setIsEmployeeMenuOpen(false);
                   }}
                   className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between shrink-0 mb-1 ${
-                    !selectedEmployeeId ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50' : 'text-slate-700 hover:bg-slate-50 font-medium'
+                    !selectedEmployeeId ? 'bg-theme-primary-tint text-theme-primary font-bold border border-theme-primary/20' : 'text-slate-700 hover:bg-slate-50 font-medium'
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -444,7 +444,7 @@ export const ConversationList: React.FC = () => {
                     </div>
                     <span>كل الموظفين (All)</span>
                   </div>
-                  {!selectedEmployeeId && <Check className="w-3.5 h-3.5 text-teal-600" />}
+                  {!selectedEmployeeId && <Check className="w-3.5 h-3.5 text-theme-primary" />}
                 </button>
 
                 {/* Scrollable Employee Options List */}
@@ -464,7 +464,7 @@ export const ConversationList: React.FC = () => {
                           setIsEmployeeMenuOpen(false);
                         }}
                         className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between ${
-                          selectedEmployeeId === emp.id ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50' : 'text-slate-700 hover:bg-slate-50 font-medium'
+                          selectedEmployeeId === emp.id ? 'bg-theme-primary-tint text-theme-primary font-bold border border-theme-primary/20' : 'text-slate-700 hover:bg-slate-50 font-medium'
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -483,7 +483,7 @@ export const ConversationList: React.FC = () => {
                             )}
                           </div>
                         </div>
-                        {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />}
+                        {selectedEmployeeId === emp.id && <Check className="w-3.5 h-3.5 text-theme-primary shrink-0" />}
                       </button>
                     );
                   })}
@@ -501,7 +501,7 @@ export const ConversationList: React.FC = () => {
           const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
 
           return (
-            <div className="flex items-center justify-between bg-blue-50/90 border border-blue-200/80 px-3 py-1 rounded-xl text-xs text-blue-900 font-semibold animate-in fade-in duration-100">
+            <div className="flex items-center justify-between bg-theme-primary-tint border border-theme-primary/20 px-3 py-1 rounded-xl text-xs text-theme-primary font-semibold animate-in fade-in duration-100">
               <div className="flex items-center gap-2 truncate">
                 <div
                   className={`w-5 h-5 rounded-md bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
@@ -514,7 +514,7 @@ export const ConversationList: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedEmployeeId(null)}
-                className="text-blue-500 hover:text-blue-700 p-0.5 rounded-full cursor-pointer"
+                className="text-theme-primary hover:text-theme-primary-hover p-0.5 rounded-full cursor-pointer"
                 title="إلغاء تصفية الموظف"
               >
                 <X className="w-3.5 h-3.5" />
@@ -537,7 +537,7 @@ export const ConversationList: React.FC = () => {
                 onClick={() => setActiveFilterTab(tab.id)}
                 className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] rounded-full transition-all duration-150 cursor-pointer select-none whitespace-nowrap overflow-hidden ${
                   isActive
-                    ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
+                    ? 'bg-theme-primary-tint text-theme-primary font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
                 }`}
                 title={tab.label}
@@ -548,8 +548,8 @@ export const ConversationList: React.FC = () => {
                   <span
                     className={`inline-flex items-center justify-center h-4 min-w-[18px] px-1 text-[9px] font-extrabold rounded-full transition-colors leading-none shrink-0 ${
                       isActive
-                        ? 'bg-[#1A73E8] text-white shadow-2xs'
-                        : 'bg-blue-100 text-[#1A73E8]'
+                        ? 'bg-theme-primary text-white shadow-2xs'
+                        : 'bg-theme-primary-tint text-theme-primary'
                     }`}
                   >
                     {formattedBadge}
@@ -594,7 +594,7 @@ export const ConversationList: React.FC = () => {
                   onClick={() => setActiveConversationId(conv.id)}
                   className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
                     isActive
-                      ? 'bg-[#E8F0FE] border-r-4 border-r-[#1A73E8] shadow-2xs font-medium'
+                      ? 'bg-theme-primary-subtle/50 border-r-4 border-r-theme-primary shadow-2xs font-medium'
                       : 'bg-transparent hover:bg-white/90'
                   }`}
                 >
@@ -661,7 +661,7 @@ export const ConversationList: React.FC = () => {
                     </p>
 
                     {unreadCount > 0 && (
-                      <span className="bg-[#1A73E8] text-white text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-2xs leading-none">
+                      <span className="bg-theme-primary text-white text-[10px] font-bold min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center shrink-0 shadow-2xs leading-none">
                         {unreadCount}
                       </span>
                     )}
@@ -672,7 +672,7 @@ export const ConversationList: React.FC = () => {
 
             {isLoadingMoreConversations && (
               <div className="py-3 text-center text-xs font-semibold text-slate-400 flex items-center justify-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#1A73E8] animate-ping inline-block" />
+                <span className="w-2 h-2 rounded-full bg-theme-primary animate-ping inline-block" />
                 <span>جاري تحميل المزيد من المحادثات...</span>
               </div>
             )}
