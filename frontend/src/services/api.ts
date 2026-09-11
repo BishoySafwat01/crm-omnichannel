@@ -9,7 +9,7 @@ const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
 export const API_BASE = rawApiUrl
   ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
   : APP_CONFIG.API_BASE || '/api/v1';
-export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || 'http://localhost:8000/api/v1';
+export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || '/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -35,7 +35,7 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
-      const directBackendUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
       return await fetch(directBackendUrl, reqInit);
     }
     return res;
@@ -45,7 +45,7 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
-      const directBackendUrl = `http://127.0.0.1:8000/api/v1${cleanPath}`;
+      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
       return await fetch(directBackendUrl, reqInit);
     }
     throw err;
@@ -89,7 +89,9 @@ export const getConversationsDirect = async (
   assigned_agent_id?: string,
   page: number = 1,
   pageSize: number = 50,
-  provider?: string
+  provider?: string,
+  include_archived?: boolean,
+  search?: string
 ): Promise<any> => {
   const params = new URLSearchParams();
   params.set('page', String(page));
@@ -108,6 +110,12 @@ export const getConversationsDirect = async (
   }
   if (provider && provider.toLowerCase() !== 'all' && provider !== 'الكل') {
     params.set('provider', provider);
+  }
+  if (include_archived) {
+    params.set('include_archived', 'true');
+  }
+  if (search && search.trim()) {
+    params.set('search', search.trim());
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 

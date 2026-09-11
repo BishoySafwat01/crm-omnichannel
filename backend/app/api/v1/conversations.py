@@ -13,6 +13,7 @@ from app.api.deps import (
     user_has_conversation_access,
 )
 from app.core.database import get_db
+from app.integrations.beon.client import BeonAPIError
 from app.integrations.meta import MetaAPIError
 from app.models.conversation import Conversation
 from app.models.enums import ChannelEnum, ConversationStatusEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum, UserRole
@@ -160,6 +161,7 @@ async def list_conversations(
     ),
     search: Optional[str] = Query(None, description="Search by subject"),
     brand: Optional[str] = Query(None, description="Filter by brand"),
+    include_archived: bool = Query(False, description="Filter archived conversations"),
     location: Optional[str] = Query(None, description="Filter by customer location"),
     country: Optional[str] = Query(None, description="Filter by customer country"),
     sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
@@ -172,22 +174,7 @@ async def list_conversations(
     # Fallback/alias location to country if location not provided
     effective_country = country if country is not None else location
 
-    parsed_provider: Optional[ProviderEnum] = None
-    if provider:
-        if isinstance(provider, ProviderEnum):
-            parsed_provider = provider
-        elif isinstance(provider, str):
-            norm_p = provider.strip().lower()
-            if norm_p not in ["all", "none", "", "الكل"]:
-                if norm_p in ["beon", "مزود beon", "beon gateway"]:
-                    parsed_provider = ProviderEnum.BEON
-                elif norm_p in ["meta", "direct_meta", "ميتا مباشر", "direct meta"]:
-                    parsed_provider = ProviderEnum.META
-                else:
-                    try:
-                        parsed_provider = ProviderEnum(norm_p)
-                    except ValueError:
-                        parsed_provider = None
+    parsed_provider: Optional[str] = provider
 
     parsed_channel: Optional[ChannelEnum] = None
     if channel:
@@ -225,6 +212,7 @@ async def list_conversations(
         provider=parsed_provider,
         channel=parsed_channel,
         status=status_filter,
+        include_archived=include_archived,
         search=search,
         brand=brand,
         location=effective_country,
@@ -426,7 +414,7 @@ async def send_outbound_reply(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=err_msg,
         )
-    except MetaAPIError as exc:
+    except (MetaAPIError, BeonAPIError) as exc:
         raise HTTPException(
             status_code=exc.status_code or status.HTTP_400_BAD_REQUEST,
             detail=exc.message,
@@ -445,6 +433,7 @@ async def send_outbound_reply(
 async def update_conversation_metadata(
     conversation_id: uuid.UUID,
     payload: dict,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
@@ -465,7 +454,7 @@ async def update_conversation_metadata(
     await db.commit()
     await db.refresh(conv)
 
-    client_ip = request.client.host if request.client else None
+    client_ip = request.client.host if (request and request.client) else None
     await AuditService.log_action(
         session=db,
         user_id=current_user.id if current_user else None,

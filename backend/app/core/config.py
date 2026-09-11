@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     BEON_API_KEY: str = "ZUiczQBL4Ymh7E6qjkNS"
     BEON_API_BASE_URL: str = "https://v3.api.beon.chat/api"
     BEON_WEBHOOK_SECRET: str | None = None
+    BEON_SYNC_INTERVAL_SECONDS: int = 15
 
     # Groq AI Copilot Settings
     GROQ_API_KEY: str | None = None

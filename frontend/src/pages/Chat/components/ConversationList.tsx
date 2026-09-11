@@ -617,13 +617,13 @@ export const ConversationList: React.FC = () => {
                             {customerName}
                           </h3>
                           <span
-                            className={`px-1.5 py-0.2 rounded-md text-[8.5px] font-bold shrink-0 ${
+                            className={`px-1.5 py-0.5 rounded-full text-[8.5px] font-extrabold flex items-center gap-0.5 shrink-0 ${
                               (conv.provider || '').toLowerCase() === 'beon'
-                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/80'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200/80'
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-2xs'
                             }`}
                           >
-                            {(conv.provider || '').toLowerCase() === 'beon' ? 'BeOn' : 'Meta'}
+                            {(conv.provider || '').toLowerCase() === 'beon' ? '🚀 BeOn' : '🌐 Meta'}
                           </span>
                           {isConversationLate(conv, messages[conv.id]) && (
                             <span

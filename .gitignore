@@ -59,3 +59,11 @@ dist/
 # Uploads & Data
 backend/uploads/
 uploads/
+
+# Security, Keys & Backups
+luxira-key.pem
+*.pem
+*.key
+*.sql
+*.tar.gz
+

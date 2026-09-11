@@ -6,6 +6,7 @@ from typing import Any, Optional
 import httpx
 from sqlalchemy import delete, func, select, or_
 
+from app.api.v1.ws import manager
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.integrations.beon.client import BeonClient
@@ -19,10 +20,211 @@ logger = logging.getLogger("app.services.beon_sync")
 
 
 class BeonSyncEngine:
-    """Production Historical Synchronization Engine for BeOn V3."""
+    """Production Historical and Real-Time Synchronization Engine for BeOn V3."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.client = BeonClient(api_key=api_key or settings.BEON_API_KEY)
+
+    async def sync_recent(self, limit: int = 30) -> dict[str, Any]:
+        """
+        Incrementally fetch and ingest recent conversations and messages from BeOn V3.
+        Dispatches real-time WebSocket events when new conversations or messages are persisted.
+        """
+        stats = {
+            "synced_conversations": 0,
+            "new_conversations": 0,
+            "new_messages": 0,
+            "updated_conversations": 0,
+        }
+
+        try:
+            resp = await self.client.get_conversations(page=1, per_page=limit)
+        except Exception as e:
+            logger.error(f"[BeOn Sync Engine] Error fetching recent conversations from BeOn: {e}")
+            return stats
+
+        data_obj = resp.get("data") or {}
+        records = data_obj.get("records") or []
+        if not records:
+            return stats
+
+        for raw_conv in records:
+            norm_conv = BeonNormalizer.normalize_conversation(raw_conv)
+            ext_conv_id = norm_conv.get("external_conversation_id")
+            if not ext_conv_id:
+                continue
+
+            stats["synced_conversations"] += 1
+
+            async with AsyncSessionLocal() as db:
+                # 1. Upsert Customer
+                cust_phone = norm_conv.get("customer_phone")
+                cust_name = norm_conv.get("customer_name") or "عميل BeOn"
+                ext_cust_id = norm_conv.get("customer_external_id")
+
+                customer = None
+                if cust_phone:
+                    cust_stmt = select(Customer).where(Customer.phone == cust_phone)
+                    customer = (await db.execute(cust_stmt)).scalar_one_or_none()
+
+                if not customer and ext_cust_id:
+                    ident_stmt = select(CustomerIdentity).where(
+                        CustomerIdentity.provider == ProviderEnum.BEON,
+                        CustomerIdentity.external_user_id == str(ext_cust_id),
+                    )
+                    ident = (await db.execute(ident_stmt)).scalar_one_or_none()
+                    if ident:
+                        customer = (await db.execute(select(Customer).where(Customer.id == ident.customer_id))).scalar_one_or_none()
+
+                if not customer:
+                    customer = Customer(
+                        id=uuid.uuid4(),
+                        display_name=cust_name,
+                        phone=cust_phone,
+                        created_at=norm_conv["last_message_at"],
+                        updated_at=norm_conv["last_message_at"],
+                    )
+                    db.add(customer)
+                    await db.flush()
+                else:
+                    if cust_name and (not customer.display_name or customer.display_name == "عميل BeOn"):
+                        customer.display_name = cust_name
+                    if cust_phone and not customer.phone:
+                        customer.phone = cust_phone
+
+                # 2. Upsert Customer Identity
+                ident_stmt = select(CustomerIdentity).where(
+                    CustomerIdentity.customer_id == customer.id,
+                    CustomerIdentity.provider == ProviderEnum.BEON,
+                    CustomerIdentity.external_user_id == str(ext_cust_id or cust_phone or ext_conv_id),
+                )
+                identity = (await db.execute(ident_stmt)).scalar_one_or_none()
+                if not identity:
+                    identity = CustomerIdentity(
+                        id=uuid.uuid4(),
+                        customer_id=customer.id,
+                        provider=ProviderEnum.BEON,
+                        channel=norm_conv["channel"],
+                        external_user_id=str(ext_cust_id or cust_phone or ext_conv_id),
+                    )
+                    db.add(identity)
+                    await db.flush()
+
+                # 3. Upsert Conversation
+                conv_stmt = select(Conversation).where(
+                    Conversation.provider == ProviderEnum.BEON,
+                    Conversation.external_conversation_id == str(ext_conv_id),
+                )
+                conversation = (await db.execute(conv_stmt)).scalar_one_or_none()
+                is_new_conv = False
+                if not conversation:
+                    is_new_conv = True
+                    conversation = Conversation(
+                        id=uuid.uuid4(),
+                        customer_id=customer.id,
+                        provider=ProviderEnum.BEON,
+                        channel=norm_conv["channel"],
+                        external_conversation_id=str(ext_conv_id),
+                        brand=norm_conv["brand"],
+                        status=norm_conv["status"],
+                        last_message_at=norm_conv["last_message_at"],
+                        last_activity_at=norm_conv["last_message_at"],
+                        created_at=norm_conv["last_message_at"],
+                        unread_count=0,
+                    )
+                    db.add(conversation)
+                    await db.flush()
+                    stats["new_conversations"] += 1
+                else:
+                    conversation.customer_id = customer.id
+                    conversation.brand = norm_conv["brand"]
+                    conversation.status = norm_conv["status"]
+                    norm_dt = norm_conv["last_message_at"]
+                    if norm_dt and norm_dt.tzinfo is None:
+                        norm_dt = norm_dt.replace(tzinfo=timezone.utc)
+                    conv_dt = conversation.last_message_at
+                    if conv_dt and conv_dt.tzinfo is None:
+                        conv_dt = conv_dt.replace(tzinfo=timezone.utc)
+
+                    if norm_dt and (not conv_dt or norm_dt > conv_dt):
+                        conversation.last_message_at = norm_dt
+                        conversation.last_activity_at = norm_dt
+                        stats["updated_conversations"] += 1
+
+                # 4. Fetch and Sync Messages for this Conversation
+                new_msgs_for_conv = []
+                try:
+                    msg_resp = await self.client.get_conversation_messages(ext_conv_id, per_page=50)
+                    msg_records = (msg_resp.get("data") or {}).get("records") or []
+                    for raw_msg in msg_records:
+                        norm_msg = BeonNormalizer.normalize_message(raw_msg, conversation_external_id=ext_conv_id)
+                        msg_ext_id = norm_msg["external_message_id"]
+
+                        msg_check = await db.execute(
+                            select(Message.id).where(
+                                Message.conversation_id == conversation.id,
+                                Message.external_message_id == msg_ext_id,
+                            )
+                        )
+                        if not msg_check.scalar_one_or_none():
+                            msg_obj = Message(
+                                id=uuid.uuid4(),
+                                conversation_id=conversation.id,
+                                external_message_id=msg_ext_id,
+                                sender_type=norm_msg["sender_type"],
+                                sender_external_id=norm_msg.get("sender_external_id"),
+                                message_type=norm_msg["message_type"],
+                                text=norm_msg["text"],
+                                metadata=norm_msg["metadata"],
+                                created_at=norm_msg["created_at"],
+                            )
+                            db.add(msg_obj)
+                            stats["new_messages"] += 1
+                            new_msgs_for_conv.append({
+                                "id": str(msg_obj.id),
+                                "conversation_id": str(conversation.id),
+                                "external_message_id": msg_ext_id,
+                                "sender_type": msg_obj.sender_type.value if hasattr(msg_obj.sender_type, "value") else str(msg_obj.sender_type),
+                                "message_type": msg_obj.message_type.value if hasattr(msg_obj.message_type, "value") else str(msg_obj.message_type),
+                                "text": msg_obj.text,
+                                "created_at": msg_obj.created_at.isoformat() if hasattr(msg_obj.created_at, "isoformat") else str(msg_obj.created_at),
+                            })
+                except Exception as msg_err:
+                    logger.warning(f"[BeOn Sync Engine] Could not sync messages for conv {ext_conv_id}: {msg_err}")
+
+                await db.commit()
+
+                # 5. Broadcast Realtime WebSocket Events
+                if is_new_conv or new_msgs_for_conv:
+                    try:
+                        conv_dict = {
+                            "id": str(conversation.id),
+                            "external_conversation_id": ext_conv_id,
+                            "provider": "beon",
+                            "channel": conversation.channel.value if hasattr(conversation.channel, "value") else str(conversation.channel),
+                            "brand": conversation.brand,
+                            "status": conversation.status.value if hasattr(conversation.status, "value") else str(conversation.status),
+                            "customer_id": str(customer.id),
+                            "customer_display_name": customer.display_name,
+                            "last_message_text": new_msgs_for_conv[-1]["text"] if new_msgs_for_conv else "محادثة نشطة",
+                            "last_message_at": conversation.last_message_at.isoformat() if hasattr(conversation.last_message_at, "isoformat") else str(conversation.last_message_at),
+                            "unread_count": conversation.unread_count or 0,
+                        }
+                        if is_new_conv:
+                            await manager.broadcast({"type": "NEW_CONVERSATION", "conversation_id": str(conversation.id), "conversation": conv_dict})
+                        else:
+                            await manager.broadcast({"type": "CONVERSATION_UPDATED", "conversation_id": str(conversation.id), "data": conv_dict})
+
+                        for m_data in new_msgs_for_conv:
+                            await manager.broadcast({
+                                "type": "NEW_MESSAGE",
+                                "conversation_id": str(conversation.id),
+                                "message": m_data,
+                            })
+                    except Exception as ws_err:
+                        logger.debug(f"[BeOn Sync Engine] WebSocket broadcast error: {ws_err}")
+
+        return stats
 
     async def purge_synthetic_test_fixtures(self) -> dict[str, int]:
         """Purge all synthetic test conversations, test messages, and orphaned test customers."""
