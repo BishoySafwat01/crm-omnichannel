@@ -17,7 +17,7 @@ export const LocationAlertToast: React.FC<LocationAlertToastProps> = ({
     const timers = alerts.map((alert) =>
       setTimeout(() => {
         onDismiss(alert.id);
-      }, 4500)
+      }, 5500)
     );
 
     return () => {

@@ -17,8 +17,6 @@ import {
   sortConversationsByLatest,
 } from './chatHelpers';
 
-const sessionNotifiedLocations = new Set<string>();
-
 export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, get) => ({
   conversations: [],
   activeConversationId: null,
@@ -418,6 +416,10 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         replyingToMessage?.id
       );
 
+      // Capture baseline location BEFORE store mutation
+      const activeConvBefore = get().conversations.find((c) => c.id === activeConversationId);
+      const previousLoc = (activeConvBefore?.customer?.location || '').trim();
+
       // Transition to 'sent' / 'delivered' & Update customer location reactively with deduplication
       const newLoc = (persistedMsg as any)?.updated_customer_location;
       set((state) => {
@@ -470,23 +472,17 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         };
       });
 
-      // Location Detection Notification Trigger (fires only once per genuine new location)
-      const activeConv = get().conversations.find((c) => c.id === activeConversationId);
-      const custName = activeConv?.customer_display_name || activeConv?.customer?.display_name || 'العميل';
-      const locDetected = newLoc || (persistedMsg as any)?.detected_location;
-      const previousLoc = activeConv?.customer?.location || '';
-
+      // Location Detection Notification Trigger (fires when genuine new location is detected)
+      const locDetected = (newLoc || (persistedMsg as any)?.detected_location || '').trim();
       if (locDetected && locDetected !== previousLoc) {
-        const sessionKey = `${activeConversationId}:${locDetected}`;
-        if (!sessionNotifiedLocations.has(sessionKey)) {
-          sessionNotifiedLocations.add(sessionKey);
-          get().addLocationAlert({
-            type: 'detected',
-            location: locDetected,
-            customerName: custName,
-            conversationId: activeConversationId,
-          });
-        }
+        const activeConv = get().conversations.find((c) => c.id === activeConversationId);
+        const custName = activeConv?.customer_display_name || activeConv?.customer?.display_name || 'العميل';
+        get().addLocationAlert({
+          type: 'detected',
+          location: locDetected,
+          customerName: custName,
+          conversationId: activeConversationId,
+        });
       }
     } catch (err: any) {
       console.warn('Outbound API send failed. Transitioning bubble to failed:', err);
