@@ -348,6 +348,7 @@ class MetaImportService:
                         subject=norm_conv.subject,
                         status=norm_conv.status,
                         brand=brand_name,
+                        last_message_at=norm_conv.last_message_at,
                     )
 
                 # Fetch Messages for this conversation (time-bounded to last 7 days)

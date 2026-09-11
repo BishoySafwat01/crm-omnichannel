@@ -1,3 +1,4 @@
+from datetime import datetime
 import uuid
 from typing import Any, Dict, Optional
 from sqlalchemy import func, select
@@ -23,6 +24,7 @@ class ConversationService:
         status: ConversationStatusEnum = ConversationStatusEnum.OPEN,
         brand: Optional[str] = None,
         workspace_id: Optional[uuid.UUID] = None,
+        last_message_at: Optional[datetime] = None,
     ) -> Conversation:
         conversation = Conversation(
             customer_id=customer_id,
@@ -33,6 +35,7 @@ class ConversationService:
             status=status,
             brand=brand or "Default Business Page",
             workspace_id=workspace_id,
+            last_message_at=last_message_at or func.now(),
         )
         session.add(conversation)
         await session.commit()
@@ -46,6 +49,7 @@ class ConversationService:
         subject: Optional[str] = None,
         brand: Optional[str] = None,
         workspace_id: Optional[uuid.UUID] = None,
+        last_message_at: Optional[datetime] = None,
     ) -> Conversation:
         # First check if customer ALREADY has an existing conversation thread
         stmt_cust = (
@@ -96,6 +100,7 @@ class ConversationService:
             subject=subject or f"Conversation ({identity.external_user_id})",
             brand=brand,
             workspace_id=workspace_id,
+            last_message_at=last_message_at,
         )
 
     @staticmethod
