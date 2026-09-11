@@ -70,6 +70,7 @@ export const usePortalBrandingStore = create<PortalBrandingState>((set, get) => 
     // 3. Primary Theme CSS variable injection
     if (data.theme_primary_color) {
       document.documentElement.style.setProperty('--primary-color', data.theme_primary_color);
+      document.documentElement.style.setProperty('--theme-primary-color', data.theme_primary_color);
     }
   },
 
