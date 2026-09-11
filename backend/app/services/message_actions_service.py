@@ -17,6 +17,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.schemas.messaging import MessageResponse
 from app.services.audit_service import AuditService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("MessageActionsService")
 
@@ -111,13 +112,19 @@ class MessageActionsService:
 
         # 8. Realtime broadcast
         try:
-            from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(msg)
-            await manager.broadcast({
-                "type": "MESSAGE_UPDATED",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            conv = await session.get(Conversation, conversation_id)
+            conv_brand = getattr(conv, "brand", None) if conv else None
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "MESSAGE_UPDATED",
+                    "conversation_id": str(conversation_id),
+                    "brand": conv_brand,
+                    "message": resp.model_dump(mode="json"),
+                },
+            )
         except Exception as ws_err:
             logger.warning("Error broadcasting MESSAGE_UPDATED: %s", ws_err)
 
@@ -216,32 +223,40 @@ class MessageActionsService:
 
         # 2. Realtime broadcast (Chat update + Red Alert Toast for Admins)
         try:
-            from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(msg)
-            await manager.broadcast({
-                "type": "MESSAGE_DELETED",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "MESSAGE_DELETED",
+                    "conversation_id": str(conversation_id),
+                    "brand": brand_name,
+                    "message": resp.model_dump(mode="json"),
+                },
+            )
 
             # Broadcast high-priority Red Alert to all logged-in Admins
             alert_id = f"del-{msg.id}"
-            await manager.broadcast({
-                "type": "ADMIN_SECURITY_ALERT",
-                "id": alert_id,
-                "alert_type": "message_deleted",
-                "severity": "high",
-                "title": "🚨 تم حذف رسالة في المحادثة",
-                "actor_name": user.full_name,
-                "actor_email": user.email,
-                "actor_type": "agent",
-                "deleted_text": original_text or "(رسالة فارغة أو مرفق)",
-                "conversation_id": str(conversation_id),
-                "customer_name": customer_name,
-                "brand_name": brand_name,
-                "channel": channel_name,
-                "timestamp": now_utc.isoformat(),
-            })
+            await ws_broadcaster.broadcast_event(
+                target="global",
+                payload={
+                    "type": "ADMIN_SECURITY_ALERT",
+                    "id": alert_id,
+                    "alert_type": "message_deleted",
+                    "severity": "high",
+                    "title": "🚨 تم حذف رسالة في المحادثة",
+                    "actor_name": user.full_name,
+                    "actor_email": user.email,
+                    "actor_type": "agent",
+                    "deleted_text": original_text or "(رسالة فارغة أو مرفق)",
+                    "conversation_id": str(conversation_id),
+                    "customer_name": customer_name,
+                    "brand_name": brand_name,
+                    "brand": brand_name,
+                    "channel": channel_name,
+                    "timestamp": now_utc.isoformat(),
+                },
+            )
         except Exception as ws_err:
             logger.warning("Error broadcasting MESSAGE_DELETED / ADMIN_SECURITY_ALERT: %s", ws_err)
 
@@ -343,13 +358,19 @@ class MessageActionsService:
 
         # Realtime broadcast
         try:
-            from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(msg)
-            await manager.broadcast({
-                "type": "MESSAGE_REACTION_UPDATED",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            conv = await session.get(Conversation, conversation_id)
+            conv_brand = getattr(conv, "brand", None) if conv else None
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "MESSAGE_REACTION_UPDATED",
+                    "conversation_id": str(conversation_id),
+                    "brand": conv_brand,
+                    "message": resp.model_dump(mode="json"),
+                },
+            )
         except Exception as ws_err:
             logger.warning("Error broadcasting MESSAGE_REACTION_UPDATED: %s", ws_err)
 
@@ -414,13 +435,19 @@ class MessageActionsService:
 
         # Realtime broadcast
         try:
-            from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(msg)
-            await manager.broadcast({
-                "type": "MESSAGE_PIN_UPDATED",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            conv = await session.get(Conversation, conversation_id)
+            conv_brand = getattr(conv, "brand", None) if conv else None
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "MESSAGE_PIN_UPDATED",
+                    "conversation_id": str(conversation_id),
+                    "brand": conv_brand,
+                    "message": resp.model_dump(mode="json"),
+                },
+            )
         except Exception as ws_err:
             logger.warning("Error broadcasting MESSAGE_PIN_UPDATED: %s", ws_err)
 
@@ -502,13 +529,17 @@ class MessageActionsService:
 
         # 5. Broadcast to target conversation
         try:
-            from app.api.v1.ws import manager
             resp = MessageResponse.model_validate(forwarded_msg)
-            await manager.broadcast({
-                "type": "NEW_MESSAGE",
-                "conversation_id": str(target_conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(target_conversation_id),
+                payload={
+                    "type": "NEW_MESSAGE",
+                    "conversation_id": str(target_conversation_id),
+                    "brand": getattr(target_conv, "brand", None),
+                    "message": resp.model_dump(mode="json"),
+                },
+            )
         except Exception as ws_err:
             logger.warning("Error broadcasting forwarded NEW_MESSAGE: %s", ws_err)
 

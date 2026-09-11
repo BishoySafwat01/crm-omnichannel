@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" width="720" height="180">
+  <defs>
+    <linearGradient id="luxFullGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D9488" />
+      <stop offset="45%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="luxFullTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#14B8A6" />
+      <stop offset="50%" stop-color="#2DD4BF" />
+      <stop offset="100%" stop-color="#5EEAD4" />
+    </linearGradient>
+    <linearGradient id="luxFullRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F766E" />
+      <stop offset="100%" stop-color="#042F2E" />
+    </linearGradient>
+    <linearGradient id="luxFullStar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#F0FDFA" />
+      <stop offset="70%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    <filter id="luxFullGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Monogram Mark on the Left -->
+  <g transform="translate(15, 10) scale(0.65)">
+    <polygon points="60,56 95,28 135,28 100,56" fill="url(#luxFullTop)" />
+    <polygon points="100,56 135,28 135,136 100,164" fill="url(#luxFullRight)" />
+    <polygon points="60,56 100,56 100,164 60,164" fill="url(#luxFullGrad1)" />
+    <polygon points="60,164 100,164 176,164 176,208 60,208" fill="url(#luxFullGrad1)" />
+    <polygon points="100,164 135,136 211,136 176,164" fill="url(#luxFullTop)" />
+    <polygon points="176,164 211,136 211,180 176,208" fill="url(#luxFullRight)" />
+
+    <line x1="60" y1="56" x2="60" y2="208" stroke="#5EEAD4" stroke-width="2.2" stroke-opacity="0.85" />
+    <line x1="60" y1="208" x2="176" y2="208" stroke="#5EEAD4" stroke-width="2.2" stroke-opacity="0.85" />
+    <line x1="60" y1="56" x2="100" y2="56" stroke="#FFFFFF" stroke-width="1.8" stroke-opacity="0.95" />
+    <line x1="100" y1="164" x2="176" y2="164" stroke="#FFFFFF" stroke-width="1.8" stroke-opacity="0.95" />
+
+    <g transform="translate(150, 38)" filter="url(#luxFullGlow)">
+      <path d="M 0,-34 Q 0,-7 27,0 Q 0,7 0,34 Q 0,7 -27,0 Q 0,-7 0,-34 Z" fill="url(#luxFullStar)" />
+      <circle cx="0" cy="0" r="5" fill="#FFFFFF" />
+    </g>
+    <g transform="translate(198, 90)" filter="url(#luxFullGlow)" opacity="0.9">
+      <path d="M 0,-19 Q 0,-4 15,0 Q 0,4 0,19 Q 0,4 -15,0 Q 0,-4 0,-19 Z" fill="url(#luxFullStar)" />
+      <circle cx="0" cy="0" r="2.8" fill="#FFFFFF" />
+    </g>
+  </g>
+
+  <!-- Typography: LUXIRA HOLDING -->
+  <text x="190" y="98" font-family="'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif" font-size="64" font-weight="900" fill="#0F172A" letter-spacing="2">LUXIRA</text>
+  <text x="445" y="98" font-family="'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif" font-size="50" font-weight="700" fill="#0D9488" letter-spacing="5">HOLDING</text>
+  <text x="194" y="132" font-family="'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif" font-size="17" font-weight="700" fill="#64748B" letter-spacing="8">OMNICHANNEL CRM</text>
+</svg>

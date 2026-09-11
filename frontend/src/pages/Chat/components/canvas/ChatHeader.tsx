@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { Sparkles, AlertTriangle, UserCheck, Ban, ShieldCheck } from 'lucide-react';
+import React from 'react';
+import { UserCheck, Ban, AlertTriangle } from 'lucide-react';
 import { Conversation, MetaMessageTag } from '../../../../types/crm';
 import { ConversationAvatar, getBrandObject } from '../../../../components/ConversationAvatar';
 import { PresenceState } from '../../../../utils/presence';
+import { MessageSearchToolbar, ChatEmployeeItem } from './MessageSearchToolbar';
+import { AiInsightsDrawer, AiInsightsData } from './AiInsightsDrawer';
+import { META_TAGS } from '../../constants/chatConstants';
 
 export interface ChatHeaderProps {
   activeConv: Conversation;
@@ -11,24 +14,31 @@ export interface ChatHeaderProps {
   selectedMetaTag: MetaMessageTag;
   setSelectedMetaTag: (tag: MetaMessageTag) => void;
   setConversationStatus: (convId: string, status: any) => void;
-  aiInsights: {
-    summary?: string;
-    intent?: string;
-    sentiment?: string;
-    replies: string[];
-  };
+  onOpenBlockModal: (mode: 'block' | 'unblock') => void;
+
+  // Search Toolbar Props
+  isSearchOpen: boolean;
+  onOpenSearch: () => void;
+  onCloseSearch: () => void;
+  searchQuery: string;
+  onSearchQueryChange: (query: string) => void;
+  matchedCount: number;
+  currentMatchIndex: number;
+  onJumpToMatch: (dir: 'next' | 'prev') => void;
+  chatEmployees: ChatEmployeeItem[];
+  activeEmpFilterId: string | null;
+  activeEmpFilterObj: ChatEmployeeItem | null;
+  onSelectEmployeeFilter: (empId: string | null) => void;
+
+  // AI Insights Props
+  isAiPopoverOpen: boolean;
+  onToggleAiPopover: () => void;
+  onCloseAiPopover: () => void;
+  aiInsights: AiInsightsData;
   isAnalyzingAI: boolean;
   onRunAIAnalysis: () => void;
-  onSelectSmartReply?: (replyText: string) => void;
-  onOpenBlockModal?: (mode: 'block' | 'unblock') => void;
+  onSelectSmartReply: (reply: string) => void;
 }
-
-const META_TAGS: { id: MetaMessageTag; label: string }[] = [
-  { id: 'HUMAN_AGENT', label: 'Human Agent (دعم بشري 7 أيام)' },
-  { id: 'POST_PURCHASE_UPDATE', label: 'Post-Purchase (تحديث بعد الشراء)' },
-  { id: 'CONFIRMED_EVENT_UPDATE', label: 'Event Update (تحديث حدث مؤكد)' },
-  { id: 'ACCOUNT_UPDATE', label: 'Account Update (تحديث الحساب)' },
-];
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
   activeConv,
@@ -37,22 +47,38 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   selectedMetaTag,
   setSelectedMetaTag,
   setConversationStatus,
+  onOpenBlockModal,
+
+  isSearchOpen,
+  onOpenSearch,
+  onCloseSearch,
+  searchQuery,
+  onSearchQueryChange,
+  matchedCount,
+  currentMatchIndex,
+  onJumpToMatch,
+  chatEmployees,
+  activeEmpFilterId,
+  activeEmpFilterObj,
+  onSelectEmployeeFilter,
+
+  isAiPopoverOpen,
+  onToggleAiPopover,
+  onCloseAiPopover,
   aiInsights,
   isAnalyzingAI,
   onRunAIAnalysis,
   onSelectSmartReply,
-  onOpenBlockModal,
 }) => {
-  const [isAiPopoverOpen, setIsAiPopoverOpen] = useState(false);
-
-  const customerName = activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل';
+  const customerName =
+    activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
   const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
 
   return (
-    <div className="h-16 px-4 border-b border-slate-100 flex items-center justify-between gap-3 bg-white/70 backdrop-blur-md shrink-0">
-      {/* Customer Info & Avatar */}
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="h-13 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-4 flex items-center justify-between shrink-0 z-20">
+      {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
+      <div className="flex items-center gap-3">
         <ConversationAvatar
           customerName={customerName}
           customerAvatarUrl={avatarUrl}
@@ -64,113 +90,56 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           presenceDotColor={presence.dotColor}
           presenceStatusText={presence.statusText}
         />
-        <div className="min-w-0">
+
+        <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-extrabold text-slate-900 truncate">{customerName}</h2>
+            <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
             {brandObj.isDirect ? (
-              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded-md font-bold shrink-0">
-                🔒 محادثة خاصة
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
+                محادثة خاصة (Direct)
               </span>
             ) : (
-              <span className="text-[10px] bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.2 rounded-md font-bold shrink-0">
-                متجر: {brandObj.name}
+              <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] px-2 py-0.5 rounded-full font-bold">
+                {brandObj.name}
               </span>
             )}
           </div>
-          <p className={`text-[11px] font-semibold ${presence.colorClass}`}>{presence.statusText}</p>
+          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+            <span className={presence.colorClass}>{presence.statusText}</span>
+            <span>•</span>
+            <span className="capitalize">{activeConv.channel || 'messenger'}</span>
+          </p>
         </div>
       </div>
 
-      {/* Action Controls & AI Insights */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Grouped Actions Toolbar (RTL Left) */}
+      <div className="flex items-center gap-2">
+        {/* In-Chat Search & Employee Filter Toolbar */}
+        <MessageSearchToolbar
+          isSearchOpen={isSearchOpen}
+          onOpenSearch={onOpenSearch}
+          onCloseSearch={onCloseSearch}
+          searchQuery={searchQuery}
+          onSearchQueryChange={onSearchQueryChange}
+          matchedCount={matchedCount}
+          currentIndex={currentMatchIndex}
+          onJumpToMatch={onJumpToMatch}
+          chatEmployees={chatEmployees}
+          activeEmpFilterId={activeEmpFilterId}
+          activeEmpFilterObj={activeEmpFilterObj}
+          onSelectEmployee={onSelectEmployeeFilter}
+        />
+
         {/* AI Insights Floating Popover */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setIsAiPopoverOpen(!isAiPopoverOpen)}
-            className={`p-1.5 rounded-full border transition flex items-center gap-1 text-xs font-bold ${
-              isAiPopoverOpen
-                ? 'bg-[#1A73E8] text-white border-[#1A73E8] shadow-xs'
-                : 'bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] border-[#1A73E8]/20'
-            }`}
-            title="تحليلات الذكاء الاصطناعي والردود الذكية"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>AI</span>
-          </button>
-
-          {isAiPopoverOpen && (
-            <div className="absolute top-full left-0 mt-2 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-4 z-50 space-y-3 animate-in fade-in zoom-in-95 duration-100 text-right">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#1A73E8]" />
-                  تحليلات الذكاء الاصطناعي
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsAiPopoverOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                {aiInsights.summary ? `✨ ${aiInsights.summary}` : 'لا يوجد ملخص متاح حالياً. انقر زر التحليل لتوليد ملخص للمحادثة.'}
-              </p>
-
-              {/* 1-Click Smart Replies Section (DEF-AI-01 Resolution) */}
-              {aiInsights.replies && aiInsights.replies.length > 0 && (
-                <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                  <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
-                    <span>💡</span>
-                    <span>الردود الذكية المقترحة (Smart Replies):</span>
-                  </span>
-                  <div className="flex flex-col gap-1.5">
-                    {aiInsights.replies.map((rep, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          if (onSelectSmartReply) onSelectSmartReply(rep);
-                          setIsAiPopoverOpen(false);
-                        }}
-                        className="text-right text-xs bg-blue-50/70 hover:bg-blue-100/90 text-blue-900 border border-blue-200/80 p-2 rounded-xl transition font-medium cursor-pointer shadow-2xs hover:shadow-xs"
-                      >
-                        {rep}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                <div className="flex items-center gap-1.5">
-                  {aiInsights.intent && (
-                    <span className="text-[10px] bg-[#E8F0FE] text-[#1A73E8] font-bold px-2 py-0.5 rounded-full border border-[#1A73E8]/20">
-                      🎯 {aiInsights.intent}
-                    </span>
-                  )}
-                  {aiInsights.sentiment && (
-                    <span className="text-[10px] bg-[#E6F4EA] text-[#137333] font-bold px-2 py-0.5 rounded-full border border-[#CEEAD6]">
-                      {aiInsights.sentiment}
-                    </span>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onRunAIAnalysis}
-                  disabled={isAnalyzingAI}
-                  className="text-xs bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold px-3 py-1 rounded-full transition shadow-2xs flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                  <span>{isAnalyzingAI ? 'تحليل...' : 'تحديث ✨'}</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <AiInsightsDrawer
+          isOpen={isAiPopoverOpen}
+          onToggleOpen={onToggleAiPopover}
+          onClose={onCloseAiPopover}
+          insights={aiInsights}
+          isAnalyzing={isAnalyzingAI}
+          onRunAnalysis={onRunAIAnalysis}
+          onSelectSmartReply={onSelectSmartReply}
+        />
 
         {/* 24-Hour Policy Window Alert */}
         {is24hWindowExpired && (
@@ -213,30 +182,27 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         </button>
 
         {/* Block / Unblock Customer Header Action */}
-        {onOpenBlockModal && (
-          activeConv.customer?.is_blocked ? (
-            <button
-              type="button"
-              onClick={() => onOpenBlockModal('unblock')}
-              className="px-2.5 py-1 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full transition flex items-center gap-1 cursor-pointer"
-              title="إلغاء حظر العميل"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>إلغاء الحظر</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onOpenBlockModal('block')}
-              className="px-2.5 py-1 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-full transition flex items-center gap-1 cursor-pointer"
-              title="حظر العميل"
-            >
-              <Ban className="w-3.5 h-3.5 text-rose-600" />
-              <span>حظر</span>
-            </button>
-          )
+        {activeConv.customer?.is_blocked ? (
+          <button
+            type="button"
+            onClick={() => onOpenBlockModal('unblock')}
+            className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
+            title="إلغاء حظر العميل"
+          >
+            <Ban className="w-3.5 h-3.5 text-rose-600" />
+            <span>محظور (فك الحظر)</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpenBlockModal('block')}
+            className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
+            title="حظر هذا العميل (Block Customer)"
+          >
+            <Ban className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
-    </div>
+    </header>
   );
 };

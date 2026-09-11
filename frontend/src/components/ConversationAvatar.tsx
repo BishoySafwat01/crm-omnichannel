@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { User, Store, Lock, MessageSquare } from 'lucide-react';
-import { MOCK_BRANDS, BRAND_IMAGES } from '../constants/brands';
+import { BRAND_IMAGES, getBrandMetadata } from '../constants/brands';
+import { ChannelType } from '../types/crm';
+import { Facebook, Instagram, MessageCircle, MessageSquare, Lock, User } from 'lucide-react';
 
 export interface ConversationAvatarProps {
   customerName: string;
@@ -103,140 +104,20 @@ export const getBrandObject = (brandId?: string | null, brandName?: string | nul
     };
   }
 
-  // 1. Check known brands with fuzzy / alias recognition
-  if (combined.includes('lotus')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'LOTUS BLUE') || MOCK_BRANDS[3];
+  // 1. Resolve brand metadata using getBrandMetadata helper
+  const meta = getBrandMetadata(combined || rawName || rawId);
+  if (meta && meta.id && meta.id !== 'متجر') {
     return {
-      id: rawName || 'Lotus Blue',
-      name: rawName || 'Lotus Blue',
-      avatar: 'LB',
-      color: 'from-cyan-600 to-cyan-700',
-      logo_url: BRAND_IMAGES['lotus blue'] || found?.logo_url,
+      id: rawName || meta.name,
+      name: rawName || meta.name,
+      avatar: meta.avatar,
+      color: meta.color,
+      logo_url: meta.logo_url,
       isDirect: false,
     };
   }
 
-  if (combined.includes('hayat')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'HAYAT') || MOCK_BRANDS[8];
-    return {
-      id: rawName || 'Hayat Cosmetics',
-      name: rawName || 'Hayat Cosmetics',
-      avatar: 'HY',
-      color: 'from-emerald-600 to-emerald-700',
-      logo_url: BRAND_IMAGES['hayat'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('liora') || combined.includes('luxira')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'LUXIRA' || b.id === 'LIORA') || MOCK_BRANDS[2];
-    return {
-      id: rawName || 'Liora',
-      name: rawName || 'Liora',
-      avatar: 'LX',
-      color: 'from-[#1A73E8] to-blue-600',
-      logo_url: BRAND_IMAGES['liora'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('loxx')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'LOXX KING') || MOCK_BRANDS[5];
-    return {
-      id: rawName || 'LOXX KING',
-      name: rawName || 'LOXX KING',
-      avatar: 'LK',
-      color: 'from-amber-600 to-amber-700',
-      logo_url: BRAND_IMAGES['loxx king'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('lavva') || combined.includes('lava')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'LAVVA') || MOCK_BRANDS[1];
-    return {
-      id: rawName || 'LAVVA',
-      name: rawName || 'LAVVA',
-      avatar: 'LV',
-      color: 'from-teal-600 to-teal-700',
-      logo_url: BRAND_IMAGES['lavva'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('flare')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'FLARE') || MOCK_BRANDS[4];
-    return {
-      id: rawName || 'FLARE',
-      name: rawName || 'FLARE',
-      avatar: 'FL',
-      color: 'from-orange-600 to-orange-700',
-      logo_url: BRAND_IMAGES['flare'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('nora') || combined.includes('moon')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'NORA' || b.id === 'MOON LIGHT') || MOCK_BRANDS[6];
-    return {
-      id: rawName || 'MOON LIGHT',
-      name: rawName || 'MOON LIGHT',
-      avatar: 'ML',
-      color: 'from-indigo-600 to-indigo-700',
-      logo_url: BRAND_IMAGES['nora'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('beauty')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'BEAUTY CENTER') || MOCK_BRANDS[7];
-    return {
-      id: rawName || 'BEAUTY CENTER',
-      name: rawName || 'BEAUTY CENTER',
-      avatar: 'BC',
-      color: 'from-rose-600 to-rose-700',
-      logo_url: BRAND_IMAGES['beauty center'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('finest')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'FINEST') || MOCK_BRANDS[10];
-    return {
-      id: rawName || 'FINEST',
-      name: rawName || 'FINEST',
-      avatar: 'FN',
-      color: 'from-amber-700 to-amber-800',
-      logo_url: BRAND_IMAGES['finest'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  if (combined.includes('aerobics')) {
-    const found = MOCK_BRANDS.find((b) => b.id === 'AEROBICS') || MOCK_BRANDS[11];
-    return {
-      id: rawName || 'AEROBICS',
-      name: rawName || 'AEROBICS',
-      avatar: 'AR',
-      color: 'from-sky-600 to-sky-700',
-      logo_url: BRAND_IMAGES['aerobics'] || found?.logo_url,
-      isDirect: false,
-    };
-  }
-
-  // 2. Direct lookup in MOCK_BRANDS
-  const matchedMock = MOCK_BRANDS.find(
-    (b) =>
-      b.id.toLowerCase() === normId ||
-      b.name.toLowerCase() === normName ||
-      b.id.toLowerCase() === normName ||
-      b.name.toLowerCase() === normId
-  );
-  if (matchedMock && matchedMock.id !== 'all') {
-    return { ...matchedMock, isDirect: false };
-  }
-
-  // 3. Clean dynamic store fallback (Never false DM 🔒)
+  // 2. Clean dynamic store fallback (Never false DM 🔒)
   const displayName = rawName || rawId || 'متجر';
   const words = displayName.split(/\s+/).filter(Boolean);
   const initials =

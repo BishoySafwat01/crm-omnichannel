@@ -1,5 +1,6 @@
 from app.models.audit import ConversationAssignmentLog, UserAuditLog
 from app.models.automation import AutomationExecutionLog, AutomationRule
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.customer_note import CustomerNote
@@ -19,8 +20,12 @@ from app.models.migration import MigrationJob
 from app.models.raw_event import RawEvent
 from app.models.social_comment import CommentModerationLog, CommentModerationSetting, SocialComment
 from app.models.user import User
+from app.models.workspace import DEFAULT_WORKSPACE_ID, Workspace
 
 __all__ = [
+    "Workspace",
+    "DEFAULT_WORKSPACE_ID",
+    "ConnectedPage",
     "Customer",
     "CustomerIdentity",
     "CustomerNote",

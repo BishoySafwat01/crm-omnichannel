@@ -16,6 +16,8 @@ from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
+from app.schemas.messaging import AgentReplyResultDTO, MessageResponse
 
 logger = logging.getLogger("MessageService")
 
@@ -91,11 +93,38 @@ class MessageService:
 
         await session.commit()
         await session.refresh(message)
+
+        # Broadcast real-time NEW_MESSAGE event across worker processes
+        try:
+            msg_data = {
+                "id": str(message.id),
+                "conversation_id": str(conversation_id),
+                "external_message_id": message.external_message_id,
+                "sender_type": message.sender_type.value if hasattr(message.sender_type, "value") else str(message.sender_type),
+                "sender_external_id": message.sender_external_id,
+                "message_type": message.message_type.value if hasattr(message.message_type, "value") else str(message.message_type),
+                "text": message.text,
+                "created_at": message.created_at.isoformat() if message.created_at else None,
+                "brand": getattr(conversation, "brand", None) if conversation else None,
+            }
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "NEW_MESSAGE",
+                    "conversation_id": str(conversation_id),
+                    "brand": getattr(conversation, "brand", None) if conversation else None,
+                    "message": msg_data,
+                },
+            )
+        except Exception as ws_err:
+            logger.debug("[MessageService] Real-time broadcast exception: %s", ws_err)
+
         return message
 
     @staticmethod
     async def list_messages_for_conversation(
-        session: AsyncSession, conversation_id: uuid.UUID
+        session: AsyncSession, conversation_id: uuid.UUID, limit: Optional[int] = 100
     ) -> list[Message]:
         stmt = (
             select(Message)
@@ -103,6 +132,8 @@ class MessageService:
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at.asc())
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -164,7 +195,7 @@ class MessageService:
         sender_user_id: Optional[uuid.UUID] = None,
         reply_to: Optional[dict[str, Any]] = None,
         forwarded_from: Optional[dict[str, Any]] = None,
-    ) -> Message:
+    ) -> AgentReplyResultDTO:
         clean_text = (text or "").strip()
         if not clean_text and not attachments:
             raise ValueError("Message text cannot be empty or whitespace only.")
@@ -193,17 +224,81 @@ class MessageService:
             conv_page_id = conv_meta.get("page_id")
         if not conv_page_id and getattr(conv, "sender_external_id", None):
             conv_page_id = getattr(conv, "sender_external_id", None)
+
+        # Step A: Lookup ConnectedPage by conversation brand from PostgreSQL
+        if not conv_page_id and conv.brand:
+            try:
+                from app.models.connected_page import ConnectedPage
+                stmt_cp = select(ConnectedPage).where(
+                    ConnectedPage.name == conv.brand,
+                    ConnectedPage.status == "ACTIVE",
+                )
+                cp_row = (await session.execute(stmt_cp)).scalars().first()
+                if cp_row and cp_row.page_id:
+                    conv_page_id = cp_row.page_id
+            except Exception as exc:
+                logger.debug("Failed to resolve page_id by conv.brand: %s", exc)
+
+        # Step B: Lookup recipient ID recorded in recent customer messages
+        if not conv_page_id:
+            try:
+                msg_stmt = (
+                    select(Message)
+                    .where(
+                        Message.conversation_id == conv.id,
+                        Message.sender_type == SenderTypeEnum.CUSTOMER,
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+                last_cust_msg = (await session.execute(msg_stmt)).scalars().first()
+                if last_cust_msg and last_cust_msg.metadata_ and isinstance(last_cust_msg.metadata_, dict):
+                    raw = last_cust_msg.metadata_.get("raw") or {}
+                    if isinstance(raw, dict) and raw.get("recipient", {}).get("id"):
+                        conv_page_id = str(raw["recipient"]["id"])
+                    elif last_cust_msg.metadata_.get("page_id"):
+                        conv_page_id = str(last_cust_msg.metadata_["page_id"])
+            except Exception as exc:
+                logger.debug("Failed to resolve page_id from customer message metadata: %s", exc)
+
+        # Step C: Lookup active ConnectedPage matching channel
+        if not conv_page_id:
+            try:
+                from app.models.connected_page import ConnectedPage
+                if conv.channel == ChannelEnum.INSTAGRAM:
+                    stmt_cp = select(ConnectedPage).where(
+                        ConnectedPage.instagram_business_account_id.isnot(None),
+                        ConnectedPage.status == "ACTIVE",
+                    ).limit(1)
+                    cp_row = (await session.execute(stmt_cp)).scalars().first()
+                    if cp_row:
+                        conv_page_id = cp_row.instagram_business_account_id or cp_row.page_id
+                else:
+                    stmt_cp = select(ConnectedPage).where(
+                        ConnectedPage.status == "ACTIVE"
+                    ).limit(1)
+                    cp_row = (await session.execute(stmt_cp)).scalars().first()
+                    if cp_row and cp_row.page_id:
+                        conv_page_id = cp_row.page_id
+            except Exception as exc:
+                logger.debug("Failed to resolve page_id from active ConnectedPages: %s", exc)
+
+        # Step D: Fallback to static settings
         if not conv_page_id and conv.brand:
             for pid, pdata in settings.get_meta_pages().items():
                 if pdata.get("name") == conv.brand:
                     conv_page_id = pid
                     break
 
-        # Dynamically resolve messaging adapter via ProviderFactory
+        if not conv_page_id and settings.META_PAGE_ID:
+            conv_page_id = settings.META_PAGE_ID
+
+        # Dynamically resolve messaging adapter via ProviderFactory with active db session
         adapter = provider_adapter or ProviderFactory.get_provider(
             provider_name=conv.provider,
             channel=conv.channel,
             page_id=conv_page_id,
+            db=session,
         )
         default_sender = conv_page_id or settings.META_PAGE_ID or "crm_agent"
 
@@ -218,7 +313,7 @@ class MessageService:
 
         if identity and identity.external_user_id:
             clean_recipient = identity.external_user_id.strip()
-        elif conv.external_conversation_id:
+        elif conv.external_conversation_id and conv.provider != ProviderEnum.META:
             clean_recipient = conv.external_conversation_id.strip()
         else:
             raise ValueError(
@@ -281,7 +376,7 @@ class MessageService:
             if att_type == "audio" and ext_lower.endswith(".webm"):
                 transcoded_path = os.path.join(settings.UPLOAD_DIR, f"{os.path.splitext(filename)[0]}.m4a")
                 if not os.path.exists(transcoded_path):
-                    from scripts.fix_media_attachments import transcode_to_m4a
+                    from app.infrastructure.media.audio_transcoder import transcode_to_m4a
                     import asyncio
                     await asyncio.to_thread(transcode_to_m4a, file_path, transcoded_path)
                 if os.path.exists(transcoded_path):
@@ -299,14 +394,24 @@ class MessageService:
                     attachment_type=att_type,
                     page_id=conv_page_id,
                     tag=tag,
+                    db=session,
                 )
             except TypeError:
-                outbound_res = await adapter.send_outbound_attachment(
-                    recipient_external_id=clean_recipient,
-                    file_path=file_path if os.path.exists(file_path) else att_url,
-                    attachment_type=att_type,
-                    tag=tag,
-                )
+                try:
+                    outbound_res = await adapter.send_outbound_attachment(
+                        recipient_external_id=clean_recipient,
+                        file_path=file_path if os.path.exists(file_path) else att_url,
+                        attachment_type=att_type,
+                        page_id=conv_page_id,
+                        tag=tag,
+                    )
+                except TypeError:
+                    outbound_res = await adapter.send_outbound_attachment(
+                        recipient_external_id=clean_recipient,
+                        file_path=file_path if os.path.exists(file_path) else att_url,
+                        attachment_type=att_type,
+                        tag=tag,
+                    )
         elif provider_adapter is not None:
             if tag:
                 try:
@@ -315,30 +420,49 @@ class MessageService:
                         text=clean_text,
                         page_id=conv_page_id,
                         tag=tag,
+                        db=session,
                     )
                 except TypeError:
-                    outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=clean_recipient,
-                        text=clean_text,
-                        tag=tag,
-                    )
+                    try:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            page_id=conv_page_id,
+                            tag=tag,
+                        )
+                    except TypeError:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            tag=tag,
+                        )
             else:
                 try:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
                         page_id=conv_page_id,
+                        db=session,
                     )
                 except TypeError:
-                    outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=clean_recipient,
-                        text=clean_text,
-                    )
+                    try:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            page_id=conv_page_id,
+                        )
+                    except TypeError:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                        )
         elif conv.channel == ChannelEnum.INSTAGRAM:
             from app.services.meta_instagram_service import MetaInstagramService
             outbound_res = await MetaInstagramService.send_text_message(
                 recipient_id=clean_recipient,
                 text=clean_text,
+                page_id=conv_page_id,
+                session=session,
             )
         elif conv.channel == ChannelEnum.WHATSAPP:
             recipient_phone = (conv.customer.phone if conv.customer else None) or clean_recipient
@@ -363,27 +487,50 @@ class MessageService:
                         text=clean_text,
                         page_id=conv_page_id,
                         tag=tag,
+                        db=session,
                     )
                 except TypeError:
-                    outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=clean_recipient,
-                        text=clean_text,
-                        tag=tag,
-                    )
+                    try:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            page_id=conv_page_id,
+                            tag=tag,
+                        )
+                    except TypeError:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            tag=tag,
+                        )
             else:
                 try:
                     outbound_res = await adapter.send_outbound_message(
                         recipient_external_id=clean_recipient,
                         text=clean_text,
                         page_id=conv_page_id,
+                        db=session,
                     )
                 except TypeError:
-                    outbound_res = await adapter.send_outbound_message(
-                        recipient_external_id=clean_recipient,
-                        text=clean_text,
-                    )
+                    try:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                            page_id=conv_page_id,
+                        )
+                    except TypeError:
+                        outbound_res = await adapter.send_outbound_message(
+                            recipient_external_id=clean_recipient,
+                            text=clean_text,
+                        )
 
-        ext_msg_id = outbound_res.get("external_message_id") if isinstance(outbound_res, dict) else None
+        ext_msg_id = None
+        if isinstance(outbound_res, dict):
+            ext_msg_id = (
+                outbound_res.get("external_message_id")
+                or outbound_res.get("message_id")
+                or outbound_res.get("id")
+            )
 
         # Idempotency Check
         if ext_msg_id:
@@ -589,18 +736,31 @@ class MessageService:
                 logger.error(f"[Location Override Error] Failed to update customer location: {e}")
 
         await session.commit()
+        await session.refresh(new_message)
+
+        sender_name: Optional[str] = None
         if sender_user_id:
             from app.models.user import User
             user_obj = await session.get(User, sender_user_id)
             if user_obj:
-                setattr(new_message, "sender_user", user_obj)
-                setattr(new_message, "sender_name", user_obj.full_name)
+                sender_name = user_obj.full_name
 
-        if updated_loc:
-            setattr(new_message, "updated_customer_location", updated_loc)
-        elif conv.customer and getattr(conv.customer, "location", None):
-            setattr(new_message, "updated_customer_location", conv.customer.location)
+        final_customer_location = updated_loc or (
+            conv.customer.location if (conv.customer and getattr(conv.customer, "location", None)) else None
+        )
 
-        setattr(new_message, "location_detection_status", location_status)
+        msg_resp = MessageResponse.model_validate(new_message)
+        if sender_user_id:
+            msg_resp.sender_user_id = sender_user_id
+        if sender_name:
+            msg_resp.sender_name = sender_name
+        if final_customer_location:
+            msg_resp.updated_customer_location = final_customer_location
 
-        return new_message
+        return AgentReplyResultDTO(
+            message=msg_resp,
+            sender_user_id=sender_user_id,
+            sender_name=sender_name,
+            updated_customer_location=final_customer_location,
+            location_detection_status=location_status,
+        )

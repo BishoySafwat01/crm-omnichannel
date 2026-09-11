@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, Optional
 import httpx
@@ -45,43 +46,81 @@ class BeonClient:
         path: str,
         params: Optional[dict[str, Any]] = None,
         json_data: Optional[dict[str, Any]] = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
+        headers = self._headers()
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    headers=self._headers(),
-                    params=params,
-                    json=json_data,
-                )
-                if response.status_code >= 400:
-                    try:
-                        err_payload = response.json()
-                        msg = (
-                            err_payload.get("message")
-                            or err_payload.get("error")
-                            or response.text
+            for attempt in range(max_retries):
+                try:
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        headers=headers,
+                        params=params,
+                        json=json_data,
+                    )
+
+                    # Handle HTTP 429 (Rate-Limit) & 5xx (Server Errors) with exponential backoff
+                    if response.status_code == 429 or response.status_code >= 500:
+                        if attempt < max_retries - 1:
+                            retry_after_hdr = response.headers.get("Retry-After")
+                            delay = min(base_delay * (2 ** attempt), 10.0)
+                            if retry_after_hdr and retry_after_hdr.isdigit():
+                                delay = min(float(retry_after_hdr), 10.0)
+                            logger.warning(
+                                "BeOn API %s %s returned HTTP %d. Retrying in %.2fs (attempt %d/%d)...",
+                                method,
+                                path,
+                                response.status_code,
+                                delay,
+                                attempt + 1,
+                                max_retries,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                    if response.status_code >= 400:
+                        try:
+                            err_payload = response.json()
+                            msg = (
+                                err_payload.get("message")
+                                or err_payload.get("error")
+                                or response.text
+                            )
+                        except Exception:
+                            err_payload = None
+                            msg = response.text
+                        logger.error(
+                            f"BeOn API error: {method} {path} -> {response.status_code}: {msg}"
                         )
-                    except Exception:
-                        err_payload = None
-                        msg = response.text
-                    logger.error(
-                        f"BeOn API error: {method} {path} -> {response.status_code}: {msg}"
-                    )
+                        raise BeonAPIError(
+                            message=f"BeOn API error ({response.status_code}): {msg}",
+                            status_code=response.status_code,
+                            details=err_payload,
+                        )
+                    return response.json()
+
+                except httpx.RequestError as exc:
+                    if attempt < max_retries - 1:
+                        delay = min(base_delay * (2 ** attempt), 10.0)
+                        logger.warning(
+                            "BeOn network connection error on %s %s: %s. Retrying in %.2fs (attempt %d/%d)...",
+                            method,
+                            path,
+                            exc,
+                            delay,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error(f"BeOn network connection error: {exc}")
                     raise BeonAPIError(
-                        message=f"BeOn API error ({response.status_code}): {msg}",
-                        status_code=response.status_code,
-                        details=err_payload,
+                        message=f"Failed to connect to BeOn API: {str(exc)}",
+                        status_code=503,
                     )
-                return response.json()
-            except httpx.RequestError as exc:
-                logger.error(f"BeOn network connection error: {exc}")
-                raise BeonAPIError(
-                    message=f"Failed to connect to BeOn API: {str(exc)}",
-                    status_code=503,
-                )
 
     async def get_account_details(self) -> dict[str, Any]:
         """Fetch partner account overview, active limits, and metadata."""

@@ -10,11 +10,29 @@ import { AutomationPage } from './pages/Automation/AutomationPage';
 import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { TeamPage } from './pages/Team/TeamPage';
+import { ChannelsPage } from './pages/Channels/ChannelsPage';
+import { PrivacyPolicyPage, TermsPage, DataDeletionPage } from './pages/Legal';
 import { useCrmStore } from './store/useCrmStore';
-import { useAuthStore } from './store/useAuthStore';
+import { useAuthStore, isAdminUser } from './store/useAuthStore';
 import { realtimeService } from './services/websocket';
+import { MetaOAuthCallbackHandler } from './components/oauth/MetaOAuthCallbackHandler';
 
 export const App: React.FC = () => {
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    return typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/';
+  });
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname.toLowerCase());
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
   const {
     fetchConversations,
     fetchUnreadSummary,
@@ -28,11 +46,22 @@ export const App: React.FC = () => {
     dismissLocationAlert,
   } = useCrmStore();
   const { isAuthenticated, fetchMe, user } = useAuthStore();
-  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team'>('chat');
+  const [activeMainView, setActiveMainView] = useState<'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels'>('chat');
   // P2-8: Track WebSocket connection state to suppress redundant polling
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(wsConnected);
   wsConnectedRef.current = wsConnected;
+
+  // Dedicated, Public Legal & Compliance Routes (No authentication required)
+  if (currentPath === '/privacy-policy' || currentPath === '/privacy') {
+    return <PrivacyPolicyPage />;
+  }
+  if (currentPath === '/terms-of-service' || currentPath === '/terms') {
+    return <TermsPage />;
+  }
+  if (currentPath === '/data-deletion' || currentPath === '/deletion') {
+    return <DataDeletionPage />;
+  }
 
   useEffect(() => {
     fetchMe();
@@ -59,6 +88,15 @@ export const App: React.FC = () => {
     // Connect to WebSocket real-time channel
     realtimeService.connect();
 
+    // Auto-re-subscribe active conversation room on initial open and reconnect
+    const unsubscribeOpen = realtimeService.onOpen(() => {
+      setWsConnected(true);
+      const activeId = useCrmStore.getState().activeConversationId;
+      if (activeId) {
+        realtimeService.send({ type: 'JOIN_CONVERSATION', conversation_id: activeId });
+      }
+    });
+
     // Track open/close so polling can be suppressed while WS is active
     const unsubscribeWs = realtimeService.subscribe((event) => {
       if (event.type === 'PONG' || event.type) {
@@ -82,18 +120,20 @@ export const App: React.FC = () => {
     return () => {
       clearInterval(pollInterval);
       clearInterval(pingInterval);
+      unsubscribeOpen();
       unsubscribeWs();
       realtimeService.close();
       setWsConnected(false);
     };
   }, [isAuthenticated]);
 
-  const isUserAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
+  const isUserAdmin = isAdminUser(user);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden select-none" dir="rtl">
       {!isAuthenticated && <LoginModal />}
       <IntegrationsModal />
+      <MetaOAuthCallbackHandler />
 
       {/* Real-time Red Admin Security Alert Toasts */}
       {isUserAdmin && (
@@ -119,7 +159,9 @@ export const App: React.FC = () => {
       <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
 
       {/* Main View Area (Feature / Page-Based Routing) */}
-      {isUserAdmin && activeMainView === 'comments' ? (
+      {isUserAdmin && activeMainView === 'channels' ? (
+        <ChannelsPage />
+      ) : isUserAdmin && activeMainView === 'comments' ? (
         <CommentsPage />
       ) : isUserAdmin && activeMainView === 'automations' ? (
         <AutomationPage />

@@ -1,19 +1,58 @@
-import { CommentAutomationRule, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
+import { CommentAutomationRule, ConnectedPage, Conversation, Customer, Message, ModerationAuditLog, ModerationConfig, PaginatedResponse, SocialComment } from '../types/crm';
+export type { ConnectedPage };
 import { APP_CONFIG } from '../config/appConfig';
-import { MOCK_BRANDS } from '../constants/brands';
-
-export { MOCK_BRANDS };
 
 const metaEnv = (import.meta as any).env || {};
 const rawApiUrl = (metaEnv.VITE_API_URL || '').trim();
 export const API_BASE = rawApiUrl
   ? (rawApiUrl.endsWith('/api/v1') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api/v1`)
   : APP_CONFIG.API_BASE || '/api/v1';
+export const API_BASE_URL = API_BASE;
 export const FALLBACK_API_BASE = APP_CONFIG.FALLBACK_API_BASE || '/api/v1';
 
 export const getAuthHeaders = (customHeaders: Record<string, string> = {}): Record<string, string> => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
   const headers: Record<string, string> = { ...customHeaders };
+  if (headers['Authorization'] || headers['authorization']) {
+    return headers;
+  }
+
+  let token: string | null = null;
+  if (typeof window !== 'undefined') {
+    // 1. Check active Zustand auth store
+    try {
+      const store = (window as any).useAuthStore;
+      if (store && typeof store.getState === 'function') {
+        token = store.getState().token;
+      }
+    } catch {}
+
+    // 2. Check localStorage keys
+    if (!token) {
+      token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    }
+
+    // 3. Check sessionStorage / global window fallback
+    if (!token) {
+      token = (window as any).__CRM_AUTH_TOKEN__ || sessionStorage.getItem('auth_token') || sessionStorage.getItem('token');
+    }
+
+    // 4. Check opener window if running inside an OAuth popup
+    if (!token && window.opener && window.opener !== window) {
+      try {
+        const opener = window.opener as any;
+        token =
+          opener.useAuthStore?.getState?.()?.token ||
+          opener.__CRM_AUTH_TOKEN__ ||
+          opener.localStorage?.getItem('auth_token') ||
+          opener.localStorage?.getItem('token') ||
+          opener.sessionStorage?.getItem('auth_token') ||
+          null;
+      } catch (e) {
+        // Cross-origin restriction guard
+      }
+    }
+  }
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -28,26 +67,9 @@ export async function safeFetch(path: string, init?: RequestInit): Promise<Respo
 
   try {
     const res = await fetch(targetUrl, reqInit);
-    // If local dev server proxy fails with 500/502/503/504, fallback directly to backend port 8000
-    if (
-      !res.ok &&
-      res.status >= 500 &&
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
-      return await fetch(directBackendUrl, reqInit);
-    }
     return res;
   } catch (err) {
     console.warn(`Primary fetch ${targetUrl} network error:`, err);
-    if (
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ) {
-      const directBackendUrl = `${window.location.protocol}//${window.location.hostname}:8000/api/v1${cleanPath}`;
-      return await fetch(directBackendUrl, reqInit);
-    }
     throw err;
   }
 }
@@ -1280,4 +1302,117 @@ export const moderationApi = {
     return [];
   },
 };
+
+export const getMetaLoginUrl = async (redirectUri?: string): Promise<{ authorization_url: string; state: string }> => {
+  const query = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : '';
+  const res = await safeFetch(`/meta/oauth/login-url${query}`, {
+    method: 'GET',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في إنشاء رابط تسجيل الدخول إلى فيسبوك' }));
+    throw new Error(err?.detail || 'فشل في إنشاء رابط تسجيل الدخول إلى فيسبوك');
+  }
+  return await res.json();
+};
+
+export const submitMetaOAuthCallback = async (
+  payload: {
+    code: string;
+    state: string;
+    redirect_uri: string;
+  },
+  tokenOverride?: string
+): Promise<ConnectedPage[]> => {
+  const customHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+  if (tokenOverride) {
+    customHeaders['Authorization'] = `Bearer ${tokenOverride}`;
+  }
+  const res = await safeFetch('/meta/oauth/callback', {
+    method: 'POST',
+    headers: getAuthHeaders(customHeaders),
+    body: JSON.stringify(payload),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في استكمال ربط صفحات فيسبوك' }));
+    throw new Error(err?.detail || 'فشل في استكمال ربط صفحات فيسبوك');
+  }
+  return await res.json();
+};
+
+export const getConnectedPages = async (): Promise<ConnectedPage[]> => {
+  const res = await safeFetch('/meta/connected-pages', {
+    method: 'GET',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في جلب الصفحات المتصلة' }));
+    throw new Error(err?.detail || 'فشل في جلب الصفحات المتصلة');
+  }
+  return await res.json();
+};
+
+export const updateConnectedPageStatus = async (pageId: string, status: 'ACTIVE' | 'INACTIVE'): Promise<ConnectedPage> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}/status`, {
+    method: 'PATCH',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ status }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث حالة الصفحة' }));
+    throw new Error(err?.detail || 'فشل في تحديث حالة الصفحة');
+  }
+  return await res.json();
+};
+
+export const deleteConnectedPage = async (pageId: string): Promise<{ status: string; message: string }> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في إلغاء ربط الصفحة' }));
+    throw new Error(err?.detail || 'فشل في إلغاء ربط الصفحة');
+  }
+  return await res.json();
+};
+
+export const subscribeConnectedPage = async (pageId: string): Promise<ConnectedPage> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}/subscribe`, {
+    method: 'POST',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في تفعيل اشتراك الويب هـوك' }));
+    throw new Error(err?.detail || 'فشل في تفعيل اشتراك الويب هـوك');
+  }
+  return await res.json();
+};
+
+export const syncConnectedPageHistory = async (pageId: string): Promise<any> => {
+  const res = await safeFetch(`/meta/import?page_id=${encodeURIComponent(pageId)}`, {
+    method: 'POST',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في بدء مزامنة محادثات الصفحة' }));
+    throw new Error(err?.detail || 'فشل في بدء مزامنة محادثات الصفحة');
+  }
+  return await res.json();
+};
+
+export const metaOAuthApi = {
+  getMetaLoginUrl,
+  submitMetaOAuthCallback,
+  submitCallback: submitMetaOAuthCallback,
+  getConnectedPages,
+  updateConnectedPageStatus,
+  deleteConnectedPage,
+  subscribeConnectedPage,
+  syncConnectedPageHistory,
+};
+
 

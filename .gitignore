@@ -6,6 +6,7 @@
 !.env.example
 !backend/.env.example
 !frontend/.env.example
+!frontend/.env.production
 
 # Python
 __pycache__/
@@ -37,6 +38,8 @@ wheels/
 htmlcov/
 scratch/
 backend/scratch/
+probe_results.json
+backend/probe_results.json
 
 # Node / Frontend
 node_modules/
@@ -52,6 +55,7 @@ dist/
 # IDEs & System files
 .vscode/
 .idea/
+.gemini/
 *.swp
 *.swo
 .DS_Store

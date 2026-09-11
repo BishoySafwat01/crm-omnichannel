@@ -1,3 +1,4 @@
+import logging
 import math
 import uuid
 from typing import Any, AsyncGenerator, Optional
@@ -10,6 +11,10 @@ from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, ProviderEnum, SenderTypeEnum
 from app.models.message import Message
 from app.models.user import User
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
+from app.schemas.customer import CustomerUpdate
+
+logger = logging.getLogger("app.services.customer_service")
 
 
 class CustomerService:
@@ -19,11 +24,13 @@ class CustomerService:
         display_name: Optional[str] = None,
         email: Optional[str] = None,
         phone: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Customer:
         customer = Customer(
             display_name=display_name,
             email=email,
             phone=phone,
+            workspace_id=workspace_id,
         )
         session.add(customer)
         await session.commit()
@@ -467,11 +474,16 @@ class CustomerService:
         email: Optional[str] = None,
         phone: Optional[str] = None,
         metadata_: Optional[dict[str, Any]] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> tuple[Customer, CustomerIdentity]:
         existing_customer = await CustomerService.find_customer_by_identity(
             session, provider, channel, external_user_id
         )
         if existing_customer:
+            if workspace_id and not existing_customer.workspace_id:
+                existing_customer.workspace_id = workspace_id
+                session.add(existing_customer)
+                await session.flush()
             stmt = select(CustomerIdentity).where(
                 CustomerIdentity.customer_id == existing_customer.id,
                 CustomerIdentity.provider == provider,
@@ -482,7 +494,12 @@ class CustomerService:
             identity = res.scalar_one()
             return existing_customer, identity
 
-        customer = Customer(display_name=display_name, email=email, phone=phone)
+        customer = Customer(
+            display_name=display_name,
+            email=email,
+            phone=phone,
+            workspace_id=workspace_id,
+        )
         session.add(customer)
         await session.flush()
 
@@ -550,8 +567,7 @@ class CustomerService:
 
         # Real-time WebSocket Broadcast
         try:
-            from app.api.v1.ws import manager
-            await manager.broadcast({
+            await ws_broadcaster.broadcast({
                 "type": "CUSTOMER_BLOCKED",
                 "customer_id": str(customer.id),
                 "is_blocked": True,
@@ -611,14 +627,108 @@ class CustomerService:
 
         # Real-time WebSocket Broadcast
         try:
-            from app.api.v1.ws import manager
-            await manager.broadcast({
+            await ws_broadcaster.broadcast({
                 "type": "CUSTOMER_UNBLOCKED",
                 "customer_id": str(customer.id),
                 "is_blocked": False,
             })
         except Exception:
             pass
+
+        return customer
+
+    @staticmethod
+    async def update_customer(
+        session: AsyncSession,
+        customer_id: uuid.UUID,
+        payload: CustomerUpdate,
+        current_user: Optional[User] = None,
+        client_ip: Optional[str] = None,
+    ) -> Optional[Customer]:
+        """Update customer attributes, calculate diffs, harmonize location, and trigger audit/timeline events."""
+        customer = await session.get(Customer, customer_id)
+        if not customer:
+            return None
+
+        update_data = payload.model_dump(exclude_unset=True)
+        changes = {}
+        for field, val in update_data.items():
+            if val is not None:
+                old_val = getattr(customer, field, None)
+                if old_val != val:
+                    changes[field] = {"old": old_val, "new": val}
+                    setattr(customer, field, val)
+
+        # Harmonize location and country auto-mapping
+        if payload.country is not None:
+            customer.country = payload.country
+        if payload.location is not None:
+            customer.location = payload.location
+            if not customer.country or payload.country is None:
+                customer.country = payload.location
+
+        await session.commit()
+        await session.refresh(customer)
+
+        # If changes occurred, log audit & timeline
+        if changes:
+            user_id = current_user.id if current_user else None
+            user_name = (current_user.full_name if current_user else None) or "النظام"
+
+            # 1. Immutable UserAuditLog
+            try:
+                from app.services.audit_service import AuditService
+                action_name = "customer.updated"
+                if len(changes) == 1:
+                    if "stage" in changes:
+                        action_name = "customer.stage_changed"
+                    elif "tier" in changes:
+                        action_name = "customer.tier_changed"
+
+                await AuditService.log_action(
+                    session=session,
+                    user_id=user_id,
+                    action=action_name,
+                    resource_type="customer",
+                    resource_id=str(customer_id),
+                    payload={
+                        "changes": changes,
+                        "user_name": user_name,
+                        "customer_name": customer.display_name,
+                    },
+                    ip_address=client_ip,
+                )
+            except Exception as audit_err:
+                logger.warning("[Customer Update Audit Log Error] %s", audit_err)
+
+            # 2. Customer 360 Timeline event
+            try:
+                from app.services.customer_timeline_service import CustomerTimelineService
+                summary_parts = []
+                if "stage" in changes:
+                    summary_parts.append(f"تغيير الحالة إلى '{changes['stage']['new']}'")
+                if "tier" in changes:
+                    summary_parts.append(f"تغيير الدرجة إلى '{changes['tier']['new']}'")
+                if "location" in changes or "country" in changes:
+                    new_loc = changes.get("location", {}).get("new") or changes.get("country", {}).get("new")
+                    summary_parts.append(f"تغيير الموقع إلى '{new_loc}'")
+                if "skin_type" in changes:
+                    summary_parts.append(f"تغيير نوع البشرة إلى '{changes['skin_type']['new']}'")
+                if not summary_parts:
+                    summary_parts.append("تحديث بيانات العميل")
+
+                summary_str = f"قام {user_name} بـ " + " و ".join(summary_parts)
+                await CustomerTimelineService.record_event(
+                    session=session,
+                    customer_id=customer_id,
+                    event_type="customer.updated",
+                    channel="system",
+                    summary=summary_str,
+                    details={"modified_by": user_name, "changes": changes},
+                )
+                await session.commit()
+            except Exception:
+                pass
 
         return customer
 

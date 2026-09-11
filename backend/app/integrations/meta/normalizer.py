@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.models.enums import (
     ChannelEnum,
     ConversationStatusEnum,
@@ -58,6 +59,7 @@ class NormalizedMetaWebhookEvent:
     sender_name: Optional[str] = None
     attachments: list[dict[str, Any]] = field(default_factory=list)
     metadata_: dict[str, Any] = field(default_factory=dict)
+    is_echo: bool = False
 
 
 class MetaNormalizer:
@@ -299,7 +301,17 @@ class MetaNormalizer:
         ts_val = raw_item.get("timestamp") or raw_item.get("time")
         created_at = MetaNormalizer.parse_epoch_timestamp(ts_val)
 
-        if sender_psid == page_id:
+        is_echo = bool(msg_data.get("is_echo") or raw_item.get("is_echo"))
+
+        known_agent_ids = {str(page_id).strip()} if page_id else set()
+        if getattr(settings, "META_PAGE_ID", None):
+            known_agent_ids.add(str(settings.META_PAGE_ID).strip())
+        if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+            known_agent_ids.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
+
+        if is_echo:
+            sender_type = SenderTypeEnum.AGENT
+        elif sender_psid in known_agent_ids:
             sender_type = SenderTypeEnum.AGENT
         elif sender_psid == "system":
             sender_type = SenderTypeEnum.SYSTEM
@@ -307,7 +319,25 @@ class MetaNormalizer:
             sender_type = SenderTypeEnum.CUSTOMER
 
         text_content = msg_data.get("text")
-        raw_attachments = msg_data.get("attachments", [])
+        raw_attachments = list(msg_data.get("attachments", []) or [])
+
+        # Inbound and echo messages can deliver shared content via 'shares' array
+        raw_shares = msg_data.get("shares", []) or raw_item.get("shares", [])
+        if raw_shares:
+            if isinstance(raw_shares, dict):
+                raw_shares = [raw_shares]
+            if isinstance(raw_shares, list):
+                for s in raw_shares:
+                    if isinstance(s, dict):
+                        link = s.get("link") or s.get("url")
+                        raw_attachments.append({
+                            "type": "share",
+                            "payload": {
+                                "url": link,
+                                "title": s.get("id") or s.get("title") or "Shared Content",
+                            },
+                            "share": s,
+                        })
 
         if not text_content and postback_data:
             if not ext_msg_id:
@@ -316,32 +346,56 @@ class MetaNormalizer:
 
         normalized_attachments = []
         msg_type = MessageTypeEnum.TEXT
+        extracted_share_url = None
 
         if raw_attachments:
-            first_att = raw_attachments[0]
+            first_att = raw_attachments[0] if isinstance(raw_attachments[0], dict) else {}
             att_type_str = str(first_att.get("type", "")).lower()
 
             if "image" in att_type_str:
                 msg_type = MessageTypeEnum.IMAGE
-            elif "video" in att_type_str:
+            elif any(k in att_type_str for k in ("video", "reel", "ig_reel")):
                 msg_type = MessageTypeEnum.VIDEO
-            elif "audio" in att_type_str:
+            elif "audio" in att_type_str or "voice" in att_type_str:
                 msg_type = MessageTypeEnum.AUDIO
             elif "file" in att_type_str or "doc" in att_type_str:
                 msg_type = MessageTypeEnum.FILE
+            elif any(k in att_type_str for k in ("share", "story_mention")):
+                msg_type = MessageTypeEnum.VIDEO
             else:
                 msg_type = MessageTypeEnum.UNKNOWN
 
             for att in raw_attachments:
-                payload = att.get("payload", {})
-                url = payload.get("url")
+                if not isinstance(att, dict):
+                    continue
+                payload = att.get("payload", {}) if isinstance(att.get("payload"), dict) else {}
+                share_obj = att.get("share", {}) if isinstance(att.get("share"), dict) else {}
+                url = (
+                    payload.get("url")
+                    or payload.get("reel_video_url")
+                    or share_obj.get("link")
+                    or payload.get("preview_url")
+                    or att.get("url")
+                )
+                if not extracted_share_url and url:
+                    extracted_share_url = url
+
                 normalized_attachments.append({
                     "type": att.get("type"),
-                    "title": payload.get("title"),
+                    "title": payload.get("title") or share_obj.get("title"),
                     "url": url,
+                    "payload": payload,
                 })
-        elif not text_content:
-            msg_type = MessageTypeEnum.UNKNOWN
+
+        if not text_content:
+            if extracted_share_url:
+                text_content = f"[Instagram Reel/Share: {extracted_share_url}]"
+                if msg_type in (MessageTypeEnum.UNKNOWN, MessageTypeEnum.TEXT):
+                    msg_type = MessageTypeEnum.VIDEO
+            elif normalized_attachments:
+                pass
+            else:
+                msg_type = MessageTypeEnum.UNKNOWN
 
         channel = channel_hint
         if raw_item.get("object") == "instagram" or channel_hint == ChannelEnum.INSTAGRAM:
@@ -370,5 +424,6 @@ class MetaNormalizer:
             channel=channel,
             attachments=normalized_attachments,
             metadata_={"referral": ref_metadata, "raw": raw_item},
+            is_echo=is_echo,
         )
 

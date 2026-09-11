@@ -9,6 +9,7 @@ from typing import Any, Optional, Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.audit_service import AuditService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("ModerationService")
 
@@ -176,7 +177,6 @@ class ModerationService:
 
         # 2. Real-time WebSocket Red Alert
         try:
-            from app.api.v1.ws import manager
             words_joined = "-".join([w.replace(" ", "_") for w in matched_words])
             alert_id = f"mod-{conversation_id}-{words_joined}"
             alert_payload = {
@@ -195,7 +195,7 @@ class ModerationService:
                 "channel": channel,
                 "timestamp": now_utc.isoformat(),
             }
-            await manager.broadcast(alert_payload)
+            await ws_broadcaster.broadcast(alert_payload)
         except Exception as ws_err:
             logger.error(f"Error broadcasting bad word security alert: {ws_err}", exc_info=True)
 

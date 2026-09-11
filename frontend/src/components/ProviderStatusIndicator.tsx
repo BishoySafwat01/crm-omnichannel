@@ -65,53 +65,44 @@ export const ProviderStatusIndicator: React.FC = () => {
     return null;
   }
 
-  const isDirectMeta = status?.direct_meta_enabled === true;
+  const isHybrid = status?.active_provider === 'HYBRID_META_BEON' || (status?.direct_meta_enabled === true && status?.beon_connected === true);
+  const isDirectMeta = !isHybrid && status?.direct_meta_enabled === true;
 
   return (
     <div className="relative inline-flex items-center text-right select-none font-sans" dir="ltr" ref={dropdownRef}>
-      {/* Sleek Compact Badge Trigger */}
+      {/* Sleek Enterprise Pill Trigger */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all duration-200 border cursor-pointer ${
-          isDirectMeta
-            ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-300'
-            : 'bg-indigo-50/80 hover:bg-indigo-100/80 border-indigo-200 text-indigo-800 dark:bg-indigo-950/40 dark:border-indigo-800/60 dark:text-indigo-300'
-        }`}
+        className="group flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100/80 border border-slate-200/70 text-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
         title={
-          isDirectMeta
+          isHybrid
             ? 'Messenger via Graph API v23.0 | Channels via BeOn V3'
+            : isDirectMeta
+            ? 'All Channels via Meta Graph API v23.0'
             : 'All Channels Routed via BeOn API v3'
         }
       >
         {/* Pulsing Status Dot */}
-        <span className="relative flex h-2 w-2 shrink-0">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
           <span
             className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-              isDirectMeta ? 'bg-emerald-400' : 'bg-indigo-400'
+              isHybrid || isDirectMeta ? 'bg-emerald-400' : 'bg-indigo-400'
             }`}
           />
           <span
-            className={`relative inline-flex rounded-full h-2 w-2 ${
-              isDirectMeta ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-indigo-500 shadow-[0_0_6px_rgba(99,102,241,0.8)]'
+            className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+              isHybrid || isDirectMeta ? 'bg-emerald-500' : 'bg-indigo-500'
             }`}
           />
         </span>
 
-        {/* Icon & Label */}
-        {isDirectMeta ? (
-          <>
-            <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="tracking-tight">Meta Direct</span>
-          </>
-        ) : (
-          <>
-            <Globe className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <span className="tracking-tight">BeOn Gateway</span>
-          </>
-        )}
+        {/* Text */}
+        <span className="tracking-tight">
+          {isHybrid ? 'Hybrid (Meta + BeOn)' : isDirectMeta ? 'Meta Direct' : 'BeOn Gateway'}
+        </span>
 
-        <ChevronDown className={`w-3 h-3 opacity-50 group-hover:opacity-100 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3 h-3 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover Dropdown Details */}
@@ -119,13 +110,13 @@ export const ProviderStatusIndicator: React.FC = () => {
         <div className="absolute top-full mt-2 right-0 z-50 w-72 rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-xl p-3.5 text-xs space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
             <div className="flex items-center gap-2">
-              <div className={`p-1 rounded-lg ${isDirectMeta ? 'bg-emerald-500/10 text-emerald-600' : 'bg-indigo-500/10 text-indigo-600'}`}>
-                {isDirectMeta ? <Zap className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+              <div className={`p-1 rounded-lg ${isHybrid || isDirectMeta ? 'bg-emerald-500/10 text-emerald-600' : 'bg-indigo-500/10 text-indigo-600'}`}>
+                {isHybrid || isDirectMeta ? <Zap className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
               </div>
               <div>
                 <h4 className="font-bold text-[11px] text-slate-900 dark:text-slate-100">Provider Mode Engine</h4>
                 <p className="text-[10px] text-slate-500">
-                  {isDirectMeta ? 'Hybrid Meta Direct + BeOn' : 'BeOn Omnichannel V3'}
+                  {isHybrid ? 'Hybrid Meta Direct + BeOn' : isDirectMeta ? 'Meta Direct Graph API' : 'BeOn Omnichannel V3'}
                 </p>
               </div>
             </div>

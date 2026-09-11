@@ -1,29 +1,43 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.ports.llm_port import LLMProviderPort
+from app.infrastructure.llm.groq_adapter import GroqAdapter
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.services.llm.groq_client import analyze_with_groq_cascade
+from app.services.llm.fallback_engine import analyze_fallback
 
 logger = logging.getLogger(__name__)
 
 
 class AIService:
-    """Enterprise AI Engine Service for CRM Copilot Intelligence with 3-Tier Groq Cascade."""
+    """
+    Enterprise AI Engine Service for CRM Copilot Intelligence.
 
-    @staticmethod
+    Operates statelessly following Clean Architecture principles.
+    Accepts an optional LLMProviderPort via method dependency injection for test mocking
+    and dynamic provider swapping, defaulting to GroqAdapter.
+    """
+
+    @classmethod
     async def analyze_conversation(
+        cls,
         session: AsyncSession,
         conversation: Conversation,
+        llm_provider: Optional[LLMProviderPort] = None,
     ) -> Dict[str, Any]:
         """
-        Analyzes recent conversation transcript using 3-Tier Groq AI Cascade:
-        Tier 1: openai/gpt-oss-120b
-        Tier 2: openai/gpt-oss-20b
-        Tier 3: Local Rule-Based Heuristic NLP Fallback Engine
+        Analyzes recent conversation transcript using configured LLMProviderPort
+        (defaulting to GroqAdapter) with automatic fallback to local rule-based NLP engine.
+
+        Stateless Dependency Injection:
+            Pass `llm_provider` to override the default GroqAdapter with an alternative
+            adapter or mock implementation during testing.
         """
+        provider: LLMProviderPort = llm_provider or GroqAdapter()
+
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation.id)
@@ -43,8 +57,21 @@ class AIService:
                 "text": msg.text or "",
             })
 
-        # Execute 3-Tier Cascading AI Analysis
-        ai_res = await analyze_with_groq_cascade(formatted_messages, brand_name)
+        transcript = "\n".join(f"[{m['sender']}]: {m['text']}" for m in formatted_messages)
+
+        # Execute LLM Analysis via injected provider with graceful fallback
+        try:
+            ai_res = await provider.analyze_conversation(
+                transcript=transcript,
+                brand_name=brand_name,
+                messages=formatted_messages,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LLM provider invocation failed (%s). Failing over to local rule-based NLP engine...",
+                exc,
+            )
+            ai_res = analyze_fallback(formatted_messages, brand_name)
 
         summary = ai_res.get("summary", "محادثة جارية مع العميل.")
         intent = ai_res.get("intent", "استفسار عام")
@@ -84,7 +111,7 @@ class AIService:
         await session.refresh(conversation)
 
         logger.info(
-            "✨ [AIService Cascade] Analyzed Conv %s | Intent: %s | Sentiment: %s | Loc: %s | Priority: %s",
+            "✨ [AIService] Analyzed Conv %s | Intent: %s | Sentiment: %s | Loc: %s | Priority: %s",
             conversation.id,
             intent,
             sentiment,

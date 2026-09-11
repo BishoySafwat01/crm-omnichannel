@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,12 @@ class Conversation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
     customer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -87,5 +93,11 @@ class Conversation(Base):
             "channel",
             "external_conversation_id",
             name="uq_conversation_provider_channel_ext_conv_id",
+        ),
+        Index(
+            "ix_conversations_brand_channel_last_msg",
+            "brand",
+            "channel",
+            sa_text("last_message_at DESC NULLS LAST"),
         ),
     )

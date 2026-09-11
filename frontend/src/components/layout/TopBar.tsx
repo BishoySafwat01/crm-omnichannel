@@ -1,24 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, MessageCircle, CheckCircle, Layers, Share2, X, Send, Check, LogOut, User as UserIcon, Bot, BarChart3, Database, Users, ChevronDown, Filter, Plug, MapPin } from 'lucide-react';
-import { MOCK_BRANDS } from '../../constants/brands';
+import {
+  MessageSquare,
+  MessageCircle,
+  Share2,
+  X,
+  Send,
+  Check,
+  LogOut,
+  Bot,
+  BarChart3,
+  Database,
+  Users,
+  ChevronDown,
+  Radio,
+  Bell,
+  SlidersHorizontal,
+  Globe,
+  Layers,
+} from 'lucide-react';
+import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
 import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
+import luxiraLogo from '../../assets/luxira-logo.png';
 
 interface TopBarProps {
-  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team';
-  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team') => void;
+  activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels';
+  setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels') => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
   const {
     selectedProvider,
     setSelectedProvider,
-    selectedBrand,
-    setSelectedBrand,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -26,11 +43,6 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     selectedCountry,
     setSelectedCountry,
     availableCountries,
-    selectedAgentId,
-    setSelectedAgentId,
-    teamMembers,
-    fetchTeamMembers,
-    setIsIntegrationsModalOpen,
     unreadSummary,
     fetchUnreadSummary,
     conversations,
@@ -44,13 +56,45 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  // Dropdown states for compact header controls
+  // Dropdown states with outside click detection
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false);
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState(false);
+  const channelDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [isSecondaryOpen, setIsSecondaryOpen] = useState(false);
+  const secondaryDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchUnreadSummary();
-    fetchTeamMembers();
-  }, []);
+  }, [fetchUnreadSummary]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+        setIsBrandDropdownOpen(false);
+      }
+      if (channelDropdownRef.current && !channelDropdownRef.current.contains(e.target as Node)) {
+        setIsChannelDropdownOpen(false);
+      }
+      if (secondaryDropdownRef.current && !secondaryDropdownRef.current.contains(e.target as Node)) {
+        setIsSecondaryOpen(false);
+      }
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    };
+    if (isBrandDropdownOpen || isChannelDropdownOpen || isSecondaryOpen || isNotifOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isBrandDropdownOpen, isChannelDropdownOpen, isSecondaryOpen, isNotifOpen]);
 
   const channels: { id: ChannelFilterType; label: string }[] = [
     { id: 'all', label: 'كل القنوات' },
@@ -79,7 +123,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         link: formattedLink,
       });
 
-      setPublishSuccess(`تم نشر المنشور بنجاح على صفحة فيسبوك ✨ (ID: ${data.post_id || 'تم'})`);
+      setPublishSuccess(`تم نشر المنشور بنجاح على صفحة فيسبوك (ID: ${data.post_id || 'تم'})`);
       setPostMessage('');
       setPostLink('');
       setTimeout(() => {
@@ -94,61 +138,11 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     }
   };
 
-  const isUserAdmin = user?.role === 'admin' || (user?.role as any) === 'ADMIN';
+  const isUserAdmin = isAdminUser(user);
 
-  const dynamicBrands = React.useMemo(() => {
-    const list: { id: string; name: string; avatar: string; logo_url?: string; color: string }[] = [
-      { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800' },
-    ];
-    const seen = new Set<string>(['all']);
+  const dynamicBrands = useBrandStore((state) => state.brands);
 
-    // 1. Gather all active brands from unreadSummary & conversations
-    const activeBrandNames = new Set<string>();
-    if (unreadSummary?.brands) {
-      Object.keys(unreadSummary.brands).forEach((b) => {
-        if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
-      });
-    }
-    conversations.forEach((c) => {
-      const b = c.brand || c.brand_name;
-      if (b && b.toLowerCase() !== 'all' && b !== 'الكل') activeBrandNames.add(b);
-    });
-
-    // 2. Add active brands with resolved logos
-    activeBrandNames.forEach((bName) => {
-      const norm = bName.toLowerCase();
-      if (!seen.has(norm)) {
-        seen.add(norm);
-        const obj = getBrandObject(bName, bName);
-        list.push({
-          id: bName,
-          name: obj.name || bName,
-          avatar: obj.avatar,
-          logo_url: obj.logo_url,
-          color: obj.color,
-        });
-      }
-    });
-
-    // 3. Append remaining standard mock brands if not already present
-    MOCK_BRANDS.forEach((mb) => {
-      const norm = mb.id.toLowerCase();
-      if (!seen.has(norm) && mb.id !== 'all') {
-        seen.add(norm);
-        list.push({
-          id: mb.id,
-          name: mb.name,
-          avatar: mb.avatar,
-          logo_url: mb.logo_url,
-          color: mb.color || 'from-slate-700 to-slate-800',
-        });
-      }
-    });
-
-    return list;
-  }, [unreadSummary?.brands, conversations]);
-
-  const selectedBrandObj = React.useMemo(() => {
+  const selectedBrandObj = useMemo(() => {
     if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
       return dynamicBrands[0];
     }
@@ -166,263 +160,353 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [dynamicBrands, selectedBrandId]);
 
+  // Main navigation tabs ordered by workflow priority
+  const navItems: {
+    id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments';
+    label: string;
+    icon: React.ReactNode;
+  }[] = [
+    { id: 'chat', label: 'الشات المباشر', icon: <MessageSquare className="w-3.5 h-3.5" /> },
+    { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
+    { id: 'channels', label: 'القنوات', icon: <Radio className="w-3.5 h-3.5" /> },
+    { id: 'automations', label: 'الأتمتة', icon: <Bot className="w-3.5 h-3.5" /> },
+    { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
+    { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
+    { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
+  ];
+
   return (
-    <header className="h-13 my-2 mx-4 px-5 bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex items-center justify-between shrink-0 relative z-30 transition-all">
-      {/* Right Section (RTL Start): Logo & 6-Way Main View Switcher */}
-      <div className="flex items-center gap-5">
-        {/* Brand Identity Mark */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#1A73E8] to-teal-500 text-white flex items-center justify-center font-bold shadow-xs">
-            <Layers className="w-4 h-4" />
+    <header className="sticky top-0 z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-4 py-2 flex items-center justify-between select-none">
+      {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark + Primary Navigation */}
+      <div className="flex items-center gap-4">
+        {/* LUXIRA HOLDING Brand Mark & Typographic Branding */}
+        <div className="flex items-center gap-2.5 shrink-0 group cursor-default">
+          <div className="h-9 w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105">
+            <img
+              src={luxiraLogo}
+              alt="LUXIRA HOLDING"
+              className="h-7 w-7 object-contain drop-shadow-xs"
+            />
           </div>
-          <span className="text-sm font-extrabold text-slate-900 tracking-tight hidden sm:inline">LUXIRA</span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1 leading-none">
+              <span className="text-sm font-black text-slate-900 tracking-tight">LUXIRA</span>
+              <span className="text-xs font-bold text-teal-600 tracking-wide">HOLDING</span>
+            </div>
+            <span className="text-[8px] font-bold text-slate-400 tracking-widest uppercase mt-0.5">OMNICHANNEL CRM</span>
+          </div>
         </div>
 
-        {/* 6-Way View Navigation Tabs */}
+        {/* Primary Navigation Strip (Admin Restricted) */}
         {isUserAdmin && setActiveMainView && (
-          <nav className="flex items-center gap-1 bg-slate-100/60 p-1 rounded-full border border-slate-200/50 backdrop-blur-md">
-            <button
-              onClick={() => setActiveMainView('chat')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'chat'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الشات المباشر</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('comments')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'comments'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>التعليقات</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('automations')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'automations'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الأتمتة</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('dashboard')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'dashboard'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>التحليلات</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('database')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'database'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Database className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>العملاء</span>
-            </button>
-            <button
-              onClick={() => setActiveMainView('team')}
-              className={`px-3.5 py-1 rounded-full text-xs transition-all flex items-center gap-1.5 ${
-                activeMainView === 'team'
-                  ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 font-medium'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 text-[#1A73E8]" />
-              <span>الفريق</span>
-            </button>
+          <nav className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60 backdrop-blur-md">
+            {navItems.map((item) => {
+              const isActive = activeMainView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveMainView(item.id)}
+                  className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
+                    isActive
+                      ? 'bg-teal-600 text-white shadow-xs font-semibold rounded-xl px-3.5 py-1.5'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium rounded-xl px-3.5 py-1.5 transition-colors'
+                  }`}
+                >
+                  <span className={isActive ? 'text-white' : 'text-slate-500'}>
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </nav>
         )}
       </div>
 
-      {/* Center Section: Compact Inline Brand, Channel & Dynamic Location Selectors */}
-      {activeMainView === 'chat' && (
-        <div className="flex items-center gap-2">
-          {/* Brand Switcher Pill Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100/70 hover:bg-white text-xs font-semibold text-slate-800 border border-slate-200/60 shadow-2xs transition"
-            >
-              {selectedBrandObj?.logo_url ? (
-                <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />
-              ) : (
-                <span className="w-2 h-2 rounded-full bg-[#1A73E8]" />
-              )}
-              <span>{selectedBrandObj?.name || 'كل الماركات'}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
+      {/* Middle Side: Compact, Sleek Contextual Filter Triggers */}
+      <div className="flex items-center gap-2">
+        {activeMainView === 'chat' && (
+          <>
+            {/* 1. Store / Brand Switcher Pill Dropdown */}
+            <div className="relative" ref={brandDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+                title="تصفية المحادثات حسب الماركة"
+              >
+                {selectedBrandObj?.logo_url ? (
+                  <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover ring-1 ring-slate-200" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-teal-600" />
+                )}
+                <span className="max-w-[85px] truncate">{selectedBrandObj?.name || 'كل الماركات'}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
 
-            {isBrandDropdownOpen && (
-              <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/98 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 scrollbar-none">
-                {dynamicBrands.map((b) => {
-                  const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
-                  return (
+              {isBrandDropdownOpen && (
+                <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-none">
+                  {dynamicBrands.map((b) => {
+                    const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
+                    const isSelected = selectedBrandId === b.id || (!selectedBrandId && b.id === 'all');
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedBrandId(b.id);
+                          setIsBrandDropdownOpen(false);
+                        }}
+                        className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50'
+                            : 'text-slate-700 hover:bg-slate-50 font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {b.logo_url ? (
+                            <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className={`w-4 h-4 rounded-full bg-gradient-to-tr ${b.color} text-white flex items-center justify-center text-[8px] font-bold shrink-0`}>
+                              {b.avatar?.substring(0, 2) || 'ST'}
+                            </div>
+                          )}
+                          <span className="truncate">{b.name}</span>
+                        </div>
+                        {brandUnread > 0 && (
+                          <span className="bg-teal-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0">
+                            {brandUnread}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Channel Filter Pill Dropdown */}
+            <div className="relative" ref={channelDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+                title="تصفية المحادثات حسب القناة"
+              >
+                <Radio className="w-3.5 h-3.5 text-teal-600" />
+                <span>{channels.find((c) => c.id === selectedChannel)?.label || 'كل القنوات'}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+
+              {isChannelDropdownOpen && (
+                <div className="absolute top-full right-0 mt-1.5 w-44 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
+                  {channels.map((ch) => (
                     <button
-                      key={b.id}
+                      key={ch.id}
+                      type="button"
                       onClick={() => {
-                        setSelectedBrandId(b.id);
-                        setIsBrandDropdownOpen(false);
+                        setSelectedChannel(ch.id);
+                        setIsChannelDropdownOpen(false);
                       }}
-                      className={`w-full text-right px-3 py-2 rounded-xl text-xs transition flex items-center justify-between ${
-                        selectedBrandId === b.id
-                          ? 'bg-[#E8F0FE] text-[#1A73E8] font-bold border border-[#1A73E8]/20'
+                      className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between cursor-pointer ${
+                        selectedChannel === ch.id
+                          ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50'
                           : 'text-slate-700 hover:bg-slate-50 font-medium'
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {b.logo_url ? (
-                          <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
-                        ) : (
-                          <div className={`w-4 h-4 rounded-full bg-gradient-to-tr ${b.color} text-white flex items-center justify-center text-[8px] font-bold shrink-0`}>
-                            {b.avatar?.substring(0, 2) || 'ST'}
-                          </div>
-                        )}
-                        <span className="truncate">{b.name}</span>
-                      </div>
-                      {brandUnread > 0 && (
-                        <span className="bg-[#1A73E8] text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0">
-                          {brandUnread}
-                        </span>
-                      )}
+                      <span>{ch.label}</span>
+                      {selectedChannel === ch.id && <Check className="w-3.5 h-3.5 text-teal-600" />}
                     </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          {/* Segmented Provider Switcher */}
-          <div className="flex items-center bg-slate-100/80 p-0.5 rounded-full border border-slate-200/60 shadow-2xs">
-            <button
-              onClick={() => setSelectedProvider('all')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
-                selectedProvider === 'all'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="عرض كل المزودين بدون تكرار"
-            >
-              <span>⚡ الكل</span>
-            </button>
-            <button
-              onClick={() => setSelectedProvider('meta')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
-                selectedProvider === 'meta'
-                  ? 'bg-[#1877F2] text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="محادثات Meta Graph API المباشرة فقط"
-            >
-              <span>🌐 ميتا مباشر</span>
-            </button>
-            <button
-              onClick={() => setSelectedProvider('beon')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition flex items-center gap-1 ${
-                selectedProvider === 'beon'
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="محادثات مزود BeOn Gateway V3 فقط"
-            >
-              <span>🚀 مزود BeOn</span>
-            </button>
-          </div>
+            {/* 3. Segmented Provider Controller (No Emojis, Pure SVGs & Typography) */}
+            <div className="flex items-center bg-slate-100/70 p-0.5 rounded-xl border border-slate-200/60 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setSelectedProvider('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
+                  selectedProvider === 'all'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="عرض كل المزودين"
+              >
+                <span>الكل</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedProvider('meta')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
+                  selectedProvider === 'meta'
+                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="محادثات Meta Graph API المباشرة"
+              >
+                <Globe className={`w-3.5 h-3.5 ${selectedProvider === 'meta' ? 'text-teal-600' : 'text-slate-400'}`} />
+                <span>ميتا مباشر</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedProvider('beon')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
+                  selectedProvider === 'beon'
+                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="محادثات مزود BeOn Gateway V3"
+              >
+                <Layers className={`w-3.5 h-3.5 ${selectedProvider === 'beon' ? 'text-teal-600' : 'text-slate-400'}`} />
+                <span>مزود BeOn</span>
+              </button>
+            </div>
 
-          {/* Clean Channel Dropdown Selector */}
-          <select
-            value={selectedChannel}
-            onChange={(e) => setSelectedChannel(e.target.value as ChannelFilterType)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
-          >
-            {channels.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {ch.label}
-              </option>
-            ))}
-          </select>
+            {/* 4. Grouped Secondary Actions Popover (Location Filter & Quick Post) */}
+            <div className="relative" ref={secondaryDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsSecondaryOpen(!isSecondaryOpen)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors shadow-2xs cursor-pointer ${
+                  isSecondaryOpen || (selectedCountry && selectedCountry !== 'all')
+                    ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
+                    : 'bg-slate-50/80 text-slate-700 border-slate-200/70 hover:bg-slate-100'
+                }`}
+                title="خيارات إضافية (الموقع الجغرافي والنشر)"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden xl:inline text-[11px]">
+                  {selectedCountry && selectedCountry !== 'all' ? selectedCountry : 'أدوات إضافية'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
 
-          {/* Dynamic Database-Driven Location Dropdown Selector */}
-          <select
-            value={selectedCountry}
-            onChange={(e) => setSelectedCountry(e.target.value)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
-          >
-            <option value="all">🌍 كل المواقع</option>
-            {(availableCountries || []).map((c) => (
-              <option key={c} value={c}>
-                📍 {c}
-              </option>
-            ))}
-            <option value="unspecified">⚪ غير محدد</option>
-          </select>
+              {isSecondaryOpen && (
+                <div className="absolute top-full right-0 mt-1.5 w-72 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-3 text-right">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-slate-400">
+                    <span className="text-[11px] font-bold text-slate-600">إجراءات وأدوات ثانوية</span>
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
 
-          {/* Dynamic Team Member / Agent Dropdown Selector */}
-          <select
-            value={selectedAgentId}
-            onChange={(e) => setSelectedAgentId(e.target.value)}
-            className="bg-slate-100/70 hover:bg-white text-slate-800 text-xs font-semibold rounded-full px-3 py-1 border border-slate-200/60 shadow-2xs focus:outline-none cursor-pointer"
-          >
-            <option value="all">👥 كل الموظفين</option>
-            {(teamMembers || []).map((m) => (
-              <option key={m.id} value={m.id}>
-                👤 {m.full_name} {m.role === 'admin' ? '(مدير)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+                  {/* Location Selector */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-teal-600" />
+                      <span>تصفية المحادثات حسب الموقع / الدولة:</span>
+                    </label>
+                    <select
+                      value={selectedCountry}
+                      onChange={(e) => setSelectedCountry(e.target.value)}
+                      className="w-full bg-slate-50 hover:bg-slate-100/80 text-slate-800 text-xs font-medium rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 transition duration-150 cursor-pointer"
+                    >
+                      <option value="all">كل المواقع والدول</option>
+                      {(availableCountries || []).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                      <option value="unspecified">غير محدد</option>
+                    </select>
+                  </div>
 
-      {/* Left Section (RTL End): Integrations Modal, Profile & Quick Post Action */}
-      <div className="flex items-center gap-2">
-        {/* Omnichannel Integrations Hub Trigger Button */}
-        <button
-          onClick={() => setIsIntegrationsModalOpen(true)}
-          className="px-3 py-1 rounded-full bg-[#E8F0FE] hover:bg-blue-100 text-[#1A73E8] text-xs font-bold border border-[#1A73E8]/20 transition flex items-center gap-1.5 shadow-2xs"
-          title="ربط القنوات والويب هـوك"
-        >
-          <Plug className="w-3.5 h-3.5 text-[#1A73E8]" />
-          <span>ربط القنوات</span>
-        </button>
+                  {/* Quick Post Trigger */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSecondaryOpen(false);
+                        setIsPostModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-teal-50 hover:bg-teal-100/80 text-teal-800 text-xs font-bold transition duration-150 border border-teal-200/70 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+                          <Share2 className="w-3 h-3" />
+                        </div>
+                        <span>نشر منشور على الفيسبوك</span>
+                      </div>
+                      <span className="text-[10px] text-teal-600 font-medium">Meta Page</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
-        {/* Quick Post Publisher Action */}
-        <button
-          onClick={() => setIsPostModalOpen(true)}
-          className="px-3.5 py-1 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5"
-        >
-          <Share2 className="w-3.5 h-3.5 text-white" />
-          <span>نشر منشور</span>
-        </button>
-
-        {/* Provider Mode Status Badge (Embedded Authenticated Indicator) */}
+      {/* Left Side (RTL End): Provider Status, Notification Bell, Agent Profile & Logout */}
+      <div className="flex items-center gap-3">
+        {/* Provider Status Indicator (Hybrid Meta + BeOn) */}
         <ProviderStatusIndicator />
 
-        {/* User Profile & Logout */}
+        {/* Notification Bell Dropdown */}
+        <div className="relative" ref={notifDropdownRef}>
+          <button
+            onClick={() => setIsNotifOpen(!isNotifOpen)}
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/70 bg-slate-50 shadow-2xs hover:ring-2 hover:ring-teal-500/20 transition duration-150 relative cursor-pointer"
+            title="التنبيهات والرسائل غير المقروءة"
+          >
+            <Bell className="w-4 h-4" />
+            {unreadSummary && unreadSummary.total_unread > 0 && (
+              <span className="absolute -top-1 -left-1 bg-teal-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                {unreadSummary.total_unread > 99 ? '99+' : unreadSummary.total_unread}
+              </span>
+            )}
+          </button>
+
+          {isNotifOpen && (
+            <div className="absolute top-full left-0 mt-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 text-right animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                <span className="text-xs font-black text-slate-900">ملخص الرسائل غير المقروءة</span>
+                <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full border border-teal-200/50">
+                  {unreadSummary?.total_unread || 0} رسالة
+                </span>
+              </div>
+
+              {unreadSummary && unreadSummary.brands && Object.keys(unreadSummary.brands).length > 0 ? (
+                <div className="space-y-1 text-xs">
+                  <span className="text-[10px] text-slate-400 font-bold block mb-1">حسب العلامة التجارية:</span>
+                  {Object.entries(unreadSummary.brands).map(([b, count]) => {
+                    if (b.toLowerCase() === 'all' || b === 'الكل' || count <= 0) return null;
+                    return (
+                      <div key={b} className="flex items-center justify-between hover:bg-slate-50 transition-colors duration-150 rounded-xl px-2.5 py-1.5 text-slate-700 text-xs font-medium">
+                        <span className="truncate">{b}</span>
+                        <span className="font-bold font-mono text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded-md border border-teal-200/50">
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 text-center py-2">لا توجد رسائل غير مقروءة حالياً</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* User Profile Chip */}
         {user && (
-          <div className="flex items-center gap-2 pr-2 border-r border-slate-100">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 rounded-xl border border-slate-200/70 text-xs font-semibold text-slate-800">
-              <UserIcon className="w-3.5 h-3.5 text-teal-600" />
-              <span className="truncate max-w-[100px]">{user.full_name}</span>
+          <div className="flex items-center gap-2 pr-2 border-r border-slate-200/60">
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-50/80 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 text-xs transition-colors">
+              <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold">
+                {user.full_name
+                  ? user.full_name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+                  : 'BS'}
+              </div>
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="font-semibold text-slate-800 truncate max-w-[110px]">{user.full_name || 'Bishoy Safwat'}</span>
+                <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md border border-slate-200/50">
+                  {user.role === 'admin' || user.role === 'superadmin' ? 'Admin' : 'Agent'}
+                </span>
+              </div>
             </div>
             <button
               onClick={logout}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
               title="تسجيل الخروج"
             >
               <LogOut className="w-4 h-4" />
@@ -431,7 +515,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         )}
       </div>
 
-      {/* Quick Post Publisher Modal (Rendered with Portal for Perfect Viewport Centering) */}
+      {/* Quick Post Publisher Modal (Rendered with Portal for Viewport Centering) */}
       {isPostModalOpen &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -446,7 +530,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#1877F2]/10 text-[#1877F2] flex items-center justify-center font-bold border border-[#1877F2]/20">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center font-bold border border-teal-200/60">
                     <Share2 className="w-5 h-5" />
                   </div>
                   <div>
@@ -476,7 +560,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                     value={postMessage}
                     onChange={(e) => setPostMessage(e.target.value)}
                     placeholder="اكتب محتوى المنشور هنا (مثل: استمتع بأحدث العروض والخصومات الحصرية اليوم...)"
-                    className="w-full bg-slate-50 text-xs text-slate-900 p-3.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1877F2]/20 focus:border-[#1877F2] font-medium leading-relaxed resize-none shadow-inner"
+                    className="w-full bg-slate-50 text-xs text-slate-900 p-3.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 font-medium leading-relaxed resize-none shadow-inner"
                   />
                 </div>
 
@@ -487,7 +571,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                     value={postLink}
                     onChange={(e) => setPostLink(e.target.value)}
                     placeholder="https://luxira.com/offer أو luxira.com"
-                    className="w-full bg-slate-50 text-xs text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1877F2]/20 focus:border-[#1877F2] font-medium"
+                    className="w-full bg-slate-50 text-xs text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-600 font-medium"
                   />
                 </div>
 
@@ -515,7 +599,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   <button
                     type="submit"
                     disabled={isPublishing || !postMessage.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-[#1877F2] hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md shadow-blue-500/20 disabled:opacity-50 active:scale-95 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md shadow-teal-600/20 disabled:opacity-50 active:scale-98 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5 rotate-180" />
                     <span>{isPublishing ? 'جاري النشر...' : 'نشر الآن'}</span>
@@ -529,3 +613,5 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     </header>
   );
 };
+
+export default TopBar;

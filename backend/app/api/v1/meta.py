@@ -229,15 +229,16 @@ async def get_configured_meta_pages():
 @router.post("/import", summary="Execute Meta Conversation History Import")
 async def import_meta_history(
     page_id: Optional[str] = Query(None, description="Specific page_id to import, or 'all' for batch sync across all configured pages"),
+    since_days: Optional[int] = Query(30, description="Number of days to look back for messages (default: 30)"),
     db: AsyncSession = Depends(get_db),
     admin_user: User = Depends(require_admin),
 ):
     """Run historical Messenger conversation import into PostgreSQL for a single page or all configured pages."""
     try:
         if page_id == "all":
-            jobs = await MetaImportService.sync_all_configured_pages(session=db)
+            jobs = await MetaImportService.sync_all_configured_pages(session=db, since_days=since_days)
             return {"status": "success", "synced_pages_count": len(jobs), "jobs": [MigrationJobResponse.model_validate(j) for j in jobs]}
-        job = await MetaImportService.run_import(session=db, page_id=page_id)
+        job = await MetaImportService.run_import(session=db, page_id=page_id, since_days=since_days)
         return MigrationJobResponse.model_validate(job)
     except Exception as exc:
         raise HTTPException(
@@ -259,12 +260,12 @@ async def send_meta_outbound_message(
 ):
     """Send an agent reply to a Messenger conversation through the Meta Graph API."""
     try:
-        msg = await MessageService.send_agent_reply(
+        reply_result = await MessageService.send_agent_reply(
             session=db,
             conversation_id=conversation_id,
             text=payload.text,
         )
-        return msg
+        return reply_result.message
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

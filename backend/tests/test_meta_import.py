@@ -435,8 +435,9 @@ async def test_partial_failure_handling():
     )
     mock_provider.get_all_conversations = AsyncMock(return_value=[conv1, conv2])
 
-    def mock_get_messages(conversation_id):
-        if conversation_id == "t_bad_2":
+    def mock_get_messages(conversation_id=None, **kwargs):
+        target_id = conversation_id or kwargs.get("conversation_id")
+        if target_id == "t_bad_2":
             raise MetaAPIError("Failed to fetch messages for conversation t_bad_2")
         return [
             MetaNormalizer.normalize_message(

@@ -7,13 +7,16 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 import httpx
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.integrations.meta import MetaAPIError, MetaNormalizer, MetaProvider
 from app.models import (
+    DEFAULT_WORKSPACE_ID,
     ChannelEnum,
+    ConnectedPage,
     Conversation,
     ConversationStatusEnum,
     Customer,
@@ -29,6 +32,7 @@ from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.message_service import MessageService
 from app.services.migration_service import MigrationService
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger("app.services.meta_import_service")
 
@@ -46,6 +50,83 @@ class MetaImportService:
         if verify_token and len(verify_token) > 0:
             err_str = err_str.replace(verify_token, "[REDACTED_VERIFY_TOKEN]")
         return err_str
+
+    @classmethod
+    async def resolve_brand_name_dynamically(
+        cls,
+        entry_page_id: Optional[str],
+        session: AsyncSession,
+        active_connected_pages: Optional[dict[str, ConnectedPage]] = None,
+    ) -> str:
+        """Dynamically resolve brand name from in-memory pages, DB ConnectedPage, or Meta Graph API.
+        Guarantees that brand is never a raw 'Page {id}' placeholder."""
+        if not entry_page_id or not str(entry_page_id).strip():
+            return "Default Business Page"
+
+        pid = str(entry_page_id).strip()
+
+        # Step A: In-memory active_connected_pages lookup
+        if active_connected_pages and pid in active_connected_pages:
+            cp = active_connected_pages[pid]
+            if cp and cp.name and not str(cp.name).startswith("Page "):
+                return cp.name
+
+        # Step B: Query ConnectedPage from DB
+        stmt = select(ConnectedPage).where(
+            or_(
+                ConnectedPage.page_id == pid,
+                ConnectedPage.instagram_business_account_id == pid,
+            )
+        )
+        res = await session.execute(stmt)
+        cp = res.scalars().first()
+        if cp and cp.name and not str(cp.name).startswith("Page "):
+            return cp.name
+
+        # Step C: If not in DB, query Meta Graph API dynamically and persist
+        token = settings.META_PAGE_ACCESS_TOKEN
+        if not token:
+            stmt_token = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE").limit(1)
+            active_cp = (await session.execute(stmt_token)).scalars().first()
+            if active_cp:
+                token = active_cp.decrypted_access_token
+
+        if token:
+            try:
+                api_ver = getattr(settings, "META_GRAPH_API_VERSION", "v23.0")
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as http_client:
+                    r = await http_client.get(
+                        f"https://graph.facebook.com/{api_ver}/{pid}",
+                        params={"fields": "name,id", "access_token": token},
+                    )
+                    if r.status_code == 200:
+                        data = r.json()
+                        brand_name = data.get("name")
+                        if brand_name and not str(brand_name).startswith("Page "):
+                            if cp:
+                                cp.name = brand_name
+                                await session.flush()
+                            else:
+                                from app.core.security import encrypt_token
+                                new_cp = ConnectedPage(
+                                    page_id=pid,
+                                    name=brand_name,
+                                    encrypted_access_token=encrypt_token(token),
+                                    status="ACTIVE",
+                                )
+                                session.add(new_cp)
+                                await session.flush()
+                                if active_connected_pages is not None:
+                                    active_connected_pages[pid] = new_cp
+                            return brand_name
+            except Exception as e:
+                logger.warning("[Brand Resolution] Failed dynamic lookup for page ID %s: %s", pid, e)
+
+        # Step D: Safe fallback
+        fallback = settings.get_page_name(pid)
+        if fallback and not str(fallback).startswith("Page "):
+            return fallback
+        return "Default Business Page"
 
     @staticmethod
     async def fetch_and_cache_customer_profile(psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
@@ -67,6 +148,18 @@ class MetaImportService:
             )
             if p and str(p).strip()
         }
+        try:
+            from app.core.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session_cp:
+                cp_res = await session_cp.execute(select(ConnectedPage))
+                for cp in cp_res.scalars().all():
+                    if cp.page_id:
+                        valid_page_ids.add(str(cp.page_id).strip())
+                    if cp.instagram_business_account_id:
+                        valid_page_ids.add(str(cp.instagram_business_account_id).strip())
+        except Exception:
+            pass
+
         if str(psid).strip() in valid_page_ids:
             return {}
 
@@ -83,7 +176,12 @@ class MetaImportService:
         avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
         os.makedirs(avatars_dir, exist_ok=True)
 
-        token = settings.get_page_token(page_id)
+        from app.integrations.meta.client import MetaClient
+        token = await MetaClient.get_token_for_page(page_id) if page_id else None
+        if not token:
+            token = settings.get_page_token(page_id)
+        if not token:
+            return {}
         url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={token}"
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
@@ -124,12 +222,13 @@ class MetaImportService:
         page_id: Optional[str] = None,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
         provider_adapter: Optional[MetaProvider] = None,
-        since_days: Optional[int] = 7,
+        since_days: Optional[int] = 30,
     ) -> MigrationJob:
         from app.integrations.meta.client import MetaClient
 
         target_page_id = page_id or settings.META_PAGE_ID
-        adapter = provider_adapter or MetaProvider(client=MetaClient(page_id=target_page_id))
+        client = MetaClient(page_id=target_page_id, db=session)
+        adapter = provider_adapter or MetaProvider(client=client, page_id=target_page_id, db=session)
 
         # 1. Validate configuration & page access
         try:
@@ -229,11 +328,14 @@ class MetaImportService:
                     external_conversation_id=norm_conv.external_conversation_id,
                 )
 
-                brand_name = settings.get_page_name(target_page_id)
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=target_page_id,
+                    session=session,
+                )
                 if existing_conv:
                     conv = existing_conv
                     conv.last_message_at = norm_conv.last_message_at
-                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
                         conv.brand = brand_name
                     await session.commit()
                 else:
@@ -374,11 +476,25 @@ class MetaImportService:
         cls,
         session: AsyncSession,
         channel: ChannelEnum = ChannelEnum.MESSENGER,
-        since_days: Optional[int] = 7,
+        since_days: Optional[int] = 30,
     ) -> list[MigrationJob]:
-        """Iterates through all pages in settings.get_meta_pages() and executes historical migration."""
+        """Iterates through all pages in settings.get_meta_pages() and connected_pages in DB and executes historical migration."""
         jobs: list[MigrationJob] = []
         pages = settings.get_meta_pages()
+        try:
+            from app.models.connected_page import ConnectedPage
+            stmt = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+            db_pages = (await session.execute(stmt)).scalars().all()
+            for cp in db_pages:
+                if cp.page_id and cp.page_id not in pages:
+                    pages[cp.page_id] = {
+                        "name": cp.name or f"Page {cp.page_id}",
+                        "access_token": cp.decrypted_access_token or "",
+                        "category": cp.category or "Business",
+                    }
+        except Exception as exc:
+            logger.warning("[MetaMultiSync] Failed to query active connected_pages from DB: %s", exc)
+
         logger.info("[MetaMultiSync] Starting batch historical synchronization for %d configured page(s)...", len(pages))
         for pid, pdata in pages.items():
             page_name = pdata.get("name", "Page")
@@ -397,85 +513,14 @@ class MetaImportService:
 
     @staticmethod
     async def download_and_cache_media(url: str, media_type: str = "file") -> str:
-        if not url or not isinstance(url, str) or not url.startswith("http"):
-            return url
-        try:
-            url_lower = url.lower()
-            prefix = "media_"
-            ext = ".bin"
-            if media_type == "video" or "video" in media_type:
-                ext = ".mp4"
-                prefix = "vid_"
-            elif media_type == "image" or "image" in media_type:
-                ext = ".jpg"
-                prefix = "img_"
-            elif media_type == "audio" or "audio" in media_type:
-                ext = ".m4a"
-                prefix = "voice_"
-            elif ".jpg" in url_lower or ".jpeg" in url_lower:
-                ext = ".jpg"
-                prefix = "img_"
-            elif ".png" in url_lower:
-                ext = ".png"
-                prefix = "img_"
-            elif ".webp" in url_lower:
-                ext = ".webp"
-                prefix = "img_"
-            elif ".gif" in url_lower:
-                ext = ".gif"
-                prefix = "img_"
-            elif ".mp3" in url_lower or ".ogg" in url_lower or ".m4a" in url_lower:
-                ext = ".m4a"
-                prefix = "voice_"
-            elif ".mp4" in url_lower:
-                ext = ".mp4"
-                prefix = "vid_"
-            elif ".pdf" in url_lower:
-                ext = ".pdf"
-                prefix = "doc_"
-            elif "image-" in url_lower or "img-" in url_lower:
-                ext = ".jpg"
-                prefix = "img_"
-
-            filename = f"{prefix}{uuid.uuid4().hex[:12]}{ext}"
-            uploads_dir = settings.UPLOAD_DIR
-            os.makedirs(uploads_dir, exist_ok=True)
-
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                headers = {}
-                if "facebook.com" in url or "fbcdn.net" in url or "fbsbx.com" in url:
-                    if settings.META_PAGE_ACCESS_TOKEN:
-                        headers["Authorization"] = f"Bearer {settings.META_PAGE_ACCESS_TOKEN}"
-
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 200 and len(resp.content) > 200:
-                    if not resp.content.startswith(b"<!DOCTYPE") and not resp.content.startswith(b"{\"error\""):
-                        content_start = resp.content[:16]
-                        if content_start.startswith(b"\xff\xd8\xff"):
-                            filename = f"{os.path.splitext(filename)[0]}.jpg"
-                        elif content_start.startswith(b"\x89PNG\r\n\x1a\n"):
-                            filename = f"{os.path.splitext(filename)[0]}.png"
-                        elif content_start.startswith(b"RIFF") and b"WEBP" in content_start:
-                            filename = f"{os.path.splitext(filename)[0]}.webp"
-                        elif content_start.startswith(b"OggS"):
-                            filename = f"{os.path.splitext(filename)[0]}.ogg"
-                        elif b"ftyp" in content_start:
-                            if "audio" in media_type:
-                                filename = f"{os.path.splitext(filename)[0]}.m4a"
-                            else:
-                                filename = f"{os.path.splitext(filename)[0]}.mp4"
-
-                        upload_path = os.path.join(uploads_dir, filename)
-                        with open(upload_path, "wb") as f:
-                            f.write(resp.content)
-                        return f"/uploads/{filename}"
-                    else:
-                        logger.error("Meta CDN returned error page instead of media binary: %s", resp.text[:200])
-                else:
-                    logger.warning("Meta CDN fetch returned HTTP %s for url: %s", resp.status_code, url)
-        except Exception as e:
-            logger.warning("Failed to cache inbound media attachment: %s", str(e))
-        return url
+        """Download remote asset and cache locally, delegating to MediaStorageGateway."""
+        from app.infrastructure.storage.media_storage_gateway import media_storage_gateway
+        cached = await media_storage_gateway.download_and_cache_remote_media(
+            url=url,
+            subfolder="",
+            media_type=media_type,
+        )
+        return cached or url
 
     @staticmethod
     async def resolve_whatsapp_media(media_id: str, mime_type: str = "image/jpeg") -> Optional[str]:
@@ -511,7 +556,7 @@ class MetaImportService:
                     f.write(media_res.content)
 
                 if is_audio:
-                    from scripts.fix_media_attachments import transcode_to_m4a
+                    from app.infrastructure.media.audio_transcoder import transcode_to_m4a
                     transcoded_path = os.path.join(uploads_dir, f"voice_{media_id[:12]}.m4a")
                     if transcode_to_m4a(disk_path, transcoded_path):
                         return f"/uploads/{os.path.basename(transcoded_path)}"
@@ -543,10 +588,20 @@ class MetaImportService:
             logger.warning("Meta webhook: received empty entry list")
             return {"status": "processed", "message": "Ignored empty Meta webhook entry list."}
 
+        # Milestone 3: Query active ConnectedPages from database
+        stmt_connected = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+        res_connected = await session.execute(stmt_connected)
+        active_connected_pages: dict[str, ConnectedPage] = {}
+        for cp in res_connected.scalars().all():
+            if cp.page_id:
+                active_connected_pages[str(cp.page_id).strip()] = cp
+            if cp.instagram_business_account_id:
+                active_connected_pages[str(cp.instagram_business_account_id).strip()] = cp
+
         configured_pages = settings.get_meta_pages()
         valid_page_ids = {
             p.strip() for p in (
-                list(configured_pages.keys()) + [
+                list(configured_pages.keys()) + list(active_connected_pages.keys()) + [
                     settings.META_PAGE_ID,
                     settings.WHATSAPP_WABA_ID,
                     settings.WHATSAPP_PHONE_NUMBER_ID,
@@ -566,10 +621,32 @@ class MetaImportService:
                     logger.warning("Meta webhook: ignoring entry for ID '%s' (valid IDs: %s)", entry_page_id, valid_page_ids)
                     continue
 
+            # Resolve ConnectedPage workspace_id context for inbound event routing
+            pid_clean = entry_page_id.strip()
+            entry_workspace_id = None
+            if pid_clean in active_connected_pages and active_connected_pages[pid_clean].workspace_id:
+                entry_workspace_id = active_connected_pages[pid_clean].workspace_id
+            elif pid_clean:
+                stmt_lookup = select(ConnectedPage).where(
+                    or_(
+                        ConnectedPage.page_id == pid_clean,
+                        ConnectedPage.instagram_business_account_id == pid_clean,
+                    )
+                )
+                cp_found = (await session.execute(stmt_lookup)).scalars().first()
+                if cp_found and cp_found.workspace_id:
+                    entry_workspace_id = cp_found.workspace_id
+            if not entry_workspace_id:
+                entry_workspace_id = DEFAULT_WORKSPACE_ID
+
             # Extract list of items (either entry.messaging, entry.standby, or entry.changes)
             items = []
             channel_hint = ChannelEnum.MESSENGER
-            if obj_type == "instagram" or "instagram" in str(entry):
+            if (
+                obj_type == "instagram"
+                or "instagram" in str(entry)
+                or (entry_page_id in active_connected_pages and active_connected_pages[entry_page_id].instagram_business_account_id == entry_page_id)
+            ):
                 channel_hint = ChannelEnum.INSTAGRAM
 
 
@@ -597,74 +674,230 @@ class MetaImportService:
                     norm_event.channel,
                     is_echo,
                 )
-
                 sender_id_clean = str(norm_event.sender_psid or "").strip()
                 recipient_id_clean = str(norm_event.recipient_id or "").strip()
                 is_self_message = (
                     sender_id_clean in valid_page_ids
+                    or sender_id_clean in active_connected_pages
                     or (sender_id_clean == str(settings.META_PAGE_ID))
                     or (sender_id_clean == str(settings.INSTAGRAM_ACCOUNT_ID))
                     or (sender_id_clean == str(settings.WHATSAPP_PHONE_NUMBER_ID))
                     or (sender_id_clean == str(settings.WHATSAPP_WABA_ID))
                     or (sender_id_clean == getattr(settings, "META_APP_ID", ""))
+                    or (sender_id_clean == entry_page_id)
                 )
 
-                # Early Echo & Self-Message Guard: Prevent infinite loops, self-customer creation, and profile fetching
-                if is_echo or is_self_message:
+                # Early Echo & Self-Message Guard: Handle outbound agent echoes & prevent loops/self-customer creation
+                if is_echo or is_self_message or norm_event.sender_type == SenderTypeEnum.AGENT:
                     target_mid = echo_mid or norm_event.external_message_id
                     target_text = echo_text or norm_event.text
-                    target_cust_id = recipient_id_clean if (recipient_id_clean and recipient_id_clean not in valid_page_ids) else None
+
+                    if recipient_id_clean and recipient_id_clean not in valid_page_ids and recipient_id_clean not in active_connected_pages:
+                        target_cust_id = recipient_id_clean
+                    elif sender_id_clean and sender_id_clean not in valid_page_ids and sender_id_clean not in active_connected_pages:
+                        target_cust_id = sender_id_clean
+                    else:
+                        target_cust_id = None
+
+                    if not target_mid and target_cust_id:
+                        target_mid = f"echo_{int(norm_event.created_at.timestamp())}_{target_cust_id}"
 
                     logger.info(
-                        "[Webhook Echo Guard] Filtered outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
+                        "[Webhook Echo Handler] Outbound echo/self-message: mid=%s, sender=%s, recipient=%s, is_echo=%s",
                         target_mid,
                         sender_id_clean,
                         recipient_id_clean,
                         is_echo,
                     )
 
-                    if target_cust_id and target_mid:
-                        id_stmt = select(CustomerIdentity).where(
-                            CustomerIdentity.provider == ProviderEnum.META,
-                            CustomerIdentity.channel == norm_event.channel,
-                            CustomerIdentity.external_user_id == target_cust_id,
+                    # If recipient is missing or is also a page/system account, skip to avoid self-referential cycles
+                    if not target_cust_id:
+                        logger.info(
+                            "[Webhook Echo Guard] Filtered self-addressed or missing recipient: sender=%s, recipient=%s",
+                            sender_id_clean,
+                            recipient_id_clean,
                         )
-                        ident_res = await session.execute(id_stmt)
-                        identity = ident_res.scalars().first()
-                        if identity:
-                            conv_stmt = select(Conversation).where(
-                                Conversation.customer_id == identity.customer_id,
-                                Conversation.channel == norm_event.channel,
+                        last_result_status = "already_processed"
+                        last_result_msg_id = target_mid
+                        continue
+
+                    # 1. Deduplication by external_message_id
+                    if target_mid:
+                        existing_by_mid = (await session.execute(
+                            select(Message).where(Message.external_message_id == target_mid)
+                        )).scalar_one_or_none()
+                        if existing_by_mid:
+                            logger.info(
+                                "[Webhook Echo] Deduplicated: mid=%s already exists in DB (id=%s)",
+                                target_mid,
+                                existing_by_mid.id,
                             )
-                            conv = (await session.execute(conv_stmt)).scalars().first()
-                            if conv:
-                                existing_by_mid = (await session.execute(
-                                    select(Message).where(Message.external_message_id == target_mid)
-                                )).scalar_one_or_none()
+                            last_result_status = "already_processed"
+                            last_result_msg_id = str(existing_by_mid.id)
+                            continue
 
-                                if not existing_by_mid and target_text:
-                                    recent_agent_msg = (await session.execute(
-                                        select(Message)
-                                        .where(
-                                            Message.conversation_id == conv.id,
-                                            Message.sender_type == SenderTypeEnum.AGENT,
-                                            Message.text == target_text,
-                                        )
-                                        .order_by(Message.created_at.desc())
-                                        .limit(1)
-                                    )).scalar_one_or_none()
+                    # 2. Check if this echo matches a recently sent agent message awaiting mid confirmation
+                    id_stmt = select(CustomerIdentity).where(
+                        CustomerIdentity.provider == ProviderEnum.META,
+                        CustomerIdentity.channel == norm_event.channel,
+                        CustomerIdentity.external_user_id == target_cust_id,
+                    )
+                    ident_res = await session.execute(id_stmt)
+                    identity = ident_res.scalars().first()
+                    conv = None
+                    if identity:
+                        conv_stmt = select(Conversation).where(
+                            Conversation.customer_id == identity.customer_id,
+                            Conversation.channel == norm_event.channel,
+                        )
+                        conv = (await session.execute(conv_stmt)).scalars().first()
 
-                                    if recent_agent_msg:
-                                        recent_agent_msg.external_message_id = target_mid
-                                        await session.commit()
-                                        logger.info(
-                                            "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
-                                            target_mid,
-                                            recent_agent_msg.id,
-                                        )
+                    if conv and target_text:
+                        recent_agent_msg = (await session.execute(
+                            select(Message)
+                            .where(
+                                Message.conversation_id == conv.id,
+                                Message.sender_type == SenderTypeEnum.AGENT,
+                                Message.text == target_text,
+                            )
+                            .order_by(Message.created_at.desc())
+                            .limit(1)
+                        )).scalar_one_or_none()
 
-                    last_result_status = "already_processed"
-                    last_result_msg_id = target_mid
+                        if recent_agent_msg and (
+                            not recent_agent_msg.external_message_id
+                            or recent_agent_msg.external_message_id.startswith("tmp_")
+                        ):
+                            recent_agent_msg.external_message_id = target_mid
+                            await session.commit()
+                            logger.info(
+                                "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
+                                target_mid,
+                                recent_agent_msg.id,
+                            )
+                            last_result_status = "already_processed"
+                            last_result_msg_id = target_mid
+                            continue
+
+                    # 3. Native outbound agent reply sent outside CRM (e.g. via Instagram / Facebook app)
+                    # Resolve or create Customer & Identity for target_cust_id (the customer)
+                    customer, identity = await CustomerService.get_or_create_customer_with_identity(
+                        session=session,
+                        provider=ProviderEnum.META,
+                        channel=norm_event.channel,
+                        external_user_id=target_cust_id,
+                    )
+
+                    if not customer.avatar_url or customer.display_name == "عميل":
+                        asyncio.create_task(
+                            MetaImportService.enrich_customer_profile_background(
+                                customer_id=customer.id,
+                                sender_psid=target_cust_id,
+                                page_id=entry_page_id,
+                            )
+                        )
+
+                    brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                        entry_page_id=entry_page_id,
+                        session=session,
+                        active_connected_pages=active_connected_pages,
+                    )
+
+                    if not conv:
+                        conv = await ConversationService.get_or_create_conversation_for_identity(
+                            session=session,
+                            identity=identity,
+                            brand=brand_name,
+                        )
+
+                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
+                        conv.brand = brand_name
+                        await session.commit()
+
+                    attachments_list = norm_event.attachments
+                    first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
+                    single_att_url = (
+                        first_att.get("url")
+                        or first_att.get("payload", {}).get("url")
+                        or first_att.get("payload", {}).get("reel_video_url")
+                        or first_att.get("share", {}).get("link")
+                        or first_att.get("image_data", {}).get("url")
+                        or first_att.get("image_data", {}).get("preview_url")
+                    ) if first_att else None
+
+                    single_msg_type = norm_event.message_type
+                    if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
+                        single_msg_type = MessageTypeEnum.IMAGE
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.VIDEO
+
+                    outbound_metadata = {
+                        "direction": "OUTBOUND",
+                        "is_from_customer": False,
+                        "is_echo": True,
+                        "attachments": attachments_list,
+                        "media_url": single_att_url,
+                        "raw": item,
+                    }
+
+                    echo_msg = Message(
+                        conversation_id=conv.id,
+                        external_message_id=target_mid,
+                        sender_type=SenderTypeEnum.AGENT,
+                        sender_external_id=sender_id_clean,
+                        message_type=single_msg_type,
+                        text=target_text,
+                        created_at=norm_event.created_at,
+                        metadata_=outbound_metadata,
+                    )
+                    session.add(echo_msg)
+                    try:
+                        await session.commit()
+                        await session.refresh(echo_msg)
+                        created_count += 1
+                        last_result_status = "success"
+                        last_result_msg_id = str(echo_msg.id)
+
+                        if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
+                            conv.last_message_at = norm_event.created_at
+                        conv.last_activity_at = norm_event.created_at
+                        conv.updated_at = datetime.now(timezone.utc)
+                        await session.commit()
+
+                        try:
+                            await ws_broadcaster.broadcast_event(
+                                target="conversation",
+                                conversation_id=str(conv.id),
+                                payload={
+                                    "type": "NEW_MESSAGE",
+                                    "conversation_id": str(conv.id),
+                                    "brand": getattr(conv, "brand", None),
+                                    "message": {
+                                        "id": str(echo_msg.id),
+                                        "conversation_id": str(conv.id),
+                                        "external_message_id": echo_msg.external_message_id,
+                                        "sender_type": "agent",
+                                        "sender_external_id": echo_msg.sender_external_id,
+                                        "message_type": echo_msg.message_type.value if hasattr(echo_msg.message_type, "value") else str(echo_msg.message_type),
+                                        "text": echo_msg.text,
+                                        "media_url": single_att_url,
+                                        "created_at": echo_msg.created_at.isoformat(),
+                                        "delivery_status": "delivered",
+                                        "is_from_customer": False,
+                                        "direction": "OUTBOUND",
+                                        "attachments": attachments_list,
+                                        "brand": getattr(conv, "brand", None),
+                                    },
+                                },
+                            )
+                        except Exception as ws_err:
+                            logger.warning("Failed to broadcast outbound echo message over WebSocket: %s", str(ws_err))
+
+                        logger.info("✅ [Echo Persisted & Broadcast] Native agent reply saved for Conv %s (MID: %s)", conv.id, target_mid)
+                    except IntegrityError:
+                        await session.rollback()
+                        logger.info("[Webhook Echo] Duplicate message %s caught by unique constraint; skipping gracefully.", target_mid)
+
                     continue
 
                 if not norm_event.sender_psid or not norm_event.sender_psid.strip():
@@ -681,6 +914,7 @@ class MetaImportService:
                     provider=ProviderEnum.META,
                     channel=norm_event.channel,
                     external_user_id=norm_event.sender_psid,
+                    workspace_id=entry_workspace_id,
                 )
 
                 if norm_event.sender_name and (not customer.display_name or customer.display_name == "عميل"):
@@ -693,16 +927,25 @@ class MetaImportService:
                         MetaImportService.enrich_customer_profile_background(
                             customer_id=customer.id,
                             sender_psid=norm_event.sender_psid,
+                            page_id=entry_page_id,
                         )
                     )
+
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=entry_page_id,
+                    session=session,
+                    active_connected_pages=active_connected_pages,
+                )
 
                 # 2. Resolve/create Conversation
                 conv = await ConversationService.get_or_create_conversation_for_identity(
                     session=session,
                     identity=identity,
+                    brand=brand_name,
+                    workspace_id=entry_workspace_id,
                 )
-                brand_name = settings.get_page_name(entry_page_id)
-                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page")):
+
+                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
                     conv.brand = brand_name
                     await session.commit()
 
@@ -741,9 +984,13 @@ class MetaImportService:
                         att_type = att.get("type", norm_event.message_type) if isinstance(att, dict) else norm_event.message_type
                         if isinstance(att, dict) and (att.get("image_data") or (att.get("mime_type") or "").startswith("image/")):
                             att_type = "image"
+                        elif isinstance(att, dict) and any(k in str(att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                            att_type = "video"
                         att_url = (
                             att.get("url")
                             or att.get("payload", {}).get("url")
+                            or att.get("payload", {}).get("reel_video_url")
+                            or att.get("share", {}).get("link")
                             or att.get("image_data", {}).get("url")
                             or att.get("image_data", {}).get("preview_url")
                         ) if isinstance(att, dict) else None
@@ -764,46 +1011,60 @@ class MetaImportService:
                             },
                         )
                         session.add(msg)
-                        await session.commit()
-                        await session.refresh(msg)
-                        created_count += 1
-                        last_result_status = "success"
-                        last_result_msg_id = str(msg.id)
-
                         try:
-                            from app.api.v1.ws import manager
-                            await manager.broadcast({
-                                "type": "NEW_MESSAGE",
-                                "conversation_id": str(conv.id),
-                                "message": {
-                                    "id": str(msg.id),
-                                    "conversation_id": str(conv.id),
-                                    "external_message_id": msg.external_message_id,
-                                    "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
-                                    "sender_external_id": msg.sender_external_id,
-                                    "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
-                                    "text": msg.text,
-                                    "media_url": att_url,
-                                    "created_at": msg.created_at.isoformat(),
-                                    "delivery_status": "delivered",
-                                    "attachments": [att],
-                                }
-                            })
-                        except Exception as ws_err:
-                            logger.warning("Failed to broadcast multi-attachment WS: %s", str(ws_err))
-                        logger.info(f"[Webhook Multi-Media] Saved attachment {idx+1}/{len(attachments_list)} (ID: {att_mid}) for Conv {conv.id}")
+                            await session.commit()
+                            await session.refresh(msg)
+                            created_count += 1
+                            last_result_status = "success"
+                            last_result_msg_id = str(msg.id)
+
+                            try:
+                                await ws_broadcaster.broadcast_event(
+                                    target="conversation",
+                                    conversation_id=str(conv.id),
+                                    payload={
+                                        "type": "NEW_MESSAGE",
+                                        "conversation_id": str(conv.id),
+                                        "brand": getattr(conv, "brand", None),
+                                        "message": {
+                                            "id": str(msg.id),
+                                            "conversation_id": str(conv.id),
+                                            "external_message_id": msg.external_message_id,
+                                            "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
+                                            "sender_external_id": msg.sender_external_id,
+                                            "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
+                                            "text": msg.text,
+                                            "media_url": att_url,
+                                            "created_at": msg.created_at.isoformat(),
+                                            "delivery_status": "delivered",
+                                            "attachments": [att],
+                                            "brand": getattr(conv, "brand", None),
+                                        },
+                                    },
+                                )
+                            except Exception as ws_err:
+                                logger.warning("Failed to broadcast multi-attachment WS: %s", str(ws_err))
+                            logger.info(f"[Webhook Multi-Media] Saved attachment {idx+1}/{len(attachments_list)} (ID: {att_mid}) for Conv {conv.id}")
+                        except IntegrityError:
+                            await session.rollback()
+                            logger.info("[Webhook Multi-Media] Duplicate message %s caught by unique constraint; skipping gracefully.", att_mid)
+                            continue
                 else:
                     first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
                     single_att_url = (
                         first_att.get("url")
                         or first_att.get("payload", {}).get("url")
+                        or first_att.get("payload", {}).get("reel_video_url")
+                        or first_att.get("share", {}).get("link")
                         or first_att.get("image_data", {}).get("url")
                         or first_att.get("image_data", {}).get("preview_url")
                     ) if first_att else None
 
                     single_msg_type = norm_event.message_type
                     if first_att and (first_att.get("image_data") or (first_att.get("mime_type") or "").startswith("image/")):
-                        single_msg_type = "image"
+                        single_msg_type = MessageTypeEnum.IMAGE
+                    elif first_att and any(k in str(first_att.get("type", "")).lower() for k in ("video", "reel", "ig_reel", "share", "story_mention")):
+                        single_msg_type = MessageTypeEnum.VIDEO
 
                     msg = Message(
                         conversation_id=conv.id,
@@ -821,33 +1082,43 @@ class MetaImportService:
                         },
                     )
                     session.add(msg)
-                    await session.commit()
-                    await session.refresh(msg)
-                    created_count += 1
-                    last_result_status = "success"
-                    last_result_msg_id = str(msg.id)
-
                     try:
-                        from app.api.v1.ws import manager
-                        await manager.broadcast({
-                            "type": "NEW_MESSAGE",
-                            "conversation_id": str(conv.id),
-                            "message": {
-                                "id": str(msg.id),
-                                "conversation_id": str(conv.id),
-                                "external_message_id": msg.external_message_id,
-                                "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
-                                "sender_external_id": msg.sender_external_id,
-                                "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
-                                "text": msg.text,
-                                "created_at": msg.created_at.isoformat(),
-                                "delivery_status": "delivered",
-                                "attachments": attachments_list,
-                            }
-                        })
-                    except Exception as ws_err:
-                        logger.warning("Failed to broadcast inbound message over WebSocket: %s", str(ws_err))
-                    logger.info("Meta webhook success: message_id=%s persisted (id=%s)", norm_event.external_message_id, msg.id)
+                        await session.commit()
+                        await session.refresh(msg)
+                        created_count += 1
+                        last_result_status = "success"
+                        last_result_msg_id = str(msg.id)
+
+                        try:
+                            await ws_broadcaster.broadcast_event(
+                                target="conversation",
+                                conversation_id=str(conv.id),
+                                payload={
+                                    "type": "NEW_MESSAGE",
+                                    "conversation_id": str(conv.id),
+                                    "brand": getattr(conv, "brand", None),
+                                    "message": {
+                                        "id": str(msg.id),
+                                        "conversation_id": str(conv.id),
+                                        "external_message_id": msg.external_message_id,
+                                        "sender_type": msg.sender_type.value if hasattr(msg.sender_type, "value") else str(msg.sender_type),
+                                        "sender_external_id": msg.sender_external_id,
+                                        "message_type": msg.message_type.value if hasattr(msg.message_type, "value") else str(msg.message_type),
+                                        "text": msg.text,
+                                        "created_at": msg.created_at.isoformat(),
+                                        "delivery_status": "delivered",
+                                        "attachments": attachments_list,
+                                        "brand": getattr(conv, "brand", None),
+                                    },
+                                },
+                            )
+                        except Exception as ws_err:
+                            logger.warning("Failed to broadcast inbound message over WebSocket: %s", str(ws_err))
+                        logger.info("Meta webhook success: message_id=%s persisted (id=%s)", norm_event.external_message_id, msg.id)
+                    except IntegrityError:
+                        await session.rollback()
+                        logger.info("[Webhook Inbound] Duplicate message %s caught by unique constraint; returning already_processed.", norm_event.external_message_id)
+                        return "already_processed"
 
                 if conv.last_message_at is None or norm_event.created_at > conv.last_message_at:
                     conv.last_message_at = norm_event.created_at
@@ -933,28 +1204,101 @@ class MetaImportService:
 
     @staticmethod
     async def sync_live_conversations():
-        """Poll latest conversations from Meta Graph API for both Messenger and Instagram Direct."""
-        if not settings.META_PAGE_ACCESS_TOKEN or not settings.META_PAGE_ID:
-            return
-
+        """Poll latest conversations from Meta Graph API for both Messenger and Instagram Direct across all connected pages."""
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
+        from app.core.database import AsyncSessionLocal
+        from app.models.connected_page import ConnectedPage
+        from app.models.customer import Customer, CustomerIdentity
+        from app.models.enums import ConversationStatusEnum, MessageTypeEnum, SenderTypeEnum
 
         if MetaRateLimitGuard.is_rate_limited():
             rem = MetaRateLimitGuard.get_cooldown_remaining()
             logger.warning("[Live Poller] Meta rate limit cooldown active (%ds remaining). Skipping poll cycle.", int(rem))
             return
 
-        ig_account_id = getattr(settings, "META_INSTAGRAM_ACCOUNT_ID", "17841434176832322")
+        platforms: list[dict[str, Any]] = []
+        known_account_ids: set[str] = set()
 
-        platforms = [
-            {"name": "messenger", "channel": ChannelEnum.MESSENGER, "endpoint": f"/{settings.META_PAGE_ID}/conversations", "param": None},
-            {"name": "instagram", "channel": ChannelEnum.INSTAGRAM, "endpoint": f"/{settings.META_PAGE_ID}/conversations", "param": "instagram"},
-            {"name": "instagram_direct", "channel": ChannelEnum.INSTAGRAM, "endpoint": f"/{ig_account_id}/conversations", "param": None}
-        ]
+        async with AsyncSessionLocal() as session:
+            stmt_cp = select(ConnectedPage).where(ConnectedPage.status == "ACTIVE")
+            active_cps = (await session.execute(stmt_cp)).scalars().all()
+            for cp in active_cps:
+                token = cp.decrypted_access_token or settings.META_PAGE_ACCESS_TOKEN
+                if not token:
+                    continue
+                if cp.page_id:
+                    pid = str(cp.page_id).strip()
+                    known_account_ids.add(pid)
+                    platforms.append({
+                        "name": f"messenger_{pid}",
+                        "channel": ChannelEnum.MESSENGER,
+                        "endpoint": f"/{pid}/conversations",
+                        "param": None,
+                        "token": token,
+                        "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                    })
+                    platforms.append({
+                        "name": f"instagram_{pid}",
+                        "channel": ChannelEnum.INSTAGRAM,
+                        "endpoint": f"/{pid}/conversations",
+                        "param": "instagram",
+                        "token": token,
+                        "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                    })
+                if cp.instagram_business_account_id:
+                    ig_id = str(cp.instagram_business_account_id).strip()
+                    known_account_ids.add(ig_id)
+                    platforms.append({
+                        "name": f"instagram_direct_{ig_id}",
+                        "channel": ChannelEnum.INSTAGRAM,
+                        "endpoint": f"/{ig_id}/conversations",
+                        "param": None,
+                        "token": token,
+                        "brand": cp.name,
+                        "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                    })
 
-        from app.core.database import AsyncSessionLocal
-        from app.models.customer import Customer, CustomerIdentity
-        from app.models.enums import ConversationStatusEnum, MessageTypeEnum, SenderTypeEnum
+        # Safe fallback if no ConnectedPage in DB but settings exist
+        if not platforms and settings.META_PAGE_ACCESS_TOKEN and settings.META_PAGE_ID:
+            pid = str(settings.META_PAGE_ID).strip()
+            known_account_ids.add(pid)
+            if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+                known_account_ids.add(str(settings.INSTAGRAM_ACCOUNT_ID).strip())
+            brand_fallback = settings.get_page_name(pid)
+            platforms.append({
+                "name": f"messenger_{pid}",
+                "channel": ChannelEnum.MESSENGER,
+                "endpoint": f"/{pid}/conversations",
+                "param": None,
+                "token": settings.META_PAGE_ACCESS_TOKEN,
+                "brand": brand_fallback,
+                "workspace_id": DEFAULT_WORKSPACE_ID,
+            })
+            platforms.append({
+                "name": f"instagram_{pid}",
+                "channel": ChannelEnum.INSTAGRAM,
+                "endpoint": f"/{pid}/conversations",
+                "param": "instagram",
+                "token": settings.META_PAGE_ACCESS_TOKEN,
+                "brand": brand_fallback,
+                "workspace_id": DEFAULT_WORKSPACE_ID,
+            })
+            if getattr(settings, "INSTAGRAM_ACCOUNT_ID", None):
+                ig_id = str(settings.INSTAGRAM_ACCOUNT_ID).strip()
+                platforms.append({
+                    "name": f"instagram_direct_{ig_id}",
+                    "channel": ChannelEnum.INSTAGRAM,
+                    "endpoint": f"/{ig_id}/conversations",
+                    "param": None,
+                    "token": settings.META_PAGE_ACCESS_TOKEN,
+                    "brand": brand_fallback,
+                    "workspace_id": DEFAULT_WORKSPACE_ID,
+                })
+
+        if not platforms:
+            return
 
         for plat in platforms:
             if MetaRateLimitGuard.is_rate_limited():
@@ -965,7 +1309,7 @@ class MetaImportService:
             params = {
                 "fields": "id,updated_time,unread_count,participants,messages.limit(10){id,message,from,created_time,attachments}",
                 "limit": 10,
-                "access_token": settings.META_PAGE_ACCESS_TOKEN
+                "access_token": plat["token"],
             }
             if plat["param"]:
                 params["platform"] = plat["param"]
@@ -990,7 +1334,7 @@ class MetaImportService:
                         participants = conv_data.get("participants", {}).get("data", [])
 
                         # Find external customer participant
-                        customer_info = next((p for p in participants if str(p.get("id")) != str(settings.META_PAGE_ID) and str(p.get("id")) != str(ig_account_id)), None)
+                        customer_info = next((p for p in participants if str(p.get("id")) not in known_account_ids), None)
                         if not customer_info:
                             continue
 
@@ -1005,11 +1349,13 @@ class MetaImportService:
                         )
                         identity = (await session.execute(id_stmt)).scalars().first()
 
+                        plat_ws_id = plat.get("workspace_id") or DEFAULT_WORKSPACE_ID
                         if not identity:
                             customer = Customer(
                                 id=uuid.uuid4(),
                                 display_name=name,
                                 avatar_url=None,
+                                workspace_id=plat_ws_id,
                             )
                             session.add(customer)
                             await session.flush()
@@ -1030,6 +1376,10 @@ class MetaImportService:
                         if not customer:
                             continue
 
+                        if plat_ws_id and not customer.workspace_id:
+                            customer.workspace_id = plat_ws_id
+                            session.add(customer)
+
                         # 2. Resolve or Create Conversation
                         conv_stmt = select(Conversation).where(
                             Conversation.customer_id == customer.id,
@@ -1047,10 +1397,22 @@ class MetaImportService:
                                 status=ConversationStatusEnum.OPEN,
                                 priority="normal",
                                 subject=f"{plat['name'].capitalize()} Conversation {ext_conv_id or psid}",
-                                last_message_at=datetime.utcnow()
+                                brand=plat.get("brand") or "Default Business Page",
+                                last_message_at=datetime.utcnow(),
+                                workspace_id=plat_ws_id,
                             )
                             session.add(conversation)
                             await session.flush()
+                        else:
+                            modified = False
+                            if plat.get("brand") and (not conversation.brand or conversation.brand in ("LAVVA", "Default Business Page") or str(conversation.brand).startswith("Page ")):
+                                conversation.brand = plat["brand"]
+                                modified = True
+                            if plat_ws_id and not conversation.workspace_id:
+                                conversation.workspace_id = plat_ws_id
+                                modified = True
+                            if modified:
+                                await session.flush()
 
                         # 3. Ingest Messages & Update Denormalized Preview Fields
                         msgs_data = conv_data.get("messages", {}).get("data", [])
@@ -1068,7 +1430,7 @@ class MetaImportService:
                             if not existing_msg:
                                 has_new_messages = True
                                 sender_id = str(m.get("from", {}).get("id", ""))
-                                is_page = sender_id == str(settings.META_PAGE_ID)
+                                is_page = sender_id in known_account_ids
                                 msg_text = m.get("message", "")
                                 created_time_str = m.get("created_time")
                                 created_dt = datetime.utcnow()
@@ -1156,15 +1518,19 @@ class MetaImportService:
                         # 4. Emit WebSocket Notification if new messages were found
                         if has_new_messages:
                             try:
-                                from app.api.v1.ws import manager
-                                await manager.broadcast({
-                                    "type": "NEW_MESSAGE",
-                                    "conversation_id": str(conversation.id),
-                                    "customer_id": str(customer.id),
-                                    "customer_display_name": customer.display_name,
-                                    "channel": plat["channel"].value,
-                                    "text": conversation.last_message_text or "رسالة جديدة"
-                                })
+                                await ws_broadcaster.broadcast_event(
+                                    target="conversation",
+                                    conversation_id=str(conversation.id),
+                                    payload={
+                                        "type": "NEW_MESSAGE",
+                                        "conversation_id": str(conversation.id),
+                                        "customer_id": str(customer.id),
+                                        "customer_display_name": customer.display_name,
+                                        "brand": getattr(conversation, "brand", None),
+                                        "channel": plat["channel"].value,
+                                        "text": conversation.last_message_text or "رسالة جديدة",
+                                    },
+                                )
                                 logger.info("[Live Poller] Synced new message for conversation %s", conversation.id)
                             except Exception as ws_err:
                                 logger.debug("[WS Broadcast] Error: %s", ws_err)
@@ -1173,10 +1539,10 @@ class MetaImportService:
                 logger.debug("[Live Poller] Platform %s sync error: %s", plat["name"], ex)
 
     @classmethod
-    async def enrich_customer_profile_background(cls, customer_id: uuid.UUID, sender_psid: str):
+    async def enrich_customer_profile_background(cls, customer_id: uuid.UUID, sender_psid: str, page_id: Optional[str] = None):
         """Asynchronously fetches and updates customer profile info in background session."""
         try:
-            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid)
+            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid, page_id=page_id)
             if not pinfo.get("avatar_url") and not pinfo.get("display_name"):
                 return
 

@@ -36,7 +36,9 @@ async def test_meta_client_subscribe_page_success():
         assert "123456789/subscribed_apps" in mock_post.call_args[0][0]
         assert call_kwargs["params"]["access_token"] == "test_token_xyz"
         assert "messages" in call_kwargs["params"]["subscribed_fields"]
-        assert "feed" in call_kwargs["params"]["subscribed_fields"]
+        assert "messaging_postbacks" in call_kwargs["params"]["subscribed_fields"]
+        assert "messaging_referrals" in call_kwargs["params"]["subscribed_fields"]
+        assert "message_echoes" in call_kwargs["params"]["subscribed_fields"]
 
 
 @pytest.mark.asyncio
@@ -279,10 +281,14 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
     test_app = FastAPI()
 
     # Test 1: When credentials present, subscribe_page_to_app is called
-    with patch(
-        "app.integrations.meta.MetaClient.subscribe_page_to_app",
-        new_callable=AsyncMock,
-    ) as mock_sub:
+    with (
+        patch.object(settings, "META_PAGE_ACCESS_TOKEN", "mock_page_token"),
+        patch.object(settings, "META_PAGE_ID", "mock_page_id"),
+        patch(
+            "app.integrations.meta.MetaClient.subscribe_page_to_app",
+            new_callable=AsyncMock,
+        ) as mock_sub,
+    ):
         mock_sub.return_value = {"success": True, "details": {"success": True}, "error": None}
 
         async with lifespan(test_app):
@@ -292,14 +298,115 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
         mock_sub.assert_awaited()
 
     # Test 2: When credentials cause exception, lifespan starts and exits cleanly without crashing
-    with patch(
-        "app.integrations.meta.MetaClient.subscribe_page_to_app",
-        new_callable=AsyncMock,
-    ) as mock_sub_err:
+    with (
+        patch.object(settings, "META_PAGE_ACCESS_TOKEN", "mock_page_token"),
+        patch.object(settings, "META_PAGE_ID", "mock_page_id"),
+        patch(
+            "app.integrations.meta.MetaClient.subscribe_page_to_app",
+            new_callable=AsyncMock,
+        ) as mock_sub_err,
+    ):
         mock_sub_err.side_effect = RuntimeError("Network totally unreachable")
 
         async with lifespan(test_app):
             await asyncio.sleep(0.1)
 
         mock_sub_err.assert_awaited()
+
+
+def test_meta_oauth_sanitized_scopes():
+    from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES
+
+    expected_canonical_scopes = [
+        "pages_show_list",
+        "pages_messaging",
+        "pages_read_engagement",
+        "pages_manage_metadata",
+        "instagram_basic",
+        "instagram_manage_messages",
+    ]
+    assert VALID_SCOPES == expected_canonical_scopes
+
+    # Ensure deprecated scopes are completely absent
+    for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
+        assert deprecated not in VALID_SCOPES
+
+    with patch.object(settings, "META_APP_ID", "1234567890"):
+        url = MetaOAuthService.get_authorization_url(state="test_state_123")
+        assert "client_id=1234567890" in url
+        assert "state=test_state_123" in url
+        assert "pages_show_list" in url
+        assert "pages_messaging" in url
+        assert "instagram_manage_messages" in url
+        for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
+            assert deprecated not in url
+
+
+def test_generate_oauth_state_with_redirect_uri():
+    import uuid
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    test_uid = uuid.uuid4()
+    redirect_uri = "https://custom.domain/api/v1/meta/oauth/callback"
+    state = MetaOAuthService.generate_oauth_state(user_id=test_uid, redirect_uri=redirect_uri)
+
+    payload = MetaOAuthService.verify_oauth_state(state=state)
+    assert payload["sub"] == str(test_uid)
+    assert payload["redirect_uri"] == redirect_uri
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_server_callback_error():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/meta/oauth/callback?error=access_denied&error_description=User%20denied%20permissions")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
+        content = resp.text
+        assert "META_OAUTH_COMPLETE" in content
+        assert "status: 'error'" in content
+        assert "User denied permissions" in content
+        assert "window.close()" in content
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_server_callback_success():
+    import uuid
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    test_uid = uuid.uuid4()
+    state = MetaOAuthService.generate_oauth_state(user_id=test_uid)
+
+    mock_pages = [
+        {
+            "id": "1122334455",
+            "name": "Luxury Test Brand",
+            "access_token": "mock_page_token_xyz",
+            "category": "Retail",
+        }
+    ]
+
+    with (
+        patch.object(MetaOAuthService, "exchange_code_for_user_token", new_callable=AsyncMock) as mock_exchange,
+        patch.object(MetaOAuthService, "fetch_user_pages", new_callable=AsyncMock) as mock_fetch,
+        patch.object(MetaOAuthService, "save_or_update_pages", new_callable=AsyncMock) as mock_save,
+    ):
+        mock_exchange.return_value = "mock_long_lived_token_123"
+        mock_fetch.return_value = mock_pages
+        mock_save.return_value = []
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(f"/api/v1/meta/oauth/callback?code=mock_oauth_code_456&state={state}")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers.get("content-type", "")
+            content = resp.text
+            assert "META_OAUTH_COMPLETE" in content
+            assert "status: 'success'" in content
+            assert "window.close()" in content
+
+        mock_exchange.assert_awaited_once_with(code="mock_oauth_code_456", redirect_uri="https://webluxira.com/api/v1/meta/oauth/callback")
+        mock_fetch.assert_awaited_once_with(long_lived_user_token="mock_long_lived_token_123")
+        mock_save.assert_awaited_once()
+
 

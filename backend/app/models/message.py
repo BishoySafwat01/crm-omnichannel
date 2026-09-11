@@ -1,12 +1,37 @@
 import uuid
 from datetime import datetime
 from typing import Any, Optional
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Index, String, Text, UniqueConstraint, func, text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from sqlalchemy.types import TypeDecorator
 from app.core.database import Base
 from app.models.enums import MessageTypeEnum, SenderTypeEnum
+
+
+class SafeMessageType(TypeDecorator):
+    """Resilient type decorator that maps DB strings to MessageTypeEnum case-insensitively and falls back to UNKNOWN."""
+    impl = String(50)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if hasattr(value, 'name'):
+            return value.name
+        return str(value).upper()
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        val_str = str(value).upper()
+        if val_str in MessageTypeEnum.__members__:
+            return MessageTypeEnum[val_str]
+        for m in MessageTypeEnum:
+            if m.value.upper() == val_str:
+                return m
+        return MessageTypeEnum.UNKNOWN
 
 
 class Message(Base):
@@ -37,7 +62,7 @@ class Message(Base):
         index=True,
     )
     message_type: Mapped[MessageTypeEnum] = mapped_column(
-        SAEnum(MessageTypeEnum, native_enum=False),
+        SafeMessageType(),
         nullable=False,
         default=MessageTypeEnum.TEXT,
     )
@@ -86,5 +111,10 @@ class Message(Base):
             "conversation_id",
             "external_message_id",
             name="uq_message_conversation_ext_msg_id",
+        ),
+        Index(
+            "ix_messages_conv_created_asc",
+            "conversation_id",
+            sa_text("created_at ASC"),
         ),
     )

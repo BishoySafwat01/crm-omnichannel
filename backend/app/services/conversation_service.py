@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Any, Dict, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -21,6 +21,7 @@ class ConversationService:
         subject: Optional[str] = None,
         status: ConversationStatusEnum = ConversationStatusEnum.OPEN,
         brand: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Conversation:
         conversation = Conversation(
             customer_id=customer_id,
@@ -29,7 +30,8 @@ class ConversationService:
             external_conversation_id=external_conversation_id,
             subject=subject,
             status=status,
-            brand=brand or "LAVVA",
+            brand=brand or "Default Business Page",
+            workspace_id=workspace_id,
         )
         session.add(conversation)
         await session.commit()
@@ -41,6 +43,8 @@ class ConversationService:
         session: AsyncSession,
         identity: CustomerIdentity,
         subject: Optional[str] = None,
+        brand: Optional[str] = None,
+        workspace_id: Optional[uuid.UUID] = None,
     ) -> Conversation:
         # First check if customer ALREADY has an existing conversation thread
         stmt_cust = (
@@ -52,6 +56,15 @@ class ConversationService:
         res_cust = await session.execute(stmt_cust)
         existing_cust_conv = res_cust.scalar_one_or_none()
         if existing_cust_conv:
+            modified = False
+            if brand and (not existing_cust_conv.brand or existing_cust_conv.brand in ("LAVVA", "Default Business Page") or str(existing_cust_conv.brand).startswith("Page ")):
+                existing_cust_conv.brand = brand
+                modified = True
+            if workspace_id and not existing_cust_conv.workspace_id:
+                existing_cust_conv.workspace_id = workspace_id
+                modified = True
+            if modified:
+                await session.flush()
             return existing_cust_conv
 
         ext_conv_id = f"resp_conv_{identity.external_user_id}"
@@ -62,6 +75,15 @@ class ConversationService:
             external_conversation_id=ext_conv_id,
         )
         if existing:
+            modified = False
+            if brand and (not existing.brand or existing.brand in ("LAVVA", "Default Business Page") or str(existing.brand).startswith("Page ")):
+                existing.brand = brand
+                modified = True
+            if workspace_id and not existing.workspace_id:
+                existing.workspace_id = workspace_id
+                modified = True
+            if modified:
+                await session.flush()
             return existing
 
         return await ConversationService.create_conversation(
@@ -70,7 +92,9 @@ class ConversationService:
             provider=identity.provider,
             channel=identity.channel,
             external_conversation_id=ext_conv_id,
-            subject=subject or f"Messenger Conversation ({identity.external_user_id})",
+            subject=subject or f"Conversation ({identity.external_user_id})",
+            brand=brand,
+            workspace_id=workspace_id,
         )
 
     @staticmethod
@@ -248,6 +272,32 @@ class ConversationService:
         res = await session.execute(stmt)
         conversations = list(res.scalars().all())
 
+        # Batch load the latest message for each conversation in a single round-trip (PERF-01)
+        latest_msg_map: dict[uuid.UUID, Message] = {}
+        conv_ids = [conv.id for conv in conversations]
+        if conv_ids:
+            rn_col = (
+                func.row_number()
+                .over(
+                    partition_by=Message.conversation_id,
+                    order_by=(Message.created_at.desc(), Message.id.desc()),
+                )
+                .label("rn")
+            )
+            subq = (
+                select(Message.id.label("mid"), rn_col)
+                .where(Message.conversation_id.in_(conv_ids))
+                .subquery()
+            )
+            msg_stmt = (
+                select(Message)
+                .join(subq, Message.id == subq.c.mid)
+                .where(subq.c.rn == 1)
+            )
+            msg_res = await session.execute(msg_stmt)
+            for m in msg_res.scalars().all():
+                latest_msg_map[m.conversation_id] = m
+
         items = []
         for conv in conversations:
             cust = conv.customer
@@ -256,13 +306,7 @@ class ConversationService:
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
             prio = getattr(conv, 'priority', "normal") or "normal"
-            msg_stmt = (
-                select(Message)
-                .where(Message.conversation_id == conv.id)
-                .order_by(Message.created_at.desc(), Message.id.desc())
-                .limit(1)
-            )
-            latest_msg = (await session.execute(msg_stmt)).scalars().first()
+            latest_msg = latest_msg_map.get(conv.id)
             last_sender_type = None
             if latest_msg:
                 last_sender_type = str(latest_msg.sender_type.value if hasattr(latest_msg.sender_type, "value") else latest_msg.sender_type)
@@ -435,4 +479,86 @@ class ConversationService:
         await session.commit()
         await session.refresh(conv)
         return conv
+
+    @staticmethod
+    def _user_can_access_brand_and_channel(user: Optional[Any], brand: Optional[str], channel: Any) -> bool:
+        """Check if user has access to a conversation brand and channel without web layer dependencies."""
+        if not user or not getattr(user, "is_active", True):
+            return True
+        role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
+        if role_val.lower() in ("admin", "superadmin", "owner"):
+            return True
+        b_access = getattr(user, "brand_access", None) or []
+        brand_str = str(brand or "LAVVA").strip()
+        if "ALL" not in b_access and "all" not in b_access and "الكل" not in b_access:
+            if brand_str not in b_access and not any(brand_str.lower() == str(b).strip().lower() for b in b_access):
+                return False
+        c_access = getattr(user, "channel_access", None)
+        if c_access is not None:
+            norm_c = [str(x).strip().lower() for x in c_access]
+            if "all" not in norm_c and "الكل" not in norm_c:
+                ch_str = (channel.value if hasattr(channel, "value") else str(channel)).strip().lower()
+                if ch_str not in norm_c:
+                    return False
+        return True
+
+    @staticmethod
+    async def get_unread_summary(
+        session: AsyncSession,
+        user: Optional[Any] = None,
+        brand: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Aggregate total, per-channel, and per-brand unread message counts via optimized SQL aggregation."""
+        stmt = (
+            select(
+                Conversation.brand,
+                Conversation.channel,
+                func.coalesce(func.sum(Conversation.unread_count), 0),
+            )
+            .where(Conversation.unread_count > 0)
+        )
+        if brand:
+            stmt = stmt.where(Conversation.brand == brand)
+        stmt = stmt.group_by(Conversation.brand, Conversation.channel)
+        res = await session.execute(stmt)
+        rows = res.all()
+
+        total_unread = 0
+        channels_map = {"all": 0, "messenger": 0, "instagram": 0, "whatsapp": 0, "tiktok": 0}
+        brands_map = {}
+
+        for conv_brand, conv_channel, cnt in rows:
+            conv_brand_str = str(conv_brand or "LAVVA")
+            count_val = int(cnt or 0)
+            if not ConversationService._user_can_access_brand_and_channel(user, conv_brand_str, conv_channel):
+                continue
+
+            total_unread += count_val
+            ch = (conv_channel.value if hasattr(conv_channel, "value") else str(conv_channel)).lower()
+            if ch in channels_map:
+                channels_map[ch] += count_val
+
+            brands_map[conv_brand_str] = brands_map.get(conv_brand_str, 0) + count_val
+
+            # Standard aliases for UI binding
+            norm_b = conv_brand_str.strip().lower()
+            if "lotus" in norm_b:
+                brands_map["LOTUS BLUE"] = brands_map.get("LOTUS BLUE", 0) + count_val
+            elif "hayat" in norm_b:
+                brands_map["HAYAT"] = brands_map.get("HAYAT", 0) + count_val
+            elif "liora" in norm_b or "luxira" in norm_b:
+                brands_map["LUXIRA"] = brands_map.get("LUXIRA", 0) + count_val
+                brands_map["LIORA"] = brands_map.get("LIORA", 0) + count_val
+            elif "loxx" in norm_b:
+                brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + count_val
+            elif "lavva" in norm_b or "lava" in norm_b:
+                brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + count_val
+
+        channels_map["all"] = total_unread
+
+        return {
+            "total_unread": total_unread,
+            "channels": channels_map,
+            "brands": brands_map,
+        }
 

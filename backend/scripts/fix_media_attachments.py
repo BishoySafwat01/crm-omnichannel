@@ -15,34 +15,10 @@ logger = logging.getLogger("fix_media_attachments")
 UPLOAD_DIR = "/app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
-def detect_audio_extension(file_path: str) -> str:
-    try:
-        with open(file_path, "rb") as f:
-            header = f.read(16)
-        if header.startswith(b"OggS"):
-            return ".ogg"
-        if b"ftyp" in header or header.startswith(b"\x00\x00\x00"):
-            return ".m4a"
-        if header.startswith(b"ID3") or header.startswith(b"\xff\xfb"):
-            return ".mp3"
-    except Exception:
-        pass
-    return ".m4a"
-
-
-def transcode_to_m4a(input_path: str, output_path: str) -> bool:
-    try:
-        cmd = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-vn", "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-            output_path
-        ]
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
-    except Exception as e:
-        logger.warning("[FFmpeg] Transcoding error for %s: %s", input_path, e)
-        return False
+from app.infrastructure.media.audio_transcoder import (
+    detect_audio_extension,
+    transcode_to_m4a,
+)
 
 
 async def fix_media_attachments():

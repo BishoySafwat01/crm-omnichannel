@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
+from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +88,7 @@ class SlaService:
             conv.priority = "urgent"
 
             try:
-                from app.api.v1.ws import manager
-                await manager.broadcast({
+                await ws_broadcaster.broadcast({
                     "type": "SLA_BREACHED",
                     "data": {
                         "conversation_id": str(conv.id),

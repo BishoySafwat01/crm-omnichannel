@@ -7,6 +7,7 @@ const WS_CLOSE_AUTH_FAILURE = 4001;
 export class RealtimeWebSocketService {
   private socket: WebSocket | null = null;
   private listeners: Set<MessageHandler> = new Set();
+  private onOpenCallbacks: Set<() => void> = new Set();
   private reconnectInterval = 3000;
   private maxReconnectInterval = 15000;
   private currentReconnectDelay = 3000;
@@ -23,28 +24,38 @@ export class RealtimeWebSocketService {
     const envWsUrl = (metaEnv.VITE_WS_URL || '').trim();
     const envApiUrl = (metaEnv.VITE_API_URL || '').trim();
 
-    let wsBase = '';
+    let wsUrl = '';
     if (envWsUrl) {
-      wsBase = envWsUrl.replace(/\/$/, '');
+      wsUrl = envWsUrl.includes('/ws/') ? envWsUrl : `${envWsUrl.replace(/\/$/, '')}/api/v1/ws/chat`;
     } else if (envApiUrl && envApiUrl.startsWith('http')) {
-      wsBase = envApiUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+      const base = envApiUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+      wsUrl = `${base}/api/v1/ws/chat`;
     } else {
       const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = typeof window !== 'undefined' ? window.location.host : '';
-      wsBase = `${protocol}//${host}`;
+      wsUrl = `${protocol}//${host}/api/v1/ws/chat`;
     }
 
     const token = this.getToken();
     // Append token as query param so the server can authenticate the handshake
-    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    const wsUrl = `${wsBase}/api/v1/ws/chat${tokenParam}`;
+    const tokenParam = token ? `token=${encodeURIComponent(token)}` : '';
+    const fullWsUrl = tokenParam
+      ? (wsUrl.includes('?') ? `${wsUrl}&${tokenParam}` : `${wsUrl}?${tokenParam}`)
+      : wsUrl;
 
     try {
-      this.socket = new WebSocket(wsUrl);
+      this.socket = new WebSocket(fullWsUrl);
 
       this.socket.onopen = () => {
         console.log('Real-time WebSocket Connected:', wsUrl.split('?')[0]);
         this.currentReconnectDelay = this.reconnectInterval;
+        this.onOpenCallbacks.forEach((cb) => {
+          try {
+            cb();
+          } catch (e) {
+            console.warn('Error in onOpen callback:', e);
+          }
+        });
       };
 
       this.socket.onmessage = (event) => {
@@ -87,6 +98,13 @@ export class RealtimeWebSocketService {
     this.listeners.add(handler);
     return () => {
       this.listeners.delete(handler);
+    };
+  }
+
+  public onOpen(cb: () => void) {
+    this.onOpenCallbacks.add(cb);
+    return () => {
+      this.onOpenCallbacks.delete(cb);
     };
   }
 

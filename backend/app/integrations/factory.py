@@ -1,6 +1,8 @@
 import logging
 from typing import Optional, Union
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.integrations.base import BaseMessagingProvider
 from app.integrations.beon.provider import BeonOmnichannelProvider
@@ -19,6 +21,7 @@ class ProviderFactory:
         provider_name: Optional[Union[ProviderEnum, str]] = None,
         channel: Optional[Union[ChannelEnum, str]] = None,
         page_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
     ) -> BaseMessagingProvider:
         """Resolve and instantiate the appropriate messaging provider.
 
@@ -44,13 +47,13 @@ class ProviderFactory:
 
         if provider_str in ("meta", "direct_meta", "ميتا مباشر"):
             logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id)
+            return MetaProvider(page_id=page_id, db=db)
 
         is_meta_channel = channel_str in ("messenger", "facebook")
 
         if is_meta_channel:
             logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id)
+            return MetaProvider(page_id=page_id, db=db)
 
         logger.debug(f"Routing channel '{channel_str}' to BeonOmnichannelProvider")
         return BeonOmnichannelProvider()

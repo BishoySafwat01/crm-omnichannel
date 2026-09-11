@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
     get_current_user,
-    get_optional_current_user,
     require_admin,
     require_conversation_access,
     user_has_conversation_access,
@@ -47,62 +46,10 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 async def get_unread_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Return total, per-channel, and per-brand unread message counts, scoped to caller's authorized brands and channels."""
-    user = current_user
-    if not user:
-        auth_header = request.headers.get("Authorization")
-        if auth_header:
-            try:
-                from app.api.deps import get_current_user
-                user = await get_current_user(request=request, db=db)
-            except Exception:
-                pass
-
-    stmt = select(Conversation)
-    res = await db.execute(stmt)
-    all_convs = res.scalars().all()
-
-    total_unread = 0
-    channels_map = {"all": 0, "messenger": 0, "instagram": 0, "whatsapp": 0, "tiktok": 0}
-    brands_map = {}
-
-    for conv in all_convs:
-        if user and not user_has_conversation_access(user, conv):
-            continue
-
-        conv_brand = getattr(conv, "brand", "LAVVA") or "LAVVA"
-        cnt = getattr(conv, "unread_count", 0) or 0
-        total_unread += cnt
-
-        ch = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)).lower()
-        if ch in channels_map:
-            channels_map[ch] += cnt
-
-        brands_map[conv_brand] = brands_map.get(conv_brand, 0) + cnt
-
-        # Also map to common standard aliases for seamless UI binding
-        norm_b = conv_brand.strip().lower()
-        if "lotus" in norm_b:
-            brands_map["LOTUS BLUE"] = brands_map.get("LOTUS BLUE", 0) + cnt
-        elif "hayat" in norm_b:
-            brands_map["HAYAT"] = brands_map.get("HAYAT", 0) + cnt
-        elif "liora" in norm_b or "luxira" in norm_b:
-            brands_map["LUXIRA"] = brands_map.get("LUXIRA", 0) + cnt
-            brands_map["LIORA"] = brands_map.get("LIORA", 0) + cnt
-        elif "loxx" in norm_b:
-            brands_map["LOXX KING"] = brands_map.get("LOXX KING", 0) + cnt
-        elif "lavva" in norm_b or "lava" in norm_b:
-            brands_map["LAVVA"] = brands_map.get("LAVVA", 0) + cnt
-
-    channels_map["all"] = total_unread
-
-    return {
-        "total_unread": total_unread,
-        "channels": channels_map,
-        "brands": brands_map,
-    }
+    return await ConversationService.get_unread_summary(session=db, user=current_user)
 
 
 @router.post(
@@ -121,6 +68,7 @@ async def mark_conversation_read(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
+    require_conversation_access(conv, current_user)
 
     now_utc = datetime.now(timezone.utc)
     conv.unread_count = 0
@@ -168,7 +116,7 @@ async def list_conversations(
     assigned_agent_id: Optional[str] = Query(None, description="Filter by assigned agent ID or name"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
     # Fallback/alias location to country if location not provided
@@ -243,6 +191,7 @@ async def auto_assign_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found."
         )
+    require_conversation_access(conv, current_user)
 
     from app.services.routing_service import RoutingService
     assigned_agent = await RoutingService.assign_conversation_smart(db, conv, strategy=strategy)
@@ -273,7 +222,7 @@ async def auto_assign_conversation(
 async def get_conversation(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve detailed conversation information, customer data, and linked identities."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -282,8 +231,7 @@ async def get_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     detail = await ConversationService.get_conversation_detail(
         session=db, conversation_id=conversation_id
@@ -302,7 +250,7 @@ async def get_conversation_messages(
     page_size: int = Query(200, ge=1, le=500, description="Page size"),
     order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order: asc or desc"),
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve paginated chronological message history for a specific conversation."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -311,8 +259,7 @@ async def get_conversation_messages(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     try:
         messages, total = await MessageService.list_paginated_messages(
@@ -352,8 +299,7 @@ async def send_outbound_reply(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     try:
         reply_to_dict = None
@@ -383,7 +329,7 @@ async def send_outbound_reply(
                     "message_type": ref_msg.message_type.value if hasattr(ref_msg.message_type, "value") else str(ref_msg.message_type),
                 }
 
-        msg = await MessageService.send_agent_reply(
+        reply_dto = await MessageService.send_agent_reply(
             session=db,
             conversation_id=conversation_id,
             text=payload.text,
@@ -392,14 +338,23 @@ async def send_outbound_reply(
             sender_user_id=current_user.id if current_user else None,
             reply_to=reply_to_dict,
         )
-        resp = MessageResponse.model_validate(msg)
+        resp = reply_dto.message
         try:
-            from app.api.v1.ws import manager as ws_manager
-            await ws_manager.broadcast({
-                "type": "NEW_MESSAGE",
-                "conversation_id": str(conversation_id),
-                "message": resp.model_dump(mode="json"),
-            })
+            from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
+            msg_payload = resp.model_dump(mode="json")
+            brand_val = getattr(conv, "brand", None)
+            if brand_val and "brand" not in msg_payload:
+                msg_payload["brand"] = brand_val
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation_id),
+                payload={
+                    "type": "NEW_MESSAGE",
+                    "conversation_id": str(conversation_id),
+                    "brand": brand_val,
+                    "message": msg_payload,
+                },
+            )
         except Exception:
             pass
         return resp
@@ -435,7 +390,7 @@ async def update_conversation_metadata(
     payload: dict,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Update conversation brand/store or status."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -444,8 +399,7 @@ async def update_conversation_metadata(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     if "brand" in payload:
         conv.brand = payload["brand"]
@@ -457,7 +411,7 @@ async def update_conversation_metadata(
     client_ip = request.client.host if (request and request.client) else None
     await AuditService.log_action(
         session=db,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
         action="conversation.metadata_updated",
         resource_type="conversation",
         resource_id=str(conversation_id),
@@ -477,7 +431,7 @@ async def update_conversation_status(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Update conversation status (e.g. open, closed, resolved)."""
     conv = await ConversationService.get_conversation_by_id(session=db, conversation_id=conversation_id)
@@ -486,8 +440,7 @@ async def update_conversation_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     old_status = conv.status.value if hasattr(conv.status, "value") else str(conv.status)
     new_status = payload.get("status", "closed")
@@ -498,7 +451,7 @@ async def update_conversation_status(
     client_ip = request.client.host if request.client else None
     await AuditService.log_action(
         session=db,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
         action="conversation.status_changed",
         resource_type="conversation",
         resource_id=str(conversation_id),
@@ -555,8 +508,7 @@ async def assign_conversation_agent(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     previous_agent_id = conv.assigned_agent_id
     raw_agent_id = payload.get("assigned_agent_id") if "assigned_agent_id" in payload else payload.get("agent_id")
@@ -567,7 +519,7 @@ async def assign_conversation_agent(
     await db.commit()
     await db.refresh(conv)
 
-    assigned_by_uuid = current_user.id if current_user else None
+    assigned_by_uuid = current_user.id
     assigned_to_uuid = None
     assigned_agent_name = "الموظف"
     if agent_id:
@@ -647,7 +599,7 @@ async def update_conversation_priority(
     payload: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Update priority level of a conversation (low, normal, high, urgent)."""
     priority = payload.get("priority", "normal")
@@ -662,8 +614,7 @@ async def update_conversation_priority(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    if current_user:
-        require_conversation_access(conv, current_user)
+    require_conversation_access(conv, current_user)
 
     old_priority = conv.priority
     conv.priority = priority
@@ -673,7 +624,7 @@ async def update_conversation_priority(
     client_ip = request.client.host if request.client else None
     await AuditService.log_action(
         session=db,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
         action="conversation.priority_changed",
         resource_type="conversation",
         resource_id=str(conversation_id),

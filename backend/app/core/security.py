@@ -1,9 +1,11 @@
+import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import os
 from typing import Any, Union
 
+from cryptography.fernet import Fernet
 import jwt
 
 from app.core.config import settings
@@ -20,6 +22,8 @@ except ImportError:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if not plain_password or not hashed_password:
+        return False
     try:
         if HAS_BCRYPT and hashed_password.startswith(("$2b$", "$2a$", "$2y$")):
             pwd_bytes = plain_password.encode("utf-8")
@@ -35,10 +39,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
                     "sha256", plain_password.encode("utf-8"), salt, 100000
                 ).hex()
                 return hmac.compare_digest(computed, target_hash)
-        computed_sha = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
-        if hmac.compare_digest(computed_sha, hashed_password):
-            return True
-        return plain_password == hashed_password
+        return False
     except Exception:
         return False
 
@@ -70,3 +71,28 @@ def create_access_token(
 
 def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+
+
+def get_fernet() -> Fernet:
+    """Derive a URL-safe 32-byte Fernet key from settings.SECRET_KEY."""
+    key_material = settings.SECRET_KEY.encode("utf-8")
+    derived_key = hashlib.sha256(key_material).digest()
+    fernet_key = base64.urlsafe_b64encode(derived_key)
+    return Fernet(fernet_key)
+
+
+def encrypt_token(raw_token: str) -> str:
+    """Encrypt plain text token using Fernet symmetric encryption."""
+    if not raw_token:
+        return ""
+    f = get_fernet()
+    return f.encrypt(raw_token.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_token(cipher_token: str) -> str:
+    """Decrypt Fernet encrypted token back to plain text."""
+    if not cipher_token:
+        return ""
+    f = get_fernet()
+    return f.decrypt(cipher_token.encode("utf-8")).decode("utf-8")
+

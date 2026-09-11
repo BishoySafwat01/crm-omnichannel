@@ -10,9 +10,10 @@ import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
-import { MOCK_BRANDS } from '../../../constants/brands';
+import { useBrandStore } from '../../../store/useBrandStore';
 
 export const CustomerProfileSidebar: React.FC = () => {
+  const brands = useBrandStore((state) => state.brands);
   const {
     conversations,
     activeConversationId,
@@ -184,7 +185,7 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   if (!customer || !activeConversation) {
     return (
-      <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
+      <aside className="w-72 xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
         <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
         <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
         <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
@@ -233,7 +234,7 @@ export const CustomerProfileSidebar: React.FC = () => {
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
   return (
-    <aside className="w-80 md:w-88 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-[calc(100vh-80px)] flex flex-col hidden lg:flex relative z-10 overflow-hidden p-3.5 space-y-3.5">
+    <aside className="w-72 xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex flex-col hidden lg:flex relative z-10 overflow-hidden p-3 space-y-3">
       {/* Scrollable Container with 3 Distinct Glass Cards */}
       <div className="flex-1 overflow-y-auto space-y-3.5 scrollbar-none pr-0.5">
         
@@ -378,7 +379,7 @@ export const CustomerProfileSidebar: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
                   className="w-full rounded-lg border border-blue-300 bg-blue-50/60 px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-[#1A73E8] outline-none cursor-pointer"
                 >
-                  {MOCK_BRANDS.filter((b) => b.id !== 'all').map((b) => (
+                  {brands.filter((b) => b.id !== 'all').map((b) => (
                     <option key={b.id} value={b.id}>
                       متجر: {b.name}
                     </option>

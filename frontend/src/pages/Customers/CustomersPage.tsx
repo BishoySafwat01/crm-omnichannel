@@ -30,13 +30,14 @@ import {
   adminCustomerApi,
   AdminCustomerList,
   CustomerStats,
-  MOCK_BRANDS,
   customerApi,
   CustomerNote,
 } from '../../services/api';
 import { Customer } from '../../types/crm';
+import { useBrandStore } from '../../store/useBrandStore';
 
 export const CustomerDataHub: React.FC = () => {
+  const brands = useBrandStore((state) => state.brands);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [debouncedQuery, setDebouncedQuery] = useState<string>('');
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
@@ -312,8 +313,8 @@ export const CustomerDataHub: React.FC = () => {
                 className="bg-transparent text-slate-800 font-bold focus:outline-hidden cursor-pointer"
               >
                 <option value="all">الكل</option>
-                {MOCK_BRANDS.map((b) => (
-                  <option key={b.id} value={b.name}>
+                {brands.filter((b) => b.id !== 'all').map((b) => (
+                  <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
                 ))}

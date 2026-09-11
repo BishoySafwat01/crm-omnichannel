@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="luxLogoGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D9488" />
+      <stop offset="45%" stop-color="#06B6D4" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="luxLogoTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#14B8A6" />
+      <stop offset="50%" stop-color="#2DD4BF" />
+      <stop offset="100%" stop-color="#5EEAD4" />
+    </linearGradient>
+    <linearGradient id="luxLogoRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F766E" />
+      <stop offset="100%" stop-color="#042F2E" />
+    </linearGradient>
+    <linearGradient id="luxLogoStar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#F0FDFA" />
+      <stop offset="70%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    <filter id="luxLogoGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="luxLogoShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0D9488" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <g filter="url(#luxLogoShadow)">
+    <!-- Isometric Top Facet (Vertical Stem Top) -->
+    <polygon points="60,56 95,28 135,28 100,56" fill="url(#luxLogoTop)" />
+
+    <!-- Isometric Right Outer Facet (Vertical Stem Right) -->
+    <polygon points="100,56 135,28 135,136 100,164" fill="url(#luxLogoRight)" />
+
+    <!-- Isometric Front Face (Vertical Stem Front) -->
+    <polygon points="60,56 100,56 100,164 60,164" fill="url(#luxLogoGrad1)" />
+
+    <!-- Isometric Base Foot Front -->
+    <polygon points="60,164 100,164 176,164 176,208 60,208" fill="url(#luxLogoGrad1)" />
+
+    <!-- Isometric Base Foot Top Step -->
+    <polygon points="100,164 135,136 211,136 176,164" fill="url(#luxLogoTop)" />
+
+    <!-- Isometric Base Foot Right Outer Facet -->
+    <polygon points="176,164 211,136 211,180 176,208" fill="url(#luxLogoRight)" />
+
+    <!-- Sharp Bevel Edge Highlights -->
+    <line x1="60" y1="56" x2="60" y2="208" stroke="#5EEAD4" stroke-width="2.2" stroke-opacity="0.85" />
+    <line x1="60" y1="208" x2="176" y2="208" stroke="#5EEAD4" stroke-width="2.2" stroke-opacity="0.85" />
+    <line x1="60" y1="56" x2="100" y2="56" stroke="#FFFFFF" stroke-width="1.8" stroke-opacity="0.95" />
+    <line x1="100" y1="56" x2="100" y2="164" stroke="#2DD4BF" stroke-width="1.5" stroke-opacity="0.6" />
+    <line x1="100" y1="164" x2="176" y2="164" stroke="#FFFFFF" stroke-width="1.8" stroke-opacity="0.95" />
+
+    <!-- Primary Starburst (Upper Right of Vertical Stem) -->
+    <g transform="translate(150, 38)" filter="url(#luxLogoGlow)">
+      <path d="M 0,-34 Q 0,-7 27,0 Q 0,7 0,34 Q 0,7 -27,0 Q 0,-7 0,-34 Z" fill="url(#luxLogoStar)" />
+      <circle cx="0" cy="0" r="5" fill="#FFFFFF" />
+      <path d="M -14,-14 L 14,14 M -14,14 L 14,-14" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.75" />
+    </g>
+
+    <!-- Secondary Starburst Accent -->
+    <g transform="translate(198, 90)" filter="url(#luxLogoGlow)" opacity="0.9">
+      <path d="M 0,-19 Q 0,-4 15,0 Q 0,4 0,19 Q 0,4 -15,0 Q 0,-4 0,-19 Z" fill="url(#luxLogoStar)" />
+      <circle cx="0" cy="0" r="2.8" fill="#FFFFFF" />
+    </g>
+
+    <!-- Subtle Accent Sparkle (Left Stem Base) -->
+    <g transform="translate(42, 80)" opacity="0.85">
+      <path d="M 0,-11 Q 0,-2.5 8.5,0 Q 0,2.5 0,11 Q 0,2.5 -8.5,0 Q 0,-2.5 0,-11 Z" fill="#5EEAD4" />
+      <circle cx="0" cy="0" r="1.8" fill="#FFFFFF" />
+    </g>
+  </g>
+</svg>

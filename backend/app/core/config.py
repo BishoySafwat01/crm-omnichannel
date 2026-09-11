@@ -20,10 +20,16 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
 
     CORS_ORIGINS: Union[list[str], str] = [
+        "https://webluxira.com",
+        "http://webluxira.com",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        "http://localhost:3001",
+        "http://localhost:5174",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:5174",
     ]
 
     POSTGRES_USER: str = "postgres"
@@ -44,9 +50,9 @@ class Settings(BaseSettings):
     META_APP_ID: str | None = "2591862777899310"
     META_WEBHOOK_VERIFY_TOKEN: str | None = "LUXIRA_META_WEBHOOK_VERIFY_TOKEN"
     META_APP_SECRET: str | None = None
-    WHATSAPP_PHONE_NUMBER_ID: str | None = "105938472819405"
-    WHATSAPP_WABA_ID: str | None = "948301847582019"
-    INSTAGRAM_ACCOUNT_ID: str | None = "17841405938201948"
+    WHATSAPP_PHONE_NUMBER_ID: str | None = None
+    WHATSAPP_WABA_ID: str | None = None
+    INSTAGRAM_ACCOUNT_ID: str | None = None
     META_ENABLE_LIVE_POLLING: bool = False
     META_POLL_INTERVAL_SECONDS: int = 300
     META_PAGES_CONFIG: str = "{}"
@@ -61,13 +67,13 @@ class Settings(BaseSettings):
                     for pid, pdata in parsed.items():
                         if isinstance(pdata, dict):
                             pages[str(pid).strip()] = {
-                                "name": pdata.get("name", f"Page {pid}"),
+                                "name": pdata.get("name") or "Default Business Page",
                                 "access_token": pdata.get("access_token") or pdata.get("token") or self.META_PAGE_ACCESS_TOKEN or "",
                                 "category": pdata.get("category", "Business"),
                             }
                         elif isinstance(pdata, str):
                             pages[str(pid).strip()] = {
-                                "name": f"Page {pid}",
+                                "name": "Default Business Page",
                                 "access_token": pdata or self.META_PAGE_ACCESS_TOKEN or "",
                                 "category": "Business",
                             }
@@ -96,15 +102,14 @@ class Settings(BaseSettings):
         if page_id:
             pid = str(page_id).strip()
             pages = self.get_meta_pages()
-            if pid in pages and pages[pid].get("name"):
+            if pid in pages and pages[pid].get("name") and not str(pages[pid]["name"]).startswith("Page "):
                 return pages[pid]["name"]
-            return f"Page {pid}"
         return "Default Business Page"
 
     # Provider Switching & BeOn V3 Omnichannel Settings
     ENABLE_DIRECT_META: bool = False
     DEFAULT_PROVIDER: str = "BEON"
-    BEON_API_KEY: str = "ZUiczQBL4Ymh7E6qjkNS"
+    BEON_API_KEY: str = ""
     BEON_API_BASE_URL: str = "https://v3.api.beon.chat/api"
     BEON_WEBHOOK_SECRET: str | None = None
     BEON_SYNC_INTERVAL_SECONDS: int = 15
@@ -119,10 +124,13 @@ class Settings(BaseSettings):
     @classmethod
     def validate_secret_key(cls, v: str, info: Any) -> str:
         _INSECURE_DEFAULT = "change_this_to_a_secure_random_secret_key_in_production"
-        if not v or v == _INSECURE_DEFAULT:
-            env = (info.data or {}).get("ENVIRONMENT", "development")
-            if env not in ("development", "testing"):
-                return "4d71c9b69a027039bb284cdb829124970205d60a4eb031a566285cbbab984925"
+        env = (info.data or {}).get("ENVIRONMENT", "development")
+        if env not in ("development", "testing"):
+            if not v or v == _INSECURE_DEFAULT:
+                raise ValueError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_KEY must be securely configured in production! "
+                    "Cannot use empty or default insecure key."
+                )
         return v
 
     @field_validator("CORS_ORIGINS", mode="before")

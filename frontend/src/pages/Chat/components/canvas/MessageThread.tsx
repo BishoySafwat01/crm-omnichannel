@@ -21,133 +21,7 @@ const VIRTUALIZATION_THRESHOLD = 60; // Enable windowing if messages exceed this
 const WINDOW_SIZE = 50; // Visible batch size
 const ESTIMATED_ITEM_HEIGHT = 72; // Average message row height in pixels
 
-// Inline Audio Player Component
-export const CustomAudioPlayer: React.FC<{ url: string }> = ({ url }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.volume = 1.0;
-      audioRef.current.muted = false;
-      audioRef.current
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch((err) => {
-          console.warn('Audio playback error:', err);
-          setIsPlaying(false);
-        });
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const current = audioRef.current.currentTime;
-    let dur = audioRef.current.duration;
-    if (dur === Infinity || isNaN(dur)) {
-      dur = duration > 0 ? duration : current;
-    }
-    setCurrentTime(current);
-    if (dur > 0 && isFinite(dur)) {
-      setProgress((current / dur) * 100);
-    }
-  };
-
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      const dur = audioRef.current.duration;
-      if (dur === Infinity || isNaN(dur)) {
-        audioRef.current.currentTime = 1e101;
-        audioRef.current.ontimeupdate = function () {
-          this.ontimeupdate = () => handleTimeUpdate();
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            setDuration(audioRef.current.duration || 0);
-          }
-        };
-      } else {
-        setDuration(dur);
-      }
-    }
-  };
-
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audioRef.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const totalDur = audioRef.current.duration && isFinite(audioRef.current.duration) ? audioRef.current.duration : duration;
-    if (totalDur > 0 && isFinite(totalDur)) {
-      const newTime = (clickX / width) * totalDur;
-      audioRef.current.currentTime = newTime;
-      setProgress((newTime / totalDur) * 100);
-    }
-  };
-
-  const formatAudioTime = (sec: number) => {
-    if (isNaN(sec) || !isFinite(sec) || sec <= 0) return '0:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  return (
-    <div className="flex items-center gap-3 bg-slate-100/90 hover:bg-slate-100 p-2.5 rounded-2xl border border-slate-200/80 my-1 min-w-[220px]">
-      <audio
-        ref={audioRef}
-        src={url}
-        preload="auto"
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onCanPlay={() => {
-          if (audioRef.current && isFinite(audioRef.current.duration) && audioRef.current.duration > 0) {
-            setDuration(audioRef.current.duration);
-          }
-        }}
-        onEnded={() => {
-          setIsPlaying(false);
-          setProgress(0);
-          setCurrentTime(0);
-        }}
-        className="hidden"
-      />
-      <button
-        type="button"
-        onClick={togglePlay}
-        className="w-8 h-8 rounded-full bg-[#1A73E8] hover:bg-[#1557B0] text-white flex items-center justify-center transition shadow-2xs shrink-0 cursor-pointer"
-      >
-        {isPlaying ? (
-          <span className="font-bold text-xs">⏸</span>
-        ) : (
-          <span className="font-bold text-xs ml-0.5">▶</span>
-        )}
-      </button>
-
-      <div className="flex-1 flex flex-col gap-1">
-        <div
-          onClick={handleSeek}
-          className="h-2 bg-slate-200 rounded-full cursor-pointer relative overflow-hidden"
-        >
-          <div
-            className="h-full bg-[#1A73E8] rounded-full transition-all duration-100"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium font-mono">
-          <span>{formatAudioTime(currentTime)}</span>
-          <span>{formatAudioTime(duration)}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+import { CustomAudioPlayer } from './AudioPlayerWidget';
 
 // Memoized Single Message Bubble for 60 FPS rendering
 export const MemoizedMessageBubble = React.memo<{
@@ -330,6 +204,9 @@ export const MemoizedMessageBubble = React.memo<{
 
               {/* Regular Text Content */}
               {msg.text &&
+                !media.isAudio &&
+                !(media.isImage && msg.text === media.url) &&
+                !(media.isVideo && msg.text === media.url) &&
                 !msg.text.startsWith('voice_') &&
                 !msg.text.startsWith('img_') &&
                 !msg.text.startsWith('vid_') &&

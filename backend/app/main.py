@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -20,10 +21,12 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.media import router as media_router
 from app.api.v1.meta import router as meta_router
+from app.api.v1.meta_oauth import router as meta_oauth_router
 from app.api.v1.moderation import router as moderation_router
 from app.api.v1.beon import router as beon_router
 from app.api.v1.ws import router as ws_router
 from app.api.webhooks import router as webhooks_router
+from app.api.legal import router as legal_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.redis import close_redis_client, get_redis_client
@@ -110,11 +113,84 @@ async def lifespan(app: FastAPI):
                 logger.exception("[SLAEngine] Unhandled exception in SLA evaluation loop")
             await asyncio.sleep(30)
 
-    auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
-    meta_task = asyncio.create_task(meta_sync_loop())
-    sla_task = asyncio.create_task(sla_eval_loop())
-    interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
-    beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
+    # Multi-Worker Safe Background Tasks Coordination via Redis Leader Lock
+    worker_id = f"worker_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    leader_lock_key = "crm:leader_lock"
+    leader_lock_ttl = 60
+    is_leader = False
+    leader_tasks: list[asyncio.Task] = []
+    heartbeat_task: asyncio.Task | None = None
+
+    def start_leader_tasks():
+        nonlocal leader_tasks
+        if leader_tasks:
+            return
+        logger.info("👑 [LeaderElection] Worker %s starting singleton background tasks...", worker_id)
+        auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
+        meta_task = asyncio.create_task(meta_sync_loop())
+        sla_task = asyncio.create_task(sla_eval_loop())
+        interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
+        beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
+        leader_tasks = [auto_sub_task, meta_task, sla_task, beon_task]
+
+    def stop_leader_tasks():
+        nonlocal leader_tasks
+        for t in leader_tasks:
+            if not t.done():
+                t.cancel()
+        leader_tasks = []
+
+    async def leader_heartbeat_loop():
+        nonlocal is_leader
+        while True:
+            await asyncio.sleep(20)
+            try:
+                r = await get_redis_client()
+                if is_leader:
+                    current_holder = await r.get(leader_lock_key)
+                    if current_holder == worker_id:
+                        await r.expire(leader_lock_key, leader_lock_ttl)
+                    else:
+                        logger.warning(
+                            "[LeaderElection] Worker %s lost leader lock to %s. Stopping singleton background tasks.",
+                            worker_id,
+                            current_holder,
+                        )
+                        is_leader = False
+                        stop_leader_tasks()
+                else:
+                    acquired = await r.set(leader_lock_key, worker_id, nx=True, ex=leader_lock_ttl)
+                    if acquired:
+                        is_leader = True
+                        logger.info("👑 [LeaderElection] Worker %s promoted to leader.", worker_id)
+                        start_leader_tasks()
+            except Exception as exc:
+                logger.warning("[LeaderElection] Redis heartbeat check error: %s", exc)
+
+    # Initial Leader Election Attempt
+    try:
+        r = await get_redis_client()
+        acquired = await r.set(leader_lock_key, worker_id, nx=True, ex=leader_lock_ttl)
+        if acquired:
+            is_leader = True
+            logger.info("👑 [LeaderElection] Worker %s acquired initial leader lock.", worker_id)
+            start_leader_tasks()
+        else:
+            current_leader = await r.get(leader_lock_key)
+            logger.info(
+                "[LeaderElection] Worker %s operating as follower (Active Leader: %s). Background polling delegated to leader.",
+                worker_id,
+                current_leader,
+            )
+    except Exception as exc:
+        logger.warning(
+            "[LeaderElection] Redis unavailable on startup (%s). Defaulting to standalone leader mode.",
+            exc,
+        )
+        is_leader = True
+        start_leader_tasks()
+
+    heartbeat_task = asyncio.create_task(leader_heartbeat_loop())
 
     from app.api.v1.ws import start_redis_listener
     redis_listener_task = asyncio.create_task(start_redis_listener())
@@ -122,14 +198,24 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    auto_sub_task.cancel()
-    meta_task.cancel()
-    sla_task.cancel()
-    beon_task.cancel()
+    if heartbeat_task:
+        heartbeat_task.cancel()
+    stop_leader_tasks()
     redis_listener_task.cancel()
-    await asyncio.gather(
-        auto_sub_task, meta_task, sla_task, beon_task, redis_listener_task, return_exceptions=True
-    )
+
+    try:
+        r = await get_redis_client()
+        current_holder = await r.get(leader_lock_key)
+        if current_holder == worker_id:
+            await r.delete(leader_lock_key)
+    except Exception:
+        pass
+
+    all_shutdown_tasks = [t for t in leader_tasks] + [redis_listener_task]
+    if heartbeat_task:
+        all_shutdown_tasks.append(heartbeat_task)
+    if all_shutdown_tasks:
+        await asyncio.gather(*all_shutdown_tasks, return_exceptions=True)
     await close_redis_client()
 
 
@@ -142,11 +228,24 @@ app = FastAPI(
 )
 
 # CORS middleware
+_default_cors = [
+    "https://webluxira.com",
+    "http://webluxira.com",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 _cors_origins = list(settings.CORS_ORIGINS) if settings.CORS_ORIGINS else []
+for origin in _default_cors:
+    if origin not in _cors_origins:
+        _cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else ["*"],
-    allow_origin_regex=r"https?://.*",
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -156,8 +255,7 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
-@app.get("/health", tags=["system"], summary="System health probe")
-async def health_check() -> JSONResponse:
+async def perform_health_check() -> tuple[dict[str, Any], int]:
     pg_status = "unknown"
     try:
         async with AsyncSessionLocal() as session:
@@ -179,13 +277,25 @@ async def health_check() -> JSONResponse:
     overall = "ok" if (pg_status == "healthy" and redis_status == "healthy") else "degraded"
     http_status = status.HTTP_200_OK if overall == "ok" else status.HTTP_503_SERVICE_UNAVAILABLE
 
+    return {
+        "status": overall,
+        "postgres": pg_status,
+        "redis": redis_status,
+    }, http_status
+
+
+@app.get("/", tags=["system"], summary="Root service status probe")
+async def root_probe() -> dict[str, str]:
+    return {"app": settings.PROJECT_NAME, "status": "running"}
+
+
+@app.get("/health", tags=["system"], summary="System health probe")
+@app.get("/api/v1/health", tags=["system"], summary="System health probe (API v1)")
+async def health_check() -> JSONResponse:
+    content, http_status = await perform_health_check()
     return JSONResponse(
         status_code=http_status,
-        content={
-            "status": overall,
-            "postgres": pg_status,
-            "redis": redis_status,
-        },
+        content=content,
     )
 
 
@@ -196,13 +306,19 @@ app.include_router(customers_router, prefix="/api/v1")
 app.include_router(comments_router, prefix="/api/v1")
 app.include_router(media_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
+app.include_router(meta_oauth_router, prefix="/api/v1")
 app.include_router(beon_router, prefix="/api/v1")
 app.include_router(moderation_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/api")
 app.include_router(ws_router, prefix="/api/v1")
 
 # Admin Routers
-app.include_router(admin_analytics_router, prefix="/api/v1")
-app.include_router(admin_automations_router, prefix="/api/v1")
-app.include_router(admin_customers_router, prefix="/api/v1")
-app.include_router(admin_team_router, prefix="/api/v1")
+app.include_router(admin_analytics_router, prefix="/api/v1/admin/analytics")
+app.include_router(admin_automations_router, prefix="/api/v1/admin/automations")
+app.include_router(admin_customers_router, prefix="/api/v1/admin/customers")
+app.include_router(admin_team_router, prefix="/api/v1/admin/team")
+
+# Public Legal & Compliance Routers (Meta App Review Compliance)
+app.include_router(legal_router)
+app.include_router(legal_router, prefix="/api/v1")
