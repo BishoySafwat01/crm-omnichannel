@@ -14,15 +14,32 @@ export interface ResolvedMedia {
 
 export const isSocialWebLink = (url: string | undefined | null): boolean => {
   if (!url) return false;
+  const clean = url.trim();
+
+  // Immediately return false if the URL ends with or contains binary media extensions before query params (?oe=...)
+  const pathBeforeQuery = clean.split('?')[0].split('#')[0];
+  if (/\.(png|jpe?g|gif|webp|mp4|mov|webm|ogg|mp3|wav|m4a|aac)$/i.test(pathBeforeQuery)) {
+    return false;
+  }
+  if (/\.(png|jpe?g|gif|webp|mp4|mov|webm|ogg|mp3|wav|m4a|aac)($|\?)/i.test(clean)) {
+    return false;
+  }
+
+  // Immediately return false if the URL is on a CDN domain
+  const cleanLower = clean.toLowerCase();
+  if (
+    cleanLower.includes('fbcdn.net') ||
+    cleanLower.includes('fbsbx.com') ||
+    cleanLower.includes('cdninstagram.com')
+  ) {
+    return false;
+  }
+
+  // Match ONLY genuine social web pages
   return (
-    url.includes('instagram.com/reel/') ||
-    url.includes('instagram.com/reels/') ||
-    url.includes('instagram.com/p/') ||
-    url.includes('instagram.com/stories/') ||
-    url.includes('facebook.com/watch') ||
-    url.includes('facebook.com/story') ||
-    url.includes('facebook.com/reel/') ||
-    url.includes('fb.watch')
+    /(?:^|https?:\/\/(?:www\.)?)instagram\.com\/(?:reel|reels|p|stories)\//i.test(clean) ||
+    /(?:^|https?:\/\/(?:www\.)?)facebook\.com\/(?:watch|story|reel)\//i.test(clean) ||
+    /(?:^|https?:\/\/(?:www\.)?)fb\.watch\//i.test(clean)
   );
 };
 
@@ -108,7 +125,7 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
   let extractedShareFromText: string | null = null;
   if (textVal) {
     const bracketMatch = textVal.match(/\[(?:Instagram Reel\/Share|Reel\/Share|Share):\s*(https?:\/\/[^\]\s]+)\]/i);
-    if (bracketMatch && bracketMatch[1]) {
+    if (bracketMatch && bracketMatch[1] && isSocialWebLink(bracketMatch[1])) {
       extractedShareFromText = bracketMatch[1];
     } else if (isSocialWebLink(textVal)) {
       extractedShareFromText = textVal;
@@ -165,14 +182,45 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
   const isSocial = isSocialWebLink(rawUrl);
   const msgType = (msg.message_type || type || '').toLowerCase();
 
+  // Explicit media identification
+  const hasImageExt = /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(rawLower);
+  const hasVideoExt = /\.(mp4|mov|avi|mkv|ogv)($|\?)/i.test(rawLower);
+  const hasAudioExt = /\.(ogg|m4a|mp3|wav|aac|opus)($|\?)/i.test(rawLower);
+  const isCdn =
+    rawLower.includes('fbcdn.net') ||
+    rawLower.includes('fbsbx.com') ||
+    rawLower.includes('cdninstagram.com');
+
+  const isExplicitImage =
+    msgType === 'image' ||
+    type === 'image' ||
+    mime.startsWith('image/') ||
+    hasImageExt ||
+    (isCdn && !hasVideoExt && !hasAudioExt && msgType !== 'video' && msgType !== 'audio');
+
+  const isExplicitVideo =
+    msgType === 'video' ||
+    type === 'video' ||
+    mime.startsWith('video/') ||
+    hasVideoExt;
+
+  const isExplicitAudio =
+    msgType === 'audio' ||
+    type === 'audio' ||
+    mime.startsWith('audio/') ||
+    hasAudioExt ||
+    rawLower.includes('voice_');
+
+  // isShare is strictly for verified social links, never for explicit media
   const isShare =
-    isSocial ||
-    Boolean(extractedShareFromText) ||
-    msgType === 'share_reel' ||
-    msgType === 'share_post' ||
-    msgType === 'share' ||
-    (rawLower.includes('instagram.com') &&
-      (rawLower.includes('/reel') || rawLower.includes('/p/') || rawLower.includes('/stories/')));
+    !isExplicitImage &&
+    !isExplicitVideo &&
+    !isExplicitAudio &&
+    (isSocial ||
+      (Boolean(extractedShareFromText) && isSocialWebLink(extractedShareFromText)) ||
+      msgType === 'share_reel' ||
+      msgType === 'share_post' ||
+      msgType === 'share');
 
   let shareType: 'reel' | 'post' | 'story' | null = null;
   if (isShare) {
@@ -192,7 +240,8 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
   const isAudio =
     !isShare &&
     !isSocial &&
-    (msgType === 'audio' ||
+    (isExplicitAudio ||
+      msgType === 'audio' ||
       type === 'audio' ||
       mime.startsWith('audio/') ||
       lower.includes('voice_') ||
@@ -206,7 +255,8 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     !isShare &&
     !isSocial &&
     !isAudio &&
-    (msgType === 'video' ||
+    (isExplicitVideo ||
+      msgType === 'video' ||
       type === 'video' ||
       mime.startsWith('video/') ||
       lower.includes('vid_') ||
@@ -218,7 +268,8 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     !isSocial &&
     !isAudio &&
     !isVideo &&
-    (msgType === 'image' ||
+    (isExplicitImage ||
+      msgType === 'image' ||
       type === 'image' ||
       mime.startsWith('image/') ||
       lower.includes('image-') ||
@@ -241,6 +292,6 @@ export const resolveMedia = (msg: any): ResolvedMedia => {
     shareUrl: isShare ? rawUrl : null,
     shareType,
     url: finalUrl,
-    fileName: fileName || finalUrl.split('/').pop() || (isShare ? 'share' : 'file'),
+    fileName: fileName || finalUrl.split('?')[0].split('/').pop() || (isShare ? 'share' : 'file'),
   };
 };

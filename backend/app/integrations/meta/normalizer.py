@@ -357,6 +357,7 @@ class MetaNormalizer:
                     continue
                 payload = att.get("payload", {}) if isinstance(att.get("payload"), dict) else {}
                 share_obj = att.get("share", {}) if isinstance(att.get("share"), dict) else {}
+                att_type = str(att.get("type", "")).lower()
                 url = (
                     payload.get("url")
                     or payload.get("reel_video_url")
@@ -364,8 +365,24 @@ class MetaNormalizer:
                     or payload.get("preview_url")
                     or att.get("url")
                 )
-                if not extracted_share_url and url:
-                    extracted_share_url = url
+
+                # Only consider explicit social shares or reel payloads as share candidates
+                is_explicit_share = (
+                    any(k in att_type for k in ("share", "ig_reel", "reel", "story_mention"))
+                    or bool(share_obj.get("link"))
+                    or bool(payload.get("reel_video_url"))
+                )
+
+                if not extracted_share_url and url and is_explicit_share:
+                    clean_u = url.lower().split("?")[0]
+                    is_media_binary = any(clean_u.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".webm", ".ogg", ".mp3", ".wav", ".m4a", ".aac"))
+                    is_cdn = any(k in url.lower() for k in ("fbcdn.net", "fbsbx.com", "cdninstagram.com"))
+                    is_social_web = any(k in url.lower() for k in ("instagram.com/reel", "instagram.com/p/", "instagram.com/stories/", "facebook.com/reel", "facebook.com/watch", "fb.watch"))
+
+                    if is_social_web or (not is_media_binary and not is_cdn):
+                        extracted_share_url = url
+                    elif share_obj.get("link"):
+                        extracted_share_url = share_obj.get("link")
 
                 normalized_attachments.append({
                     "type": att.get("type"),

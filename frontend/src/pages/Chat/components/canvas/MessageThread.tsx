@@ -56,10 +56,13 @@ export const MemoizedMessageBubble = React.memo<{
 }) => {
   const media = resolveMedia(msg);
   const isReelOrShare = Boolean(
-    media.isShare ||
-      msg.message_type === 'share_reel' ||
-      msg.message_type === 'share_post' ||
-      (media.url && isSocialWebLink(media.url))
+    !media.isImage &&
+      !media.isVideo &&
+      !media.isAudio &&
+      (media.isShare ||
+        msg.message_type === 'share_reel' ||
+        msg.message_type === 'share_post' ||
+        (media.url && isSocialWebLink(media.url)))
   );
   const shareTargetUrl = media.shareUrl || media.url || msg.media_url || '';
 
@@ -254,8 +257,24 @@ export const MemoizedMessageBubble = React.memo<{
               {(() => {
                 if (!msg.text) return null;
                 if (media.isAudio) return null;
-                if (media.isImage && msg.text === media.url) return null;
-                if (media.isVideo && msg.text === media.url) return null;
+                if (
+                  media.isImage &&
+                  (msg.text === media.url ||
+                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
+                    msg.text === msg.media_url ||
+                    (String(msg.message_type).toLowerCase() === 'image' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
+                ) {
+                  return null;
+                }
+                if (
+                  media.isVideo &&
+                  (msg.text === media.url ||
+                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
+                    msg.text === msg.media_url ||
+                    (String(msg.message_type).toLowerCase() === 'video' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
+                ) {
+                  return null;
+                }
                 if (
                   msg.text.startsWith('voice_') ||
                   msg.text.startsWith('img_') ||
