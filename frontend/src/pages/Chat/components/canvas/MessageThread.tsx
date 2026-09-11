@@ -10,11 +10,14 @@ import {
   Forward as ForwardIcon,
   ZoomIn,
   User,
+  ExternalLink,
+  Film,
 } from 'lucide-react';
 import { Message, Conversation } from '../../../../types/crm';
 import { User as UserType } from '../../../../store/useAuthStore';
 import { formatChatDateDivider, isDifferentDay } from '../../../../utils/dateUtils';
 import { MessageActionsMenu } from '../MessageActionsMenu';
+import { isSocialWebLink } from '../../utils/mediaResolver';
 
 // Constants for Virtual Scrolling Optimization
 const VIRTUALIZATION_THRESHOLD = 60; // Enable windowing if messages exceed this count
@@ -52,12 +55,24 @@ export const MemoizedMessageBubble = React.memo<{
   renderHighlightedText,
 }) => {
   const media = resolveMedia(msg);
+  const isReelOrShare = Boolean(
+    !media.isImage &&
+      !media.isVideo &&
+      !media.isAudio &&
+      (media.isShare ||
+        msg.message_type === 'share_reel' ||
+        msg.message_type === 'share_post' ||
+        (media.url && isSocialWebLink(media.url)))
+  );
+  const shareTargetUrl = media.shareUrl || media.url || msg.media_url || '';
+
   const hasContent = Boolean(
     (msg.text && msg.text.trim()) ||
       media.isAudio ||
       media.isImage ||
       media.isVideo ||
       media.isDoc ||
+      isReelOrShare ||
       msg.media_url ||
       msg.is_deleted
   );
@@ -143,8 +158,44 @@ export const MemoizedMessageBubble = React.memo<{
               {/* Native Audio Player */}
               {media.isAudio && media.url && <CustomAudioPlayer url={media.url} />}
 
-              {/* HTML5 Video Player */}
-              {(msg.message_type === 'video' || media.isVideo) &&
+              {/* Dedicated Social Reel / Share Card */}
+              {isReelOrShare && shareTargetUrl && (
+                <div className="my-1.5 max-w-xs rounded-2xl overflow-hidden border border-slate-200/80 bg-gradient-to-br from-slate-50 via-white to-slate-50 shadow-xs transition-all hover:shadow-md">
+                  <div className="p-3 bg-gradient-to-r from-[#833ab4]/10 via-[#fd1d1d]/10 to-[#fcb045]/10 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center text-white shadow-xs">
+                        <Film className="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-800 block">
+                          {media.shareType === 'reel' || msg.message_type === 'share_reel'
+                            ? 'Instagram Reel'
+                            : 'مشاركة من إنستغرام'}
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-medium">مقطع ريلز / رابط مشاركة</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-2.5 flex flex-col gap-2">
+                    <p className="text-[11px] text-slate-600 truncate dir-ltr text-left font-mono bg-slate-100/70 px-2 py-1 rounded-lg">
+                      {shareTargetUrl}
+                    </p>
+                    <a
+                      href={shareTargetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-[#dc2743] to-[#bc1888] hover:from-[#c11e38] hover:to-[#a01573] text-white text-[11px] font-bold transition shadow-xs active:scale-[0.98]"
+                    >
+                      <span>مشاهدة على Instagram</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* HTML5 Video Player (Protected: Only direct video files, never reels/shares) */}
+              {!isReelOrShare &&
+                (msg.message_type === 'video' || media.isVideo) &&
                 (media.url || msg.media_url) && (
                   <div className="relative overflow-hidden rounded-xl max-w-xs my-1 bg-black/10">
                     <video
@@ -203,19 +254,55 @@ export const MemoizedMessageBubble = React.memo<{
               )}
 
               {/* Regular Text Content */}
-              {msg.text &&
-                !media.isAudio &&
-                !(media.isImage && msg.text === media.url) &&
-                !(media.isVideo && msg.text === media.url) &&
-                !msg.text.startsWith('voice_') &&
-                !msg.text.startsWith('img_') &&
-                !msg.text.startsWith('vid_') &&
-                !msg.text.startsWith('image-') &&
-                !msg.text.includes('📍') && (
+              {(() => {
+                if (!msg.text) return null;
+                if (media.isAudio) return null;
+                if (
+                  media.isImage &&
+                  (msg.text === media.url ||
+                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
+                    msg.text === msg.media_url ||
+                    (String(msg.message_type).toLowerCase() === 'image' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
+                ) {
+                  return null;
+                }
+                if (
+                  media.isVideo &&
+                  (msg.text === media.url ||
+                    (media.url && media.url.includes(encodeURIComponent(msg.text))) ||
+                    msg.text === msg.media_url ||
+                    (String(msg.message_type).toLowerCase() === 'video' && (msg.text.startsWith('http://') || msg.text.startsWith('https://'))))
+                ) {
+                  return null;
+                }
+                if (
+                  msg.text.startsWith('voice_') ||
+                  msg.text.startsWith('img_') ||
+                  msg.text.startsWith('vid_') ||
+                  msg.text.startsWith('image-') ||
+                  msg.text.includes('📍')
+                ) {
+                  return null;
+                }
+
+                let displayTxt = msg.text;
+                if (isReelOrShare) {
+                  displayTxt = displayTxt
+                    .replace(/\[(?:Instagram Reel\/Share|Reel\/Share|Share):\s*https?:\/\/[^\]]+\]/gi, '')
+                    .trim();
+                  if (displayTxt === shareTargetUrl) {
+                    displayTxt = '';
+                  }
+                }
+
+                if (!displayTxt) return null;
+
+                return (
                   <p className="whitespace-pre-wrap break-words">
-                    {renderHighlightedText(msg.text, inChatSearchQuery)}
+                    {renderHighlightedText(displayTxt, inChatSearchQuery)}
                   </p>
-                )}
+                );
+              })()}
             </>
           )}
 
