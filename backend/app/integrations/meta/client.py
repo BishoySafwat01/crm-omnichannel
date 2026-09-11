@@ -718,5 +718,57 @@ class MetaClient:
         except Exception as e:
             return {"error": str(e)}
 
+    async def block_page_user(
+        self,
+        page_id: str,
+        psid: str,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, Any]:
+        """
+        Block a user (PSID) from messaging the Facebook Page via Meta Graph API:
+        POST /{page_id}/blocked?psid={psid}
+        """
+        if not page_id or not psid:
+            return {"success": False, "error": "page_id and psid required"}
+        try:
+            token = await self.get_token_for_page(page_id, db=db or self.db)
+            return await self._request(
+                method="POST",
+                endpoint=f"/{page_id}/blocked",
+                params={"psid": psid},
+                page_id=page_id,
+                access_token=token,
+                db=db or self.db,
+            )
+        except Exception as exc:
+            logger.warning("Failed to block user %s on page %s via Meta Graph API: %s", psid, page_id, exc)
+            return {"success": False, "error": str(exc)}
+
+    async def unblock_page_user(
+        self,
+        page_id: str,
+        psid: str,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, Any]:
+        """
+        Unblock a user (PSID) on the Facebook Page via Meta Graph API:
+        DELETE /{page_id}/blocked?psid={psid}
+        """
+        if not page_id or not psid:
+            return {"success": False, "error": "page_id and psid required"}
+        try:
+            token = await self.get_token_for_page(page_id, db=db or self.db)
+            return await self._request(
+                method="DELETE",
+                endpoint=f"/{page_id}/blocked",
+                params={"psid": psid},
+                page_id=page_id,
+                access_token=token,
+                db=db or self.db,
+            )
+        except Exception as exc:
+            logger.warning("Failed to unblock user %s on page %s via Meta Graph API: %s", psid, page_id, exc)
+            return {"success": False, "error": str(exc)}
+
 
 

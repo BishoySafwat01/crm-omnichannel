@@ -922,6 +922,13 @@ class MetaImportService:
                     workspace_id=entry_workspace_id,
                 )
 
+                # Guard: Silently ignore messages from blocked customers to protect agent inbox
+                if getattr(customer, "is_blocked", False):
+                    logger.info("Meta webhook: silently dropped inbound message from blocked customer %s (PSID: %s)", customer.id, norm_event.sender_psid)
+                    last_result_status = "blocked_ignored"
+                    last_result_msg_id = norm_event.external_message_id
+                    continue
+
                 if norm_event.sender_name and (not customer.display_name or customer.display_name == "عميل"):
                     customer.display_name = norm_event.sender_name
                     session.add(customer)

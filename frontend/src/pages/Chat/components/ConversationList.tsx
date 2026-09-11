@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store, Ban } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
@@ -282,7 +282,11 @@ export const ConversationList: React.FC = () => {
       // 3. Status Tab Filter
       const statusLower = (conv.status as string)?.toLowerCase();
       const isClosedStatus = statusLower === 'closed' || statusLower === 'completed';
-      if (activeFilterTab === 'completed') {
+      const isBlocked = Boolean(conv.customer?.is_blocked);
+
+      if (activeFilterTab === 'blocked') {
+        if (!isBlocked) return false;
+      } else if (activeFilterTab === 'completed') {
         if (!isClosedStatus) return false;
       } else {
         if (isClosedStatus) return false;
@@ -357,6 +361,11 @@ export const ConversationList: React.FC = () => {
     return conversations.filter((c) => isConversationLate(c, messages[c.id])).length;
   }, [conversations, messages]);
 
+  const blockedCount = useMemo(() => {
+    if (!conversations || !Array.isArray(conversations)) return 0;
+    return conversations.filter((c) => Boolean(c.customer?.is_blocked)).length;
+  }, [conversations]);
+
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     {
@@ -371,6 +380,12 @@ export const ConversationList: React.FC = () => {
       label: 'متأخرة (+10د)',
       icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />,
       badgeCount: lateCount > 0 ? lateCount : undefined,
+    },
+    {
+      id: 'blocked',
+      label: 'المحظورين',
+      icon: <Ban className="w-3.5 h-3.5 text-rose-500" />,
+      badgeCount: blockedCount > 0 ? blockedCount : undefined,
     },
   ];
 

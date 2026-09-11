@@ -11,9 +11,12 @@ import { ConversationAvatar, getBrandObject } from '../../../components/Conversa
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
 import { useBrandStore } from '../../../store/useBrandStore';
+import { useAuthStore, isAdminUser } from '../../../store/useAuthStore';
 
 export const CustomerProfileSidebar: React.FC = () => {
   const brands = useBrandStore((state) => state.brands);
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = isAdminUser(currentUser);
   const {
     conversations,
     activeConversationId,
@@ -406,16 +409,18 @@ export const CustomerProfileSidebar: React.FC = () => {
                 {customer.blocked_reason && (
                   <p className="text-[11px] text-rose-600 font-medium leading-tight">السبب: {customer.blocked_reason}</p>
                 )}
-                <button
-                  type="button"
-                  onClick={openUnblockModal}
-                  className="w-full py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>إلغاء حظر العميل (Unblock)</span>
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={openUnblockModal}
+                    className="w-full py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>إلغاء حظر العميل (Unblock)</span>
+                  </button>
+                )}
               </div>
-            ) : (
+            ) : isAdmin ? (
               <button
                 type="button"
                 onClick={openBlockModal}
@@ -425,7 +430,7 @@ export const CustomerProfileSidebar: React.FC = () => {
                 <Ban className="w-3.5 h-3.5" />
                 <span>حظر هذا العميل (Block Customer)</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 

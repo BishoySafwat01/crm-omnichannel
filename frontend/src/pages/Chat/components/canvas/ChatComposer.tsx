@@ -19,6 +19,7 @@ import {
 import { useCrmStore } from '../../../../store/useCrmStore';
 import { Conversation, Message } from '../../../../types/crm';
 import { CANNED_RESPONSES } from '../../constants/chatConstants';
+import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
 
 export interface StagedMediaItem {
   file: File;
@@ -50,6 +51,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     setEditingMessage,
     editMessage,
   } = useCrmStore();
+
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = isAdminUser(currentUser);
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
@@ -413,13 +417,15 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenBlockModal('unblock')}
-            className="px-4 py-2 bg-white hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-300 transition shadow-2xs shrink-0 cursor-pointer"
-          >
-            فك الحظر (Unblock)
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => onOpenBlockModal('unblock')}
+              className="px-4 py-2 bg-white hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-300 transition shadow-2xs shrink-0 cursor-pointer"
+            >
+              فك الحظر (Unblock)
+            </button>
+          )}
         </div>
       ) : (
         <div className="border border-slate-200/80 focus-within:border-theme-primary focus-within:ring-2 focus-within:ring-theme-primary/20 bg-white/95 backdrop-blur-md rounded-2xl p-2.5 transition shadow-[0_10px_30px_-4px_rgba(0,0,0,0.06)] space-y-1.5 relative">

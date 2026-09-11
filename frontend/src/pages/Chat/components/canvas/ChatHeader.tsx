@@ -6,6 +6,7 @@ import { PresenceState } from '../../../../utils/presence';
 import { MessageSearchToolbar, ChatEmployeeItem } from './MessageSearchToolbar';
 import { AiInsightsDrawer, AiInsightsData } from './AiInsightsDrawer';
 import { META_TAGS } from '../../constants/chatConstants';
+import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
 
 export interface ChatHeaderProps {
   activeConv: Conversation;
@@ -70,6 +71,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onRunAIAnalysis,
   onSelectSmartReply,
 }) => {
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = isAdminUser(currentUser);
   const customerName =
     activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
@@ -208,16 +211,26 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Block / Unblock Customer Header Action */}
         {activeConv.customer?.is_blocked ? (
-          <button
-            type="button"
-            onClick={() => onOpenBlockModal('unblock')}
-            className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
-            title="إلغاء حظر العميل"
-          >
-            <Ban className="w-3.5 h-3.5 text-rose-600" />
-            <span>محظور (فك الحظر)</span>
-          </button>
-        ) : (
+          isAdmin ? (
+            <button
+              type="button"
+              onClick={() => onOpenBlockModal('unblock')}
+              className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
+              title="إلغاء حظر العميل"
+            >
+              <Ban className="w-3.5 h-3.5 text-rose-600" />
+              <span>محظور (فك الحظر)</span>
+            </button>
+          ) : (
+            <span
+              className="px-2.5 py-1 text-xs font-bold bg-rose-100 text-rose-700 rounded-full flex items-center gap-1 border border-rose-300 shadow-2xs select-none"
+              title="العميل محظور حالياً"
+            >
+              <Ban className="w-3.5 h-3.5 text-rose-600" />
+              <span>محظور</span>
+            </span>
+          )
+        ) : isAdmin ? (
           <button
             type="button"
             onClick={() => onOpenBlockModal('block')}
@@ -226,7 +239,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           >
             <Ban className="w-3.5 h-3.5" />
           </button>
-        )}
+        ) : null}
       </div>
     </header>
   );

@@ -576,6 +576,43 @@ class CustomerService:
         except Exception:
             pass
 
+        # Synchronize Block with Meta Graph API
+        try:
+            from app.core.config import settings
+            from app.models.connected_page import ConnectedPage
+            from app.integrations.meta.client import MetaClient
+
+            stmt_identities = select(CustomerIdentity).where(
+                CustomerIdentity.customer_id == customer.id,
+                CustomerIdentity.provider == ProviderEnum.META,
+            )
+            identities = (await session.execute(stmt_identities)).scalars().all()
+
+            if identities:
+                stmt_conv = select(Conversation).where(Conversation.customer_id == customer.id)
+                convs = (await session.execute(stmt_conv)).scalars().all()
+                target_page_ids = set()
+                for c in convs:
+                    if c.brand:
+                        stmt_cp = select(ConnectedPage).where(
+                            ConnectedPage.name == c.brand,
+                            ConnectedPage.status == "ACTIVE",
+                        )
+                        cp_row = (await session.execute(stmt_cp)).scalars().first()
+                        if cp_row and cp_row.page_id:
+                            target_page_ids.add(str(cp_row.page_id).strip())
+                if not target_page_ids and settings.META_PAGE_ID:
+                    target_page_ids.add(str(settings.META_PAGE_ID).strip())
+
+                meta_client = MetaClient(db=session)
+                for ident in identities:
+                    if ident.channel == ChannelEnum.MESSENGER and ident.external_user_id:
+                        for pid in target_page_ids:
+                            logger.info("[MetaBlock] Dispatching Meta block for PSID %s on page %s", ident.external_user_id, pid)
+                            await meta_client.block_page_user(page_id=pid, psid=ident.external_user_id, db=session)
+        except Exception as meta_exc:
+            logger.warning("Failed to synchronize customer %s block with Meta: %s", customer.id, meta_exc)
+
         return customer
 
     @staticmethod
@@ -634,6 +671,43 @@ class CustomerService:
             })
         except Exception:
             pass
+
+        # Synchronize Unblock with Meta Graph API
+        try:
+            from app.core.config import settings
+            from app.models.connected_page import ConnectedPage
+            from app.integrations.meta.client import MetaClient
+
+            stmt_identities = select(CustomerIdentity).where(
+                CustomerIdentity.customer_id == customer.id,
+                CustomerIdentity.provider == ProviderEnum.META,
+            )
+            identities = (await session.execute(stmt_identities)).scalars().all()
+
+            if identities:
+                stmt_conv = select(Conversation).where(Conversation.customer_id == customer.id)
+                convs = (await session.execute(stmt_conv)).scalars().all()
+                target_page_ids = set()
+                for c in convs:
+                    if c.brand:
+                        stmt_cp = select(ConnectedPage).where(
+                            ConnectedPage.name == c.brand,
+                            ConnectedPage.status == "ACTIVE",
+                        )
+                        cp_row = (await session.execute(stmt_cp)).scalars().first()
+                        if cp_row and cp_row.page_id:
+                            target_page_ids.add(str(cp_row.page_id).strip())
+                if not target_page_ids and settings.META_PAGE_ID:
+                    target_page_ids.add(str(settings.META_PAGE_ID).strip())
+
+                meta_client = MetaClient(db=session)
+                for ident in identities:
+                    if ident.channel == ChannelEnum.MESSENGER and ident.external_user_id:
+                        for pid in target_page_ids:
+                            logger.info("[MetaBlock] Dispatching Meta unblock for PSID %s on page %s", ident.external_user_id, pid)
+                            await meta_client.unblock_page_user(page_id=pid, psid=ident.external_user_id, db=session)
+        except Exception as meta_exc:
+            logger.warning("Failed to synchronize customer %s unblock with Meta: %s", customer.id, meta_exc)
 
         return customer
 

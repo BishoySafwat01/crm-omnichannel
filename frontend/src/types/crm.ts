@@ -160,7 +160,7 @@ export interface PaginatedResponse<T> {
   next_cursor?: string;
 }
 
-export type FilterTab = 'all' | 'unread' | 'completed' | 'tagged' | 'sla_breached';
+export type FilterTab = 'all' | 'unread' | 'completed' | 'tagged' | 'sla_breached' | 'blocked';
 
 export interface TagGroup {
   id: string;

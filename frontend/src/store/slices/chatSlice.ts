@@ -129,7 +129,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const selectedCountry = get().selectedCountry;
       const selectedProvider = get().selectedProvider;
       const isCompletedTab = get().activeFilterTab === 'completed';
-      const showArchived = isCompletedTab || Boolean(get().showArchived);
+      const isBlockedTab = get().activeFilterTab === 'blocked';
+      const showArchived = isCompletedTab || isBlockedTab || Boolean(get().showArchived);
       const raw = await getConversationsDirect(
         selectedBrand,
         selectedChannel,
