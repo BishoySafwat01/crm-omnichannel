@@ -129,9 +129,23 @@ class MetaImportService:
         return "Default Business Page"
 
     @staticmethod
-    async def fetch_and_cache_customer_profile(psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
+    async def fetch_and_cache_customer_profile(
+        psid: str,
+        page_id: Optional[str] = None,
+        channel: Optional[Any] = None,
+    ) -> dict[str, Any]:
         if not psid or not str(psid).strip() or psid == "unknown_customer" or psid == "system":
             return {}
+
+        clean_psid = str(psid).strip()
+        is_ig = (
+            (channel and str(getattr(channel, "value", channel)).lower() == "instagram")
+            or clean_psid.startswith(("ig_", "i_"))
+        )
+        if clean_psid.startswith("ig_"):
+            clean_psid = clean_psid[3:]
+        elif clean_psid.startswith("i_"):
+            clean_psid = clean_psid[2:]
 
         configured_pages = settings.get_meta_pages()
         valid_page_ids = {
@@ -160,17 +174,17 @@ class MetaImportService:
         except Exception:
             pass
 
-        if str(psid).strip() in valid_page_ids:
+        if clean_psid in valid_page_ids:
             return {}
 
         from app.integrations.meta.rate_limit import MetaRateLimitGuard
 
         if MetaRateLimitGuard.is_rate_limited():
-            logger.debug("[Profile Enrichment] Rate limit cooldown active. Skipping profile fetch for PSID: %s", psid)
+            logger.debug("[Profile Enrichment] Rate limit cooldown active. Skipping profile fetch for PSID: %s", clean_psid)
             return {}
 
-        if MetaRateLimitGuard.is_psid_failed_recently(psid):
-            logger.debug("[Profile Enrichment] PSID %s recently failed lookup (negative cached). Skipping.", psid)
+        if MetaRateLimitGuard.is_psid_failed_recently(clean_psid):
+            logger.debug("[Profile Enrichment] PSID %s recently failed lookup (negative cached). Skipping.", clean_psid)
             return {}
 
         avatars_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
@@ -182,38 +196,64 @@ class MetaImportService:
             token = settings.get_page_token(page_id)
         if not token:
             return {}
-        url = f"https://graph.facebook.com/v23.0/{psid}?fields=first_name,last_name,profile_pic,locale&access_token={token}"
+
+        headers = {"Authorization": f"Bearer {token}"}
+        fields = "name,username,profile_pic" if is_ig else "first_name,last_name,profile_pic,locale"
+        url = f"https://graph.facebook.com/v23.0/{clean_psid}?fields={fields}&access_token={token}"
+
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 res = await client.get(url)
                 MetaRateLimitGuard.inspect_response(res)
+
+                # Fallback to Instagram fields if first_name fails on InstagramScopedID
+                if res.status_code == 400 and not is_ig and "first_name" in res.text:
+                    fallback_url = f"https://graph.facebook.com/v23.0/{clean_psid}?fields=name,username,profile_pic&access_token={token}"
+                    res = await client.get(fallback_url)
+                    MetaRateLimitGuard.inspect_response(res)
+
                 if res.status_code == 200:
                     data = res.json()
                     pic_url = data.get("profile_pic")
                     local_avatar_url = None
                     if pic_url:
-                        pic_res = await client.get(
-                            pic_url,
-                            headers={"Authorization": f"Bearer {token}"},
-                        )
-                        if pic_res.status_code == 200 and len(pic_res.content) > 500:
-                            dest_file = f"avatar_{psid}.jpg"
-                            dest_path = os.path.join(avatars_dir, dest_file)
-                            with open(dest_path, "wb") as f:
-                                f.write(pic_res.content)
-                            local_avatar_url = f"/uploads/avatars/{dest_file}"
+                        try:
+                            pic_res = await client.get(
+                                pic_url,
+                                headers=headers,
+                            )
+                            if pic_res.status_code == 200 and len(pic_res.content) > 500:
+                                dest_file = f"avatar_{clean_psid}.jpg"
+                                dest_path = os.path.join(avatars_dir, dest_file)
+                                with open(dest_path, "wb") as f:
+                                    f.write(pic_res.content)
+                                local_avatar_url = f"/uploads/avatars/{dest_file}"
+                        except Exception as pic_err:
+                            logger.debug("[Profile Enrichment] Failed to download avatar for %s: %s", clean_psid, pic_err)
+
+                    final_avatar = local_avatar_url or pic_url
+                    first_name = data.get("first_name", "")
+                    last_name = data.get("last_name", "")
+                    name = data.get("name", "")
+                    username = data.get("username", "")
+                    full_name = f"{first_name} {last_name}".strip()
+                    display_name = full_name or name or username or ""
 
                     return {
-                        "first_name": data.get("first_name", ""),
-                        "last_name": data.get("last_name", ""),
-                        "profile_pic": local_avatar_url or pic_url,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "name": name,
+                        "username": username,
+                        "display_name": display_name,
+                        "profile_pic": final_avatar,
+                        "avatar_url": final_avatar,
                         "locale": data.get("locale"),
                     }
                 else:
-                    MetaRateLimitGuard.record_failed_psid(psid, ttl_seconds=3600)
+                    MetaRateLimitGuard.record_failed_psid(clean_psid, ttl_seconds=3600)
         except Exception as e:
-            logger.warning("Failed to fetch/cache avatar for PSID %s: %s", psid, e)
-            MetaRateLimitGuard.record_failed_psid(psid, ttl_seconds=1800)
+            logger.warning("Failed to fetch/cache avatar for PSID %s: %s", clean_psid, e)
+            MetaRateLimitGuard.record_failed_psid(clean_psid, ttl_seconds=1800)
         return {}
 
     @staticmethod
@@ -294,12 +334,19 @@ class MetaImportService:
                 profile_info = {}
                 if cust_ext_id and cust_ext_id != "unknown_customer":
                     try:
-                        profile_info = await MetaImportService.fetch_and_cache_customer_profile(cust_ext_id, page_id=target_page_id)
+                        profile_info = await MetaImportService.fetch_and_cache_customer_profile(
+                            cust_ext_id,
+                            page_id=target_page_id,
+                            channel=channel,
+                        )
                     except Exception:
                         profile_info = {}
 
                 resolved_name = (
-                    f"{profile_info.get('first_name', '')} {profile_info.get('last_name', '')}".strip()
+                    profile_info.get("display_name")
+                    or f"{profile_info.get('first_name', '')} {profile_info.get('last_name', '')}".strip()
+                    or profile_info.get("name")
+                    or profile_info.get("username")
                     or norm_conv.customer_display_name
                 )
 
@@ -312,11 +359,15 @@ class MetaImportService:
                 )
 
                 # Enrich Customer profile details
-                if profile_info.get("profile_pic"):
-                    customer.avatar_url = profile_info["profile_pic"]
+                resolved_pic = profile_info.get("avatar_url") or profile_info.get("profile_pic")
+                if resolved_pic:
+                    customer.avatar_url = resolved_pic
                 if profile_info.get("locale"):
                     customer.locale = profile_info["locale"]
-                if resolved_name:
+                if resolved_name and (
+                    not customer.display_name
+                    or customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم")
+                ):
                     customer.display_name = resolved_name
                 await session.flush()
 
@@ -789,12 +840,13 @@ class MetaImportService:
                         external_user_id=target_cust_id,
                     )
 
-                    if not customer.avatar_url or customer.display_name == "عميل":
+                    if not customer.avatar_url or not customer.display_name or customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم"):
                         asyncio.create_task(
                             MetaImportService.enrich_customer_profile_background(
                                 customer_id=customer.id,
                                 sender_psid=target_cust_id,
                                 page_id=entry_page_id,
+                                channel=norm_event.channel,
                             )
                         )
 
@@ -930,17 +982,21 @@ class MetaImportService:
                     last_result_msg_id = norm_event.external_message_id
                     continue
 
-                if norm_event.sender_name and (not customer.display_name or customer.display_name == "عميل"):
+                if norm_event.sender_name and (
+                    not customer.display_name
+                    or customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم")
+                ):
                     customer.display_name = norm_event.sender_name
                     session.add(customer)
 
-                if not customer.avatar_url or customer.display_name == "عميل":
+                if not customer.avatar_url or not customer.display_name or customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم"):
                     # Fire profile enrichment asynchronously in the background to keep webhook response <500ms
                     asyncio.create_task(
                         MetaImportService.enrich_customer_profile_background(
                             customer_id=customer.id,
                             sender_psid=norm_event.sender_psid,
                             page_id=entry_page_id,
+                            channel=norm_event.channel,
                         )
                     )
 
@@ -1562,23 +1618,44 @@ class MetaImportService:
                 logger.debug("[Live Poller] Platform %s sync error: %s", plat["name"], ex)
 
     @classmethod
-    async def enrich_customer_profile_background(cls, customer_id: uuid.UUID, sender_psid: str, page_id: Optional[str] = None):
+    async def enrich_customer_profile_background(
+        cls,
+        customer_id: uuid.UUID,
+        sender_psid: str,
+        page_id: Optional[str] = None,
+        channel: Optional[Any] = None,
+    ):
         """Asynchronously fetches and updates customer profile info in background session."""
         try:
-            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid, page_id=page_id)
-            if not pinfo.get("avatar_url") and not pinfo.get("display_name"):
+            pinfo = await cls.fetch_and_cache_customer_profile(sender_psid, page_id=page_id, channel=channel)
+            resolved_avatar = pinfo.get("avatar_url") or pinfo.get("profile_pic")
+            resolved_display_name = pinfo.get("display_name") or pinfo.get("name") or pinfo.get("username")
+            if not resolved_avatar and not resolved_display_name:
                 return
 
             async with AsyncSessionLocal() as session:
                 cust = await session.get(Customer, customer_id)
                 if cust:
-                    if pinfo.get("avatar_url"):
-                        cust.avatar_url = pinfo["avatar_url"]
-                    if pinfo.get("display_name") and cust.display_name == "عميل":
-                        cust.display_name = pinfo["display_name"]
-                    session.add(cust)
-                    await session.commit()
-                    logger.info("[Background Profile Enrichment] Updated customer %s (%s)", customer_id, sender_psid)
+                    updated = False
+                    if resolved_avatar and not cust.avatar_url:
+                        cust.avatar_url = resolved_avatar
+                        updated = True
+                    if resolved_display_name and (
+                        not cust.display_name
+                        or cust.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم")
+                    ):
+                        cust.display_name = resolved_display_name
+                        updated = True
+                    if updated:
+                        session.add(cust)
+                        await session.commit()
+                        logger.info(
+                            "[Background Profile Enrichment] Updated customer %s (%s) -> name: %s, avatar: %s",
+                            customer_id,
+                            sender_psid,
+                            cust.display_name,
+                            bool(cust.avatar_url),
+                        )
         except Exception as e:
             logger.warning("[Background Profile Enrichment Error] PSID %s: %s", sender_psid, e)
 

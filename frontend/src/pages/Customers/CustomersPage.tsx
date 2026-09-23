@@ -466,7 +466,7 @@ export const CustomerDataHub: React.FC = () => {
                       </td>
                       <td className="px-4 py-3.5">
                         <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${chanStyle}`}>
-                          {cust.channel ? (cust.channel.charAt(0).toUpperCase() + cust.channel.slice(1)) : 'Messenger'}
+                          {cust.channel ? (cust.channel.charAt(0).toUpperCase() + cust.channel.slice(1)) : 'غير محدد'}
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-slate-600">
@@ -621,7 +621,7 @@ export const CustomerDataHub: React.FC = () => {
                 <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
                   <span className="text-[10px] text-slate-400 font-bold block mb-0.5">القناة</span>
                   <span className="font-bold text-blue-700">
-                    {selectedCustomer.channel ? (selectedCustomer.channel.charAt(0).toUpperCase() + selectedCustomer.channel.slice(1)) : 'Messenger'}
+                    {selectedCustomer.channel ? (selectedCustomer.channel.charAt(0).toUpperCase() + selectedCustomer.channel.slice(1)) : 'غير محدد'}
                   </span>
                 </div>
                 <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">

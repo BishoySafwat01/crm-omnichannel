@@ -356,16 +356,66 @@ class MetaClient:
 
         return await self._request("GET", f"/{conversation_id}/messages", params=params, page_id=page_id)
 
-    async def get_user_profile(self, psid: str, page_id: Optional[str] = None) -> dict[str, Any]:
+    async def get_user_profile(
+        self,
+        psid: str,
+        page_id: Optional[str] = None,
+        channel: Optional[Any] = None,
+    ) -> dict[str, Any]:
         if not psid or not str(psid).strip():
             return {}
+        clean_psid = str(psid).strip()
+        is_ig = (
+            (channel and str(getattr(channel, "value", channel)).lower() == "instagram")
+            or clean_psid.startswith(("ig_", "i_"))
+        )
+        if clean_psid.startswith("ig_"):
+            clean_psid = clean_psid[3:]
+        elif clean_psid.startswith("i_"):
+            clean_psid = clean_psid[2:]
+
+        if is_ig:
+            try:
+                res = await self._request(
+                    "GET",
+                    f"/{clean_psid}",
+                    params={"fields": "name,username,profile_pic"},
+                    page_id=page_id,
+                )
+                if isinstance(res, dict):
+                    res["display_name"] = res.get("name") or res.get("username") or ""
+                return res
+            except Exception as exc:
+                logger.debug("Instagram profile query for %s failed: %s", clean_psid, exc)
+                return {}
+
         try:
-            return await self._request(
+            res = await self._request(
                 "GET",
-                f"/{psid}",
+                f"/{clean_psid}",
                 params={"fields": "first_name,last_name,profile_pic,locale,timezone,gender"},
                 page_id=page_id,
             )
+            if isinstance(res, dict):
+                full = f"{res.get('first_name', '')} {res.get('last_name', '')}".strip()
+                res["display_name"] = full or res.get("name") or ""
+            return res
+        except MetaAPIError as exc:
+            if "nonexisting field" in str(exc).lower() or "#100" in str(exc):
+                # Fallback to Instagram profile fields
+                try:
+                    res = await self._request(
+                        "GET",
+                        f"/{clean_psid}",
+                        params={"fields": "name,username,profile_pic"},
+                        page_id=page_id,
+                    )
+                    if isinstance(res, dict):
+                        res["display_name"] = res.get("name") or res.get("username") or ""
+                    return res
+                except Exception:
+                    return {}
+            return {}
         except Exception:
             return {}
 
@@ -376,6 +426,7 @@ class MetaClient:
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        channel: Optional[Any] = None,
     ) -> dict[str, Any]:
         target_page_id = page_id or self.page_id
         if not target_page_id:
@@ -387,59 +438,72 @@ class MetaClient:
         if not text or not str(text).strip():
             raise MetaAPIError("Message text cannot be empty or whitespace only.", status_code=400)
 
+        clean_recipient = str(recipient_id).strip()
+        if clean_recipient.startswith("ig_"):
+            clean_recipient = clean_recipient[3:]
+        elif clean_recipient.startswith("i_"):
+            clean_recipient = clean_recipient[2:]
+
+        is_ig = (
+            (channel and str(getattr(channel, "value", channel)).lower() == "instagram")
+            or str(recipient_id).strip().startswith(("ig_", "i_"))
+        )
+
         payload: dict[str, Any] = {
-            "recipient": {"id": recipient_id},
+            "recipient": {"id": clean_recipient},
             "message": {"text": text},
         }
 
-        if tag:
-            payload["messaging_type"] = "MESSAGE_TAG"
-            payload["tag"] = tag
-        else:
-            payload["messaging_type"] = "RESPONSE"
+        if not is_ig:
+            if tag:
+                payload["messaging_type"] = "MESSAGE_TAG"
+                payload["tag"] = tag
+            else:
+                payload["messaging_type"] = "RESPONSE"
 
         active_db = db or self.db
         token = await self.get_token_for_page(target_page_id, db=active_db)
+        endpoint = "/me/messages" if is_ig else f"/{target_page_id}/messages"
 
         try:
             return await self._request(
                 "POST",
-                f"/{target_page_id}/messages",
+                endpoint,
                 json_data=payload,
                 page_id=target_page_id,
                 access_token=token,
                 db=active_db,
             )
         except MetaAPIError as exc:
-            # If tag is unapproved on Meta App dashboard (#100), retry with standard RESPONSE
-            if tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message or "tag" in exc.message.lower()):
+            # If tag is unapproved on Meta App dashboard (#100), retry with standard RESPONSE (Messenger only)
+            if not is_ig and tag and ("#100" in exc.message or "HUMAN_AGENT" in exc.message or "tag" in exc.message.lower()):
                 logger.info("[MetaClient] Message tag '%s' rejected (%s). Retrying with messaging_type='RESPONSE'.", tag, exc.message)
                 fallback_payload = {
-                    "recipient": {"id": recipient_id},
+                    "recipient": {"id": clean_recipient},
                     "messaging_type": "RESPONSE",
                     "message": {"text": text},
                 }
                 return await self._request(
                     "POST",
-                    f"/{target_page_id}/messages",
+                    endpoint,
                     json_data=fallback_payload,
                     page_id=target_page_id,
                     access_token=token,
                     db=active_db,
                 )
             # If standard RESPONSE rejected because 24-hour window closed, attempt fallback with HUMAN_AGENT tag
-            elif not tag and ("24 hours" in exc.message.lower() or "2018001" in exc.message or "2018278" in exc.message or "outside the allowed window" in exc.message.lower()):
-                logger.info("[MetaClient] 24-hour window closed for recipient %s. Attempting fallback with HUMAN_AGENT tag.", recipient_id)
+            elif not is_ig and not tag and ("24 hours" in exc.message.lower() or "2018001" in exc.message or "2018278" in exc.message or "outside the allowed window" in exc.message.lower()):
+                logger.info("[MetaClient] 24-hour window closed for recipient %s. Attempting fallback with HUMAN_AGENT tag.", clean_recipient)
                 try:
                     ha_payload = {
-                        "recipient": {"id": recipient_id},
+                        "recipient": {"id": clean_recipient},
                         "messaging_type": "MESSAGE_TAG",
                         "tag": "HUMAN_AGENT",
                         "message": {"text": text},
                     }
                     return await self._request(
                         "POST",
-                        f"/{target_page_id}/messages",
+                        endpoint,
                         json_data=ha_payload,
                         page_id=target_page_id,
                         access_token=token,
@@ -456,6 +520,7 @@ class MetaClient:
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        channel: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Send outbound text message via Meta Graph API (alias for send_message)."""
         return await self.send_message(
@@ -464,6 +529,7 @@ class MetaClient:
             page_id=page_id,
             tag=tag,
             db=db,
+            channel=channel,
         )
 
     async def send_attachment_message(

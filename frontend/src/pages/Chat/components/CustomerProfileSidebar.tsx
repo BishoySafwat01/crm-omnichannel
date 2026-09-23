@@ -32,7 +32,7 @@ export const CustomerProfileSidebar: React.FC = () => {
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const customer = activeConversation?.customer || (activeConversation ? {
     id: activeConversation.customer_id || '',
-    display_name: activeConversation.customer_display_name || 'عميل بدون اسم',
+    display_name: activeConversation.customer_display_name || 'عميل',
     phone: '',
     email: '',
     location: '',
@@ -296,7 +296,7 @@ export const CustomerProfileSidebar: React.FC = () => {
               />
             ) : (
               <div className="space-y-1">
-                <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || 'عميل غير مسمى'}</h3>
+                <h3 className="font-extrabold text-sm text-slate-900">{customer.display_name || activeConversation?.customer_display_name || 'عميل'}</h3>
                 {(() => {
                   const brandObj = getBrandObject(activeConversation?.brand_id, activeConversation?.brand || activeConversation?.brand_name);
                   if (brandObj.isDirect) {

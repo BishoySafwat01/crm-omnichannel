@@ -81,7 +81,7 @@ class CustomerService:
         page: int = 1,
         page_size: int = 50,
     ) -> tuple[list[dict[str, Any]], int, int]:
-        stmt = select(Customer)
+        stmt = select(Customer).options(selectinload(Customer.identities))
         count_stmt = select(func.count(Customer.id))
         conditions = []
 
@@ -187,6 +187,9 @@ class CustomerService:
             conv = customer_latest_conv.get(c.id)
             brand_val = getattr(conv, "brand", "LAVVA") if conv else "LAVVA"
             chan_val = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)) if conv else None
+            if not chan_val and c.identities:
+                first_id = c.identities[0]
+                chan_val = first_id.channel.value if hasattr(first_id.channel, "value") else str(first_id.channel)
             conv_id = conv.id if conv else None
             conv_status = (conv.status.value if hasattr(conv.status, "value") else str(conv.status)) if conv else None
             assigned_id = conv.assigned_agent_id if conv else None
@@ -344,6 +347,9 @@ class CustomerService:
 
         brand_val = getattr(conv, "brand", "LAVVA") if conv else "LAVVA"
         chan_val = (conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)) if conv else None
+        if not chan_val and customer.identities:
+            first_id = customer.identities[0]
+            chan_val = first_id.channel.value if hasattr(first_id.channel, "value") else str(first_id.channel)
         conv_id = conv.id if conv else None
         conv_status = (conv.status.value if hasattr(conv.status, "value") else str(conv.status)) if conv else None
         assigned_id = conv.assigned_agent_id if conv else None
@@ -480,8 +486,17 @@ class CustomerService:
             session, provider, channel, external_user_id
         )
         if existing_customer:
+            updated = False
             if workspace_id and not existing_customer.workspace_id:
                 existing_customer.workspace_id = workspace_id
+                updated = True
+            if display_name and str(display_name).strip() and (
+                not existing_customer.display_name
+                or existing_customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم")
+            ):
+                existing_customer.display_name = str(display_name).strip()
+                updated = True
+            if updated:
                 session.add(existing_customer)
                 await session.flush()
             stmt = select(CustomerIdentity).where(
@@ -491,7 +506,17 @@ class CustomerService:
                 CustomerIdentity.external_user_id == external_user_id,
             )
             res = await session.execute(stmt)
-            identity = res.scalar_one()
+            identity = res.scalar_one_or_none()
+            if not identity:
+                identity = CustomerIdentity(
+                    customer_id=existing_customer.id,
+                    provider=provider,
+                    channel=channel,
+                    external_user_id=external_user_id,
+                    metadata_=metadata_ or {},
+                )
+                session.add(identity)
+                await session.flush()
             return existing_customer, identity
 
         customer = Customer(

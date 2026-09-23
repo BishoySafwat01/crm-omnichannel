@@ -307,7 +307,15 @@ class ConversationService:
         items = []
         for conv in conversations:
             cust = conv.customer
-            cust_name = cust.display_name if cust and cust.display_name else "مستخدم Messenger"
+            cust_name = cust.display_name if cust and cust.display_name else None
+            if not cust_name:
+                chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
+                if chan_str.upper() == "INSTAGRAM":
+                    cust_name = "عميل Instagram"
+                elif chan_str.upper() == "WHATSAPP":
+                    cust_name = "عميل WhatsApp"
+                else:
+                    cust_name = "عميل Messenger"
             cust_avatar = cust.avatar_url if cust and cust.avatar_url else None
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)

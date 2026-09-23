@@ -197,12 +197,14 @@ class MetaProvider(BaseMessagingProvider):
         **kwargs: Any,
     ) -> dict[str, Any]:
         active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
+        channel = kwargs.get("channel") or self.channel
         res = await self.client.send_message(
             recipient_id=recipient_external_id,
             text=text,
             page_id=page_id or self.page_id,
             tag=tag,
             db=active_db,
+            channel=channel,
         )
         return {
             "external_message_id": res.get("message_id") or res.get("id"),
