@@ -1633,6 +1633,7 @@ class MetaImportService:
             if not resolved_avatar and not resolved_display_name:
                 return
 
+            from app.core.database import AsyncSessionLocal
             async with AsyncSessionLocal() as session:
                 cust = await session.get(Customer, customer_id)
                 if cust:
