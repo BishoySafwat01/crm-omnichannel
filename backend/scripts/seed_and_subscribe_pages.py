@@ -34,13 +34,13 @@ PAGES_TO_SEED = [
     {
         "page_id": "101509818947526",
         "name": "Lotus blue cosmetic",
-        "raw_token": "EAAk1SRQu6S4BSqOV3QZCpilUinZBGijIecmVmzXBhAgaec4iuO1J3SHCC7VVEuVkmxVVxT76pU9uLOyBuxvp0AGelAWUqhXisZAffBlct2brOZBGPrgURiKNpvzqry2iw8rHYZBZCDsKtwtA4jXE1CrSd5vySXcRP81aB5L8BX2dJyp5W9r7RZAPbJR29CgH0fNWYDUGhSZAZCFx2LLaZAy9DN",
+        "raw_token": "EAAeZAJ6riiYcBSoOZACCb0QDZBbrGh6MG2jr9F6oggZBDJW5nQijqMZAC89eaf0OtFsv89J7aoAZAk4mZAtxHNSr5TukFkgoeFY6EXmLrZC1d78n4noQ035fpUuPuH1MB8RNt3zt2OC1pUkmV8ESG1RMqVY1FOQStEd84MLxrZBKjCzeTQGZBcqhGAxtn420KRlhcWxrLqUevDWtBn3742HrsZD",
         "category": "مستحضرات تجميل",
     },
     {
         "page_id": "1144890542050640",
         "name": "Lotus Blue",
-        "raw_token": "EAAk1SRQu6S4BSvgF8ZAZCQYEerzLdlchX3BxYsp1hApI9Otv7QhjSaIwustDHhd1pklAbp7xvj6xU9pA0OIToHcxKLUqI84PDpRisK93eAeZBgp3UHE2HlFII1OnFQH4jjo3jSUDQV7Affkuz6opx0w2ZANrHonkyoi56nOFLvWflbM1BGOCD2AIjD8KzDG4AyIFUINumdNCydI8c0xxXgZDZD",
+        "raw_token": "EAAeZAJ6riiYcBSrU37o9STCkW3ZAco2hk69Af5ZANJZBy7JgiRZCplgo1z7KKzPuMZCu8W6NaWuvDUXNaKcrZAHiq4ZB14vayOqpjqsZADr9xPFqRYVLLU5Om6l168YXFXwlTZA663qfKCyI4WZB9dlpVZAt2pkRZCE1NN3ZC1ImW2nJDzngLjRZAlPp0uN8LajDNfG2bCZAofNizGZBnCutQMq1rRnoR",
         "category": "اختصاصي تجميل",
     },
 ]

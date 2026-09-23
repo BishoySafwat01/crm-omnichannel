@@ -374,13 +374,15 @@ class MetaClient:
         elif clean_psid.startswith("i_"):
             clean_psid = clean_psid[2:]
 
+        target_page_id = page_id or self.page_id
+
         if is_ig:
             try:
                 res = await self._request(
                     "GET",
                     f"/{clean_psid}",
                     params={"fields": "name,username,profile_pic"},
-                    page_id=page_id,
+                    page_id=target_page_id,
                 )
                 if isinstance(res, dict):
                     res["display_name"] = res.get("name") or res.get("username") or ""
@@ -389,35 +391,54 @@ class MetaClient:
                 logger.debug("Instagram profile query for %s failed: %s", clean_psid, exc)
                 return {}
 
+        # 1. Direct PSID query with standard permissions fields (first_name, last_name, name, profile_pic)
         try:
             res = await self._request(
                 "GET",
                 f"/{clean_psid}",
-                params={"fields": "first_name,last_name,profile_pic,locale,timezone,gender"},
-                page_id=page_id,
+                params={"fields": "first_name,last_name,name,profile_pic"},
+                page_id=target_page_id,
             )
             if isinstance(res, dict):
-                full = f"{res.get('first_name', '')} {res.get('last_name', '')}".strip()
+                first_name = res.get("first_name", "")
+                last_name = res.get("last_name", "")
+                full = f"{first_name} {last_name}".strip()
                 res["display_name"] = full or res.get("name") or ""
-            return res
+                return res
         except MetaAPIError as exc:
-            if "nonexisting field" in str(exc).lower() or "#100" in str(exc):
-                # Fallback to Instagram profile fields
-                try:
-                    res = await self._request(
-                        "GET",
-                        f"/{clean_psid}",
-                        params={"fields": "name,username,profile_pic"},
-                        page_id=page_id,
-                    )
-                    if isinstance(res, dict):
-                        res["display_name"] = res.get("name") or res.get("username") or ""
-                    return res
-                except Exception:
-                    return {}
-            return {}
-        except Exception:
-            return {}
+            logger.debug("[MetaClient] Direct PSID profile query failed for %s: %s", clean_psid, exc)
+
+        # 2. Fallback: Query conversation participants for this user on the page
+        if target_page_id:
+            try:
+                conv_res = await self._request(
+                    "GET",
+                    f"/{target_page_id}/conversations",
+                    params={"user_id": clean_psid, "fields": "participants,senders"},
+                    page_id=target_page_id,
+                )
+                if isinstance(conv_res, dict) and conv_res.get("data"):
+                    for conv_item in conv_res["data"]:
+                        parts = conv_item.get("participants", {}).get("data", [])
+                        for p in parts:
+                            p_id = str(p.get("id", ""))
+                            if p_id == str(clean_psid) or (p_id and p_id != str(target_page_id)):
+                                cust_name = p.get("name", "").strip()
+                                if cust_name:
+                                    parts_split = cust_name.split()
+                                    first_n = parts_split[0] if parts_split else ""
+                                    last_n = " ".join(parts_split[1:]) if len(parts_split) > 1 else ""
+                                    return {
+                                        "first_name": first_n,
+                                        "last_name": last_n,
+                                        "name": cust_name,
+                                        "display_name": cust_name,
+                                        "profile_pic": None,
+                                    }
+            except Exception as conv_err:
+                logger.debug("[MetaClient] Conversation participant query failed for PSID %s: %s", clean_psid, conv_err)
+
+        return {}
 
     async def send_message(
         self,

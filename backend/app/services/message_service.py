@@ -395,6 +395,7 @@ class MessageService:
                     page_id=conv_page_id,
                     tag=tag,
                     db=session,
+                    channel=conv.channel,
                 )
             except TypeError:
                 try:
@@ -404,6 +405,7 @@ class MessageService:
                         attachment_type=att_type,
                         page_id=conv_page_id,
                         tag=tag,
+                        channel=conv.channel,
                     )
                 except TypeError:
                     outbound_res = await adapter.send_outbound_attachment(
@@ -421,6 +423,7 @@ class MessageService:
                         page_id=conv_page_id,
                         tag=tag,
                         db=session,
+                        channel=conv.channel,
                     )
                 except TypeError:
                     try:
@@ -429,6 +432,7 @@ class MessageService:
                             text=clean_text,
                             page_id=conv_page_id,
                             tag=tag,
+                            channel=conv.channel,
                         )
                     except TypeError:
                         outbound_res = await adapter.send_outbound_message(
@@ -443,6 +447,7 @@ class MessageService:
                         text=clean_text,
                         page_id=conv_page_id,
                         db=session,
+                        channel=conv.channel,
                     )
                 except TypeError:
                     try:
@@ -450,6 +455,7 @@ class MessageService:
                             recipient_external_id=clean_recipient,
                             text=clean_text,
                             page_id=conv_page_id,
+                            channel=conv.channel,
                         )
                     except TypeError:
                         outbound_res = await adapter.send_outbound_message(
@@ -488,6 +494,7 @@ class MessageService:
                         page_id=conv_page_id,
                         tag=tag,
                         db=session,
+                        channel=conv.channel,
                     )
                 except TypeError:
                     try:
@@ -496,6 +503,7 @@ class MessageService:
                             text=clean_text,
                             page_id=conv_page_id,
                             tag=tag,
+                            channel=conv.channel,
                         )
                     except TypeError:
                         outbound_res = await adapter.send_outbound_message(
@@ -510,6 +518,7 @@ class MessageService:
                         text=clean_text,
                         page_id=conv_page_id,
                         db=session,
+                        channel=conv.channel,
                     )
                 except TypeError:
                     try:
@@ -517,6 +526,7 @@ class MessageService:
                             recipient_external_id=clean_recipient,
                             text=clean_text,
                             page_id=conv_page_id,
+                            channel=conv.channel,
                         )
                     except TypeError:
                         outbound_res = await adapter.send_outbound_message(

@@ -17,6 +17,26 @@ from app.schemas.customer import CustomerUpdate
 logger = logging.getLogger("app.services.customer_service")
 
 
+def is_generic_display_name(name: Optional[str]) -> bool:
+    if not name or not str(name).strip():
+        return True
+    s = str(name).strip()
+    if s in (
+        "عميل",
+        "عميل غير مسمى",
+        "عميل بدون اسم",
+        "Messenger",
+        "مستخدم Messenger",
+        "عميل Messenger",
+        "عميل Instagram",
+        "عميل WhatsApp",
+    ):
+        return True
+    if s.startswith("عميل ") or s.startswith("مستخدم "):
+        return True
+    return False
+
+
 class CustomerService:
     @staticmethod
     async def create_customer(
@@ -492,7 +512,7 @@ class CustomerService:
                 updated = True
             if display_name and str(display_name).strip() and (
                 not existing_customer.display_name
-                or existing_customer.display_name.strip() in ("عميل", "عميل غير مسمى", "Messenger", "مستخدم Messenger", "عميل بدون اسم")
+                or is_generic_display_name(existing_customer.display_name)
             ):
                 existing_customer.display_name = str(display_name).strip()
                 updated = True

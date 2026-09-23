@@ -19,10 +19,12 @@ class MetaProvider(BaseMessagingProvider):
         client: Optional[MetaClient] = None,
         page_id: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        channel: ChannelEnum = ChannelEnum.MESSENGER,
     ):
         self.db = db
         self.client = client or MetaClient(page_id=page_id, db=db)
         self.page_id = page_id or self.client.page_id
+        self.channel = channel
 
     async def validate_credentials(self, db: Optional[AsyncSession] = None) -> dict[str, Any]:
         active_db = db or self.db
@@ -197,11 +199,12 @@ class MetaProvider(BaseMessagingProvider):
         **kwargs: Any,
     ) -> dict[str, Any]:
         active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
-        channel = kwargs.get("channel") or self.channel
+        channel = kwargs.get("channel") or getattr(self, "channel", ChannelEnum.MESSENGER)
+        target_page_id = page_id or self.page_id
         res = await self.client.send_message(
             recipient_id=recipient_external_id,
             text=text,
-            page_id=page_id or self.page_id,
+            page_id=target_page_id,
             tag=tag,
             db=active_db,
             channel=channel,
@@ -223,13 +226,16 @@ class MetaProvider(BaseMessagingProvider):
         **kwargs: Any,
     ) -> dict[str, Any]:
         active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
+        channel = kwargs.get("channel") or getattr(self, "channel", ChannelEnum.MESSENGER)
+        target_page_id = page_id or self.page_id
         res = await self.client.send_attachment_message(
             recipient_id=recipient_external_id,
             file_path=file_path,
             attachment_type=attachment_type,
-            page_id=page_id or self.page_id,
+            page_id=target_page_id,
             tag=tag,
             db=active_db,
+            channel=channel,
         )
         return {
             "external_message_id": res.get("message_id") or res.get("id"),

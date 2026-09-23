@@ -407,11 +407,13 @@ async def send_outbound_reply(
             detail=err_msg,
         )
     except (MetaAPIError, BeonAPIError) as exc:
+        logger.error("[send_outbound_reply API Error] Conv %s: %s", conversation_id, exc.message, exc_info=True)
         raise HTTPException(
             status_code=exc.status_code or status.HTTP_400_BAD_REQUEST,
             detail=exc.message,
         )
     except Exception as exc:
+        logger.error("[send_outbound_reply Exception] Conv %s: %s", conversation_id, exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Outbound message send failed: {str(exc)}",

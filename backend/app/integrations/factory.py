@@ -47,13 +47,13 @@ class ProviderFactory:
 
         if provider_str in ("meta", "direct_meta", "ميتا مباشر"):
             logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id, db=db)
+            return MetaProvider(page_id=page_id, db=db, channel=channel or ChannelEnum.MESSENGER)
 
         is_meta_channel = channel_str in ("messenger", "facebook")
 
         if is_meta_channel:
             logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id, db=db)
+            return MetaProvider(page_id=page_id, db=db, channel=channel or ChannelEnum.MESSENGER)
 
         logger.debug(f"Routing channel '{channel_str}' to BeonOmnichannelProvider")
         return BeonOmnichannelProvider()
