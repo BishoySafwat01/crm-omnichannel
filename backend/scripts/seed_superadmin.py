@@ -40,8 +40,8 @@ async def seed_superadmin() -> None:
         if user:
             logger.info("Updating existing superadmin user: %s", email)
             user.password_hash = get_password_hash(password)
-            user.full_name = "Luxira Superadmin"
-            user.role = UserRole.ADMIN
+            user.full_name = "Bishoy Safwat" if email == "bishoysafwat@luxira.com" else user.full_name
+            user.role = UserRole.SUPERADMIN
             user.brand_access = ["ALL"]
             user.is_active = True
         else:
@@ -49,8 +49,8 @@ async def seed_superadmin() -> None:
             user = User(
                 email=email,
                 password_hash=get_password_hash(password),
-                full_name="Luxira Superadmin",
-                role=UserRole.ADMIN,
+                full_name="Bishoy Safwat" if email == "bishoysafwat@luxira.com" else "Luxira Superadmin",
+                role=UserRole.SUPERADMIN,
                 brand_access=["ALL"],
                 is_active=True,
             )

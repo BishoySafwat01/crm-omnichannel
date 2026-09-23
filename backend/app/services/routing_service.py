@@ -36,7 +36,7 @@ class RoutingService:
         # 2. Query all active staff (agents, supervisors, admins)
         stmt = select(User).where(
             User.is_active.is_(True),
-            User.role.in_([UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN]),
+            User.role.in_([UserRole.AGENT, UserRole.SUPERVISOR, UserRole.ADMIN, UserRole.SUPERADMIN]),
         )
         res = await session.execute(stmt)
         active_agents = list(res.scalars().all())

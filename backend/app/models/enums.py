@@ -57,4 +57,6 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     AGENT = "agent"
     SUPERVISOR = "supervisor"
+    SUPERADMIN = "superadmin"
+
 

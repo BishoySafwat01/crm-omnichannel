@@ -121,7 +121,7 @@ def user_has_brand_access(user: User, brand: str) -> bool:
     if not user or not user.is_active:
         return False
     role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
-    if role_val == UserRole.ADMIN.value:
+    if role_val in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value, "admin", "superadmin"):
         return True
     access_list = user.brand_access or []
     if "ALL" in access_list or "الكل" in access_list or brand in access_list or brand.lower() == "all":
@@ -145,7 +145,7 @@ def user_has_channel_access(user: User, channel: Union[str, ChannelEnum]) -> boo
     if not user or not user.is_active:
         return False
     role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
-    if role_val == UserRole.ADMIN.value:
+    if role_val in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value, "admin", "superadmin"):
         return True
     access_list = getattr(user, "channel_access", None)
     if access_list is None:
@@ -162,7 +162,7 @@ def user_has_conversation_access(user: User, conversation: Any) -> bool:
     if not user or not user.is_active:
         return False
     role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
-    if role_val == UserRole.ADMIN.value:
+    if role_val in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value, "admin", "superadmin"):
         return True
     conv_brand = getattr(conversation, "brand", "LAVVA") or "LAVVA"
     conv_channel = getattr(conversation, "channel", "messenger")

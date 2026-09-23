@@ -173,7 +173,7 @@ async def update_team_member(
         )
 
     # Protect primary superadmin against deactivation
-    if user.email.lower() == "admin@luxira.com" and payload.is_active is False:
+    if user.email.lower() == "bishoysafwat@luxira.com" and payload.is_active is False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Primary superadmin account cannot be deactivated.",
@@ -253,7 +253,7 @@ async def deactivate_team_member(
             detail=f"Team member with ID '{user_id}' not found.",
         )
 
-    if user.email.lower() == "admin@luxira.com":
+    if user.email.lower() == "bishoysafwat@luxira.com":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Primary superadmin account cannot be deactivated.",

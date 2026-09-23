@@ -187,7 +187,7 @@ async def list_conversations(
     allowed_channels = None
     if current_user:
         role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
-        if role_val != UserRole.ADMIN.value:
+        if role_val not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value, "admin", "superadmin"):
             user_b = current_user.brand_access or []
             norm_b = [str(x).strip().lower() for x in user_b]
             if "all" not in norm_b and "الكل" not in norm_b:

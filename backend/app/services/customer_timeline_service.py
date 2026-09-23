@@ -149,7 +149,7 @@ class CustomerTimelineService:
 
         if requesting_user:
             role_val = requesting_user.role.value if hasattr(requesting_user.role, "value") else str(requesting_user.role)
-            is_admin_or_super = role_val in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value)
+            is_admin_or_super = role_val in (UserRole.ADMIN.value, UserRole.SUPERVISOR.value, UserRole.SUPERADMIN.value, "admin", "superadmin")
             is_author = note.author_user_id == requesting_user.id
             if not is_admin_or_super and not is_author:
                 raise PermissionError("Not authorized to delete this note.")
