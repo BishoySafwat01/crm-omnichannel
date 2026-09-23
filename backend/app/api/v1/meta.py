@@ -410,13 +410,24 @@ async def receive_meta_webhook(
             detail="Invalid X-Hub-Signature-256 header.",
         )
 
-    expected_sig = "sha256=" + hmac.new(
-        app_secret.strip().encode("utf-8"),
-        body_bytes,
-        hashlib.sha256,
-    ).hexdigest()
+    # Candidates for HMAC validation: current production secret + legacy app secret
+    candidate_secrets = [app_secret.strip()]
+    legacy_secret = getattr(settings, "META_PREVIOUS_APP_SECRET", "35bdb9cdc96c0eab51a72c0d9b07f307")
+    if legacy_secret and legacy_secret.strip() not in candidate_secrets:
+        candidate_secrets.append(legacy_secret.strip())
 
-    if not secrets.compare_digest(x_hub_signature_256, expected_sig):
+    sig_valid = False
+    for sec in candidate_secrets:
+        calc_sig = "sha256=" + hmac.new(
+            sec.encode("utf-8"),
+            body_bytes,
+            hashlib.sha256,
+        ).hexdigest()
+        if secrets.compare_digest(x_hub_signature_256, calc_sig):
+            sig_valid = True
+            break
+
+    if not sig_valid:
         logger.warning("Meta webhook signature validation failed: HMAC signature mismatch")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

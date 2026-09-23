@@ -1496,11 +1496,13 @@ class MetaImportService:
                         # 3. Ingest Messages & Update Denormalized Preview Fields
                         msgs_data = conv_data.get("messages", {}).get("data", [])
                         has_new_messages = False
+                        seen_mids_in_batch = set()
 
                         for m in reversed(msgs_data):
                             mid = m.get("id")
-                            if not mid:
+                            if not mid or mid in seen_mids_in_batch:
                                 continue
+                            seen_mids_in_batch.add(mid)
 
                             existing_msg = (await session.execute(
                                 select(Message).where(Message.external_message_id == mid)
@@ -1539,7 +1541,11 @@ class MetaImportService:
                                     }
                                 )
                                 session.add(new_msg)
-                                await session.flush()
+                                try:
+                                    await session.flush()
+                                except Exception as exc:
+                                    logger.warning("[MetaImportService] Message mid=%s duplicate or flush conflict: %s", mid, exc)
+                                    continue
 
                                 # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for newly polled customer messages
                                 if new_msg.sender_type == SenderTypeEnum.CUSTOMER:
