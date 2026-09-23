@@ -196,9 +196,17 @@ class MetaImportService:
         candidate_pages: list[str] = []
         if target_page_id:
             candidate_pages.append(target_page_id)
-        for pid in valid_page_ids:
-            if pid not in candidate_pages and pid.isdigit() and len(pid) > 10:
-                candidate_pages.append(pid)
+        try:
+            from app.core.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session_cp:
+                cp_res = await session_cp.execute(
+                    select(ConnectedPage.page_id).where(ConnectedPage.status == "ACTIVE")
+                )
+                for pid in cp_res.scalars().all():
+                    if pid and str(pid).strip() not in candidate_pages:
+                        candidate_pages.append(str(pid).strip())
+        except Exception:
+            pass
 
         token = await MetaClient.get_token_for_page(target_page_id) if target_page_id else None
         if not token and target_page_id:
