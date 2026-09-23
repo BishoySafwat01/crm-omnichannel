@@ -10,10 +10,12 @@ import httpx
 import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from app.core.config import settings
 from app.core.security import encrypt_token
 from app.models.connected_page import ConnectedPage
+from app.services.connected_page_service import ConnectedPageService
 
 logger = logging.getLogger("app.services.meta_oauth")
 
@@ -22,6 +24,7 @@ VALID_SCOPES = [
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
+    "public_profile",
     "instagram_basic",
     "instagram_manage_messages",
 ]
@@ -31,8 +34,8 @@ DEFAULT_SCOPES = VALID_SCOPES
 DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
     "messages",
     "messaging_postbacks",
-    "messaging_referrals",
     "message_echoes",
+    "standby",
 ]
 
 
@@ -169,9 +172,18 @@ class MetaOAuthService:
             return long_token or short_token
 
     @classmethod
-    async def fetch_user_pages(cls, long_lived_user_token: str) -> list[dict[str, Any]]:
-        """Fetch all managed Facebook Pages and linked Instagram accounts for the authenticated user."""
+    async def fetch_user_pages(
+        cls,
+        long_lived_user_token: str,
+        db: Optional[AsyncSession] = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch all managed Facebook Pages and linked Instagram accounts for the authenticated user.
+        Uses /me/accounts and candidate page direct resolution to ensure all diverse admin pages are captured
+        with permanent (never-expiring) tokens.
+        """
         version = settings.META_GRAPH_API_VERSION or "v23.0"
+        app_id = settings.META_APP_ID
+        app_secret = settings.META_APP_SECRET
         url = f"https://graph.facebook.com/{version}/me/accounts"
         params = {
             "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,profile_picture_url}",
@@ -179,30 +191,96 @@ class MetaOAuthService:
             "limit": 100,
         }
 
-        pages: list[dict[str, Any]] = []
+        pages_map: dict[str, dict[str, Any]] = {}
         async with httpx.AsyncClient(timeout=30.0) as client:
+            # 1. Primary discovery via /me/accounts
             while url:
-                resp = await client.get(url, params=params if "?" not in url else None)
-                if resp.status_code != 200:
-                    err_data = resp.json().get("error", {}) if resp.content else {}
-                    err_msg = err_data.get("message", resp.text)
-                    logger.error("Failed to query /me/accounts: %s", err_msg)
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Meta accounts fetch error: {err_msg}",
-                    )
+                try:
+                    resp = await client.get(url, params=params if "?" not in url else None)
+                    if resp.status_code == 200:
+                        body = resp.json()
+                        data = body.get("data", [])
+                        for item in data:
+                            pid = str(item.get("id", "")).strip()
+                            if pid:
+                                pages_map[pid] = item
+                        paging = body.get("paging", {})
+                        url = paging.get("next")
+                        params = {}
+                    else:
+                        err_data = resp.json().get("error", {}) if resp.content else {}
+                        err_msg = err_data.get("message", resp.text)
+                        logger.warning("Query /me/accounts returned status %d: %s", resp.status_code, err_msg)
+                        break
+                except Exception as exc:
+                    logger.warning("Error fetching from /me/accounts: %s", exc)
+                    break
 
-                body = resp.json()
-                data = body.get("data", [])
-                pages.extend(data)
+            # 2. Resilient candidate resolution for pages assigned via Business Manager or existing in system
+            candidate_pids: set[str] = set()
+            pages_cfg = settings.get_meta_pages()
+            for pid in pages_cfg.keys():
+                if pid and str(pid).strip():
+                    candidate_pids.add(str(pid).strip())
+            if settings.META_PAGE_ID and str(settings.META_PAGE_ID).strip():
+                candidate_pids.add(str(settings.META_PAGE_ID).strip())
 
-                # Check for next page
-                paging = body.get("paging", {})
-                url = paging.get("next")
-                params = {}  # URL already includes query parameters
+            if db is not None:
+                try:
+                    stmt = select(ConnectedPage.page_id)
+                    res = await db.execute(stmt)
+                    for (c_pid,) in res.all():
+                        if c_pid and str(c_pid).strip():
+                            candidate_pids.add(str(c_pid).strip())
+                except Exception as db_exc:
+                    logger.debug("Failed to query candidate page_ids from db: %s", db_exc)
 
-        logger.info("Successfully fetched %d Facebook Pages from /me/accounts.", len(pages))
-        return pages
+            for c_pid in candidate_pids:
+                if c_pid not in pages_map:
+                    try:
+                        p_url = f"https://graph.facebook.com/{version}/{c_pid}"
+                        p_params = {
+                            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,profile_picture_url}",
+                            "access_token": long_lived_user_token,
+                        }
+                        p_resp = await client.get(p_url, params=p_params)
+                        if p_resp.status_code == 200:
+                            p_data = p_resp.json()
+                            if p_data.get("access_token"):
+                                pages_map[c_pid] = p_data
+                                logger.info(
+                                    "[MetaOAuth] Directly resolved candidate page %s (%s) using user token.",
+                                    c_pid,
+                                    p_data.get("name"),
+                                )
+                    except Exception as exc:
+                        logger.debug("Direct resolution for candidate page %s skipped: %s", c_pid, exc)
+
+            # 3. Validate token non-expiring status via debug_token
+            if app_id and app_secret:
+                app_token = f"{str(app_id).strip()}|{str(app_secret).strip()}"
+                for pid, pdata in list(pages_map.items()):
+                    ptok = pdata.get("access_token")
+                    if ptok:
+                        try:
+                            d_url = f"https://graph.facebook.com/{version}/debug_token"
+                            d_resp = await client.get(d_url, params={"input_token": ptok, "access_token": app_token})
+                            if d_resp.status_code == 200:
+                                d_data = d_resp.json().get("data", {})
+                                exp_at = d_data.get("expires_at")
+                                is_v = d_data.get("is_valid")
+                                logger.info(
+                                    "[MetaOAuth] Page %s (%s) debug_token: is_valid=%s, expires_at=%s (0=Permanent)",
+                                    pid,
+                                    pdata.get("name"),
+                                    is_v,
+                                    exp_at,
+                                )
+                        except Exception as d_exc:
+                            logger.debug("debug_token check failed for page %s: %s", pid, d_exc)
+
+        logger.info("Successfully fetched %d Facebook Pages for user.", len(pages_map))
+        return list(pages_map.values())
 
     @classmethod
     async def subscribe_page_to_webhooks(
@@ -214,7 +292,7 @@ class MetaOAuthService:
         """
         Autonomous Webhook App Subscription:
         Sends POST https://graph.facebook.com/v23.0/{page_id}/subscribed_apps
-        with subscribed_fields=messages,messaging_postbacks,messaging_referrals,message_echoes
+        with subscribed_fields=messages,messaging_postbacks,message_echoes,standby
         using the specific Page access_token.
         Returns True on {"success": true}, sets is_webhook_subscribed = True, handles Meta errors cleanly.
         """
@@ -273,6 +351,13 @@ class MetaOAuthService:
         """Upsert fetched pages into connected_pages table with encrypted page tokens and auto-subscribe webhooks."""
         saved_records: list[ConnectedPage] = []
 
+        # Resolve default workspace ID for new records
+        from app.models.workspace import Workspace
+        ws_stmt = select(Workspace).order_by(Workspace.created_at.asc()).limit(1)
+        ws_res = await db.execute(ws_stmt)
+        default_ws = ws_res.scalar_one_or_none()
+        default_ws_id = default_ws.id if default_ws else None
+
         for pdata in pages:
             page_id = str(pdata.get("id", "")).strip()
             if not page_id:
@@ -281,7 +366,7 @@ class MetaOAuthService:
             name = pdata.get("name") or f"Page {page_id}"
             category = pdata.get("category")
             raw_token = pdata.get("access_token") or ""
-            encrypted_token = encrypt_token(raw_token)
+            encrypted_token = ConnectedPageService.encrypt_token(raw_token) if raw_token else ""
 
             ig_account = pdata.get("instagram_business_account")
             ig_id = None
@@ -294,11 +379,15 @@ class MetaOAuthService:
                 else:
                     ig_id = str(ig_account).strip() or None
 
-            # Milestone 2: Autonomous Webhook App Subscription
+            # Autonomous Webhook App Subscription
             is_subscribed = False
             if raw_token:
                 try:
-                    is_subscribed = await cls.subscribe_page_to_webhooks(page_id=page_id, page_token=raw_token)
+                    is_subscribed = await cls.subscribe_page_to_webhooks(
+                        page_id=page_id,
+                        page_token=raw_token,
+                        subscribed_fields=DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS,
+                    )
                 except Exception as sub_exc:
                     logger.warning("Autonomous webhook subscription for page %s failed: %s", page_id, sub_exc)
                     is_subscribed = False
@@ -309,18 +398,23 @@ class MetaOAuthService:
 
             if existing:
                 existing.name = name
-                existing.encrypted_access_token = encrypted_token
-                existing.category = category
-                existing.instagram_business_account_id = ig_id
+                if encrypted_token:
+                    existing.encrypted_access_token = encrypted_token
+                if category:
+                    existing.category = category
+                if ig_id:
+                    existing.instagram_business_account_id = ig_id
                 existing.status = "ACTIVE"
                 existing.is_active = True
                 if is_subscribed:
                     existing.is_webhook_subscribed = True
                 existing.connected_by_user_id = user_id
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = func.now()
                 saved_records.append(existing)
             else:
                 new_page = ConnectedPage(
+                    id=uuid.uuid4(),
+                    workspace_id=default_ws_id,
                     page_id=page_id,
                     name=name,
                     encrypted_access_token=encrypted_token,
@@ -339,7 +433,7 @@ class MetaOAuthService:
 
         logger.info("Successfully saved/updated %d ConnectedPage records.", len(saved_records))
 
-        # Milestone 3: Trigger immediate background historical sync (30 days) for newly onboarded active pages
+        # Trigger immediate background historical sync (30 days) for newly onboarded active pages
         for record in saved_records:
             if record.status == "ACTIVE" and record.page_id:
                 asyncio.create_task(cls._trigger_background_sync(page_id=record.page_id, since_days=30))

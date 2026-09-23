@@ -151,7 +151,10 @@ async def handle_meta_oauth_browser_redirect(
         )
 
         # D. Fetch managed Facebook Pages and linked Instagram accounts
-        pages = await MetaOAuthService.fetch_user_pages(long_lived_user_token=long_lived_user_token)
+        pages = await MetaOAuthService.fetch_user_pages(
+            long_lived_user_token=long_lived_user_token,
+            db=db,
+        )
 
         # E. Idempotently upsert records into connected_pages table and auto-subscribe to webhooks
         if pages:
@@ -242,7 +245,10 @@ async def handle_meta_oauth_callback(
     )
 
     # 3. Fetch managed Facebook Pages and linked Instagram accounts
-    pages = await MetaOAuthService.fetch_user_pages(long_lived_user_token=long_lived_user_token)
+    pages = await MetaOAuthService.fetch_user_pages(
+        long_lived_user_token=long_lived_user_token,
+        db=db,
+    )
     if not pages:
         logger.warning("No Facebook Pages returned for authenticated user %s", current_user.email)
         return []

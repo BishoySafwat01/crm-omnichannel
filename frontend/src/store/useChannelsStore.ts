@@ -60,11 +60,17 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     try {
       // 1. Fetch authorization URL from backend FIRST
       const defaultCallback = 'https://webluxira.com/api/v1/meta/oauth/callback';
+      const isProduction =
+        typeof window !== 'undefined' &&
+        (window.location.hostname.includes('webluxira.com') ||
+         window.location.protocol === 'https:');
       const redirectUri =
         customRedirectUri ||
-        (typeof window !== 'undefined' && window.location.origin
-          ? `${window.location.origin}/api/v1/meta/oauth/callback`
-          : defaultCallback);
+        (isProduction
+          ? defaultCallback
+          : (typeof window !== 'undefined' && window.location.origin
+            ? `${window.location.origin}/api/v1/meta/oauth/callback`
+            : defaultCallback));
 
       const res = await metaOAuthApi.getMetaLoginUrl(redirectUri);
       const authUrl = res?.authorization_url;
@@ -163,12 +169,18 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           ? sessionStorage.getItem('meta_oauth_redirect_uri')
           : null;
       const defaultCallback = 'https://webluxira.com/api/v1/meta/oauth/callback';
+      const isProduction =
+        typeof window !== 'undefined' &&
+        (window.location.hostname.includes('webluxira.com') ||
+         window.location.protocol === 'https:');
       const redirectUri =
         customRedirectUri ||
         storedRedirect ||
-        (typeof window !== 'undefined' && window.location.origin
-          ? `${window.location.origin}/api/v1/meta/oauth/callback`
-          : defaultCallback);
+        (isProduction
+          ? defaultCallback
+          : (typeof window !== 'undefined' && window.location.origin
+            ? `${window.location.origin}/api/v1/meta/oauth/callback`
+            : defaultCallback));
 
       // Resolve active bearer token with opener fallback
       let activeToken = tokenOverride;

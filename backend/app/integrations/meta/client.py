@@ -254,8 +254,8 @@ class MetaClient:
         fields_list = subscribed_fields or [
             "messages",
             "messaging_postbacks",
-            "messaging_referrals",
             "message_echoes",
+            "standby",
         ]
         fields_param = ",".join(fields_list) if isinstance(fields_list, list) else str(fields_list)
 

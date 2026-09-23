@@ -138,7 +138,7 @@ export const DataDeletionPage: React.FC = () => {
             In the left navigation sidebar, select <strong>Apps and Websites</strong>.
           </li>
           <li>
-            Locate <strong>&ldquo;CRM Demo&rdquo;</strong> (or connected App ID: <code>2591862777899310</code>) in your active apps list.
+            Locate <strong>&ldquo;LUXIRA 1&rdquo;</strong> (or connected App ID: <code>2138720486721927</code>) in your active apps list.
           </li>
           <li>
             Click <strong>&ldquo;Remove&rdquo;</strong>. In the dialog, click <strong>&ldquo;View details&rdquo;</strong> to request data deletion, and confirm by clicking <strong>&ldquo;Remove&rdquo;</strong>.
