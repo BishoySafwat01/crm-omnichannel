@@ -92,8 +92,9 @@ class MetaOAuthService:
         state: str,
         redirect_uri: Optional[str] = None,
         scopes: Optional[list[str]] = None,
+        auth_type: Optional[str] = "rerequest",
     ) -> str:
-        """Build the Meta OAuth dialog authorization URL."""
+        """Build the Meta OAuth dialog authorization URL with auth_type=rerequest to force page selection dialog."""
         app_id = settings.META_APP_ID
         if not app_id or not str(app_id).strip():
             raise HTTPException(
@@ -112,13 +113,15 @@ class MetaOAuthService:
 
         effective_scopes = [s for s in (scopes or DEFAULT_SCOPES) if s in VALID_SCOPES] or DEFAULT_SCOPES
 
-        params = {
+        params: dict[str, str] = {
             "client_id": str(app_id).strip(),
             "state": state,
             "scope": ",".join(effective_scopes),
             "response_type": "code",
             "redirect_uri": effective_redirect,
         }
+        if auth_type and str(auth_type).strip():
+            params["auth_type"] = str(auth_type).strip()
 
         encoded_params = urllib.parse.urlencode(params)
         return f"{base_url}?{encoded_params}"
@@ -215,6 +218,11 @@ class MetaOAuthService:
                             pid = str(item.get("id", "")).strip()
                             if pid:
                                 pages_map[pid] = item
+                                logger.info(
+                                    "[Meta OAuth] Discovered page via /me/accounts: %s (%s)",
+                                    pid,
+                                    item.get("name"),
+                                )
                         paging = body.get("paging", {})
                         url = paging.get("next")
                         params = {}
@@ -419,6 +427,8 @@ class MetaOAuthService:
                 existing.is_active = True
                 if is_subscribed:
                     existing.is_webhook_subscribed = True
+                if not existing.workspace_id and default_ws_id:
+                    existing.workspace_id = default_ws_id
                 existing.connected_by_user_id = user_id
                 existing.updated_at = func.now()
                 saved_records.append(existing)
@@ -437,6 +447,12 @@ class MetaOAuthService:
                 )
                 db.add(new_page)
                 saved_records.append(new_page)
+
+            logger.info(
+                "[Meta OAuth] Successfully ingested page %s (%s) with permanent token and active webhooks",
+                page_id,
+                name,
+            )
 
         await db.commit()
         for record in saved_records:

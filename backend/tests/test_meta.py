@@ -341,6 +341,7 @@ def test_meta_oauth_sanitized_scopes():
         url = MetaOAuthService.get_authorization_url(state="test_state_123")
         assert "client_id=1234567890" in url
         assert "state=test_state_123" in url
+        assert "auth_type=rerequest" in url
         assert "public_profile" in url
         assert "pages_show_list" in url
         assert "pages_messaging" in url

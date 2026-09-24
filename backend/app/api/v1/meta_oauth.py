@@ -86,6 +86,7 @@ async def get_meta_oauth_login_url(
         state=state,
         redirect_uri=resolved_redirect_uri,
         scopes=requested_scopes,
+        auth_type="rerequest",
     )
     return MetaOAuthLoginUrlResponse(authorization_url=auth_url, state=state)
 
