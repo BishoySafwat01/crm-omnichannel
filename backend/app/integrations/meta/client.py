@@ -571,33 +571,74 @@ class MetaClient:
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        channel: Optional[Any] = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         import json
         import os
 
-        target_page_id = page_id or self.page_id
-        if not target_page_id:
-            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
-
         if not recipient_id or not str(recipient_id).strip():
             raise MetaAPIError("recipient_id is required for sending messages.", status_code=400)
 
-        filename = os.path.basename(file_path)
-        if not os.path.exists(file_path):
-            alt_path1 = os.path.join(settings.UPLOAD_DIR, filename)
-            alt_path2 = os.path.join("/app/uploads", filename)
-            if os.path.exists(alt_path1):
-                file_path = alt_path1
-            elif os.path.exists(alt_path2):
-                file_path = alt_path2
-            else:
-                raise MetaAPIError(f"Attachment file not found at path: {file_path}", status_code=400)
+        clean_recipient = str(recipient_id).strip()
+        if clean_recipient.startswith("ig_"):
+            clean_recipient = clean_recipient[3:]
+        elif clean_recipient.startswith("i_"):
+            clean_recipient = clean_recipient[2:]
+
+        is_ig = (
+            (channel and str(getattr(channel, "value", channel)).lower() == "instagram")
+            or str(recipient_id).strip().startswith(("ig_", "i_"))
+        )
+
+        target_page_id = page_id or self.page_id
+        if not target_page_id and not is_ig:
+            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
+
+        clean_file_path = str(file_path).strip()
+        filename = (
+            os.path.basename(clean_file_path.split("?")[0])
+            if ("/" in clean_file_path or "\\" in clean_file_path)
+            else clean_file_path
+        )
+
+        local_path = None
+        if os.path.exists(clean_file_path):
+            local_path = clean_file_path
+        else:
+            candidates = [
+                os.path.join(settings.UPLOAD_DIR, filename),
+                os.path.join("/app/uploads", filename),
+                os.path.join(os.getcwd(), "uploads", filename),
+                os.path.join(os.getcwd(), filename),
+            ]
+            for cand in candidates:
+                if os.path.exists(cand):
+                    local_path = cand
+                    break
 
         ext_lower = filename.lower()
+
+        # If audio is WebM voice note, transcode to m4a if transcoded version doesn't exist yet
+        if local_path and ext_lower.endswith(".webm") and (attachment_type == "audio" or "voice" in filename.lower()):
+            transcoded_m4a = os.path.join(os.path.dirname(local_path), f"{os.path.splitext(filename)[0]}.m4a")
+            if not os.path.exists(transcoded_m4a):
+                try:
+                    from app.infrastructure.media.audio_transcoder import transcode_to_m4a
+                    import asyncio
+                    await asyncio.to_thread(transcode_to_m4a, local_path, transcoded_m4a)
+                except Exception as tr_err:
+                    logger.warning("[MetaClient] Voice note transcoding fallback failed: %s", tr_err)
+            if os.path.exists(transcoded_m4a):
+                local_path = transcoded_m4a
+                filename = os.path.basename(transcoded_m4a)
+                ext_lower = filename.lower()
+                attachment_type = "audio"
+
         mime_type = "application/octet-stream"
         if ext_lower.endswith(".png"):
             mime_type = "image/png"
-        elif ext_lower.endswith(".jpg") or ext_lower.endswith(".jpeg"):
+        elif ext_lower.endswith((".jpg", ".jpeg")):
             mime_type = "image/jpeg"
         elif ext_lower.endswith(".webp"):
             mime_type = "image/webp"
@@ -611,7 +652,7 @@ class MetaClient:
             mime_type = "video/x-msvideo"
         elif ext_lower.endswith(".mkv"):
             mime_type = "video/x-matroska"
-        elif ext_lower.endswith(".ogg") or ext_lower.endswith(".opus"):
+        elif ext_lower.endswith((".ogg", ".opus")):
             mime_type = "audio/ogg"
         elif ext_lower.endswith(".mp3"):
             mime_type = "audio/mp3"
@@ -631,11 +672,74 @@ class MetaClient:
         elif not attachment_type or attachment_type == "file":
             attachment_type = "file"
 
-        with open(file_path, "rb") as f:
-            file_bytes = f.read()
+        file_bytes = None
+        if local_path and os.path.exists(local_path):
+            with open(local_path, "rb") as f:
+                file_bytes = f.read()
+        elif clean_file_path.startswith(("http://", "https://")):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as fetch_client:
+                    fetch_res = await fetch_client.get(clean_file_path)
+                    if not fetch_res.is_error:
+                        file_bytes = fetch_res.content
+            except Exception as f_err:
+                logger.warning("[MetaClient] Failed to download remote attachment URL %s: %s", clean_file_path, f_err)
 
-        payload_data = {
-            "recipient": json.dumps({"id": recipient_id}),
+        if not file_bytes and not clean_file_path.startswith(("http://", "https://")):
+            raise MetaAPIError(f"Attachment file not found at path: {clean_file_path}", status_code=400)
+
+        public_media_url = (
+            clean_file_path
+            if clean_file_path.startswith(("http://", "https://"))
+            else f"https://webluxira.com/uploads/{filename}"
+        )
+
+        active_db = db or self.db
+        token = await self.get_token_for_page(target_page_id, db=active_db) or self.access_token
+        self._ensure_authenticated(token)
+
+        endpoint = "/me/messages" if is_ig else f"/{target_page_id}/messages"
+        url = f"{self.base_url}{endpoint}?access_token={token}"
+
+        # Instagram Direct Send API only accepts JSON with public media URL (or uploaded attachment_id)
+        if is_ig:
+            ig_payload = {
+                "recipient": {"id": clean_recipient},
+                "message": {
+                    "attachment": {
+                        "type": attachment_type,
+                        "payload": {"url": public_media_url, "is_reusable": True},
+                    }
+                },
+            }
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(url, json=ig_payload)
+                if response.is_error:
+                    err_detail = response.text
+                    try:
+                        err_json = response.json()
+                        err_detail = err_json.get("error", {}).get("message", response.text)
+                    except Exception:
+                        pass
+                    sanitized_msg = str(err_detail)
+                    if token:
+                        sanitized_msg = sanitized_msg.replace(token, "[REDACTED_TOKEN]")
+                    if self.access_token:
+                        sanitized_msg = sanitized_msg.replace(self.access_token, "[REDACTED_TOKEN]")
+                    raise MetaAPIError(
+                        f"Instagram Media Send Error ({response.status_code}): {sanitized_msg}",
+                        status_code=response.status_code,
+                    )
+                return response.json()
+            except Exception as exc:
+                if isinstance(exc, MetaAPIError):
+                    raise
+                raise MetaAPIError(f"Failed to send Instagram media attachment: {str(exc)}", status_code=500)
+
+        # Facebook Messenger Send API
+        payload_data: dict[str, Any] = {
+            "recipient": json.dumps({"id": clean_recipient}),
             "message": json.dumps({"attachment": {"type": attachment_type, "payload": {"is_reusable": True}}}),
         }
 
@@ -645,16 +749,23 @@ class MetaClient:
         else:
             payload_data["messaging_type"] = "RESPONSE"
 
-        active_db = db or self.db
-        token = await self.get_token_for_page(target_page_id, db=active_db) or self.access_token
-        self._ensure_authenticated(token)
-        url = f"{self.base_url}/{target_page_id}/messages?access_token={token}"
-        files = {"filedata": (filename, file_bytes, mime_type)}
-
+        files = {"filedata": (filename, file_bytes, mime_type)} if file_bytes else None
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, data=payload_data, files=files)
+                if files:
+                    response = await client.post(url, data=payload_data, files=files)
+                else:
+                    url_payload = {
+                        "recipient": {"id": clean_recipient},
+                        "message": {"attachment": {"type": attachment_type, "payload": {"url": public_media_url, "is_reusable": True}}},
+                    }
+                    if tag:
+                        url_payload["messaging_type"] = "MESSAGE_TAG"
+                        url_payload["tag"] = tag
+                    else:
+                        url_payload["messaging_type"] = "RESPONSE"
+                    response = await client.post(url, json=url_payload)
 
             if response.is_error:
                 err_detail = response.text
@@ -664,16 +775,46 @@ class MetaClient:
                 except Exception:
                     pass
 
+                # If tag rejected (#100), retry with standard RESPONSE
                 if tag and ("#100" in str(err_detail) or "HUMAN_AGENT" in str(err_detail) or "tag" in str(err_detail).lower()):
+                    logger.info("[MetaClient] Message tag '%s' rejected (%s). Retrying with messaging_type='RESPONSE'.", tag, err_detail)
                     payload_data["messaging_type"] = "RESPONSE"
                     payload_data.pop("tag", None)
                     async with httpx.AsyncClient(timeout=self.timeout) as client:
-                        response = await client.post(url, data=payload_data, files=files)
+                        if files:
+                            response = await client.post(url, data=payload_data, files=files)
+                        else:
+                            url_payload["messaging_type"] = "RESPONSE"
+                            url_payload.pop("tag", None)
+                            response = await client.post(url, json=url_payload)
+
+                # If standard RESPONSE rejected because 24-hour window closed, retry with HUMAN_AGENT tag
                 elif not tag and ("24 hours" in str(err_detail).lower() or "2018001" in str(err_detail) or "2018278" in str(err_detail) or "outside the allowed window" in str(err_detail).lower()):
+                    logger.info("[MetaClient] 24-hour window closed for recipient %s. Retrying attachment with HUMAN_AGENT tag.", clean_recipient)
                     payload_data["messaging_type"] = "MESSAGE_TAG"
                     payload_data["tag"] = "HUMAN_AGENT"
                     async with httpx.AsyncClient(timeout=self.timeout) as client:
-                        response = await client.post(url, data=payload_data, files=files)
+                        if files:
+                            response = await client.post(url, data=payload_data, files=files)
+                        else:
+                            url_payload["messaging_type"] = "MESSAGE_TAG"
+                            url_payload["tag"] = "HUMAN_AGENT"
+                            response = await client.post(url, json=url_payload)
+
+                # If binary upload failed on format / upload issue, retry with public URL payload
+                if response.is_error and files:
+                    logger.info("[MetaClient] Binary upload failed (%s). Retrying with public URL payload: %s", err_detail, public_media_url)
+                    url_payload = {
+                        "recipient": {"id": clean_recipient},
+                        "message": {"attachment": {"type": attachment_type, "payload": {"url": public_media_url, "is_reusable": True}}},
+                    }
+                    if payload_data.get("tag"):
+                        url_payload["messaging_type"] = "MESSAGE_TAG"
+                        url_payload["tag"] = payload_data["tag"]
+                    else:
+                        url_payload["messaging_type"] = payload_data.get("messaging_type", "RESPONSE")
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        response = await client.post(url, json=url_payload)
 
             if response.is_error:
                 err_detail = response.text
@@ -683,6 +824,8 @@ class MetaClient:
                 except Exception:
                     pass
                 sanitized_msg = str(err_detail)
+                if token:
+                    sanitized_msg = sanitized_msg.replace(token, "[REDACTED_TOKEN]")
                 if self.access_token:
                     sanitized_msg = sanitized_msg.replace(self.access_token, "[REDACTED_TOKEN]")
                 raise MetaAPIError(

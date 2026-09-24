@@ -427,3 +427,98 @@ async def test_meta_oauth_server_callback_success():
         mock_save.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_meta_client_send_attachment_message_success(tmp_path):
+    from app.integrations.meta.client import MetaClient
+    import tempfile
+
+    test_file = tmp_path / "test_audio.m4a"
+    test_file.write_bytes(b"dummy audio content")
+
+    client = MetaClient(page_id="101509818947526", access_token="test_token")
+    client.get_token_for_page = AsyncMock(return_value="test_page_token")
+
+    mock_resp = MagicMock()
+    mock_resp.is_error = False
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"recipient_id": "28495192496757118", "message_id": "mid.12345"}
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+        res = await client.send_attachment_message(
+            recipient_id="28495192496757118",
+            file_path=str(test_file),
+            attachment_type="audio",
+            page_id="101509818947526",
+            channel="messenger",
+        )
+        assert res["message_id"] == "mid.12345"
+        assert res["recipient_id"] == "28495192496757118"
+        mock_post.assert_awaited_once()
+        call_kwargs = mock_post.await_args.kwargs
+        assert "files" in call_kwargs
+        assert "data" in call_kwargs
+        assert call_kwargs["data"]["messaging_type"] == "RESPONSE"
+
+
+@pytest.mark.asyncio
+async def test_meta_client_send_attachment_instagram():
+    from app.integrations.meta.client import MetaClient
+
+    client = MetaClient(page_id="101509818947526", access_token="test_token")
+    client.get_token_for_page = AsyncMock(return_value="test_page_token")
+
+    mock_resp = MagicMock()
+    mock_resp.is_error = False
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"recipient_id": "ig_12345", "message_id": "mid.ig_67890"}
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+        res = await client.send_attachment_message(
+            recipient_id="ig_12345",
+            file_path="https://webluxira.com/uploads/photo.jpg",
+            attachment_type="image",
+            channel="instagram",
+        )
+        assert res["message_id"] == "mid.ig_67890"
+        mock_post.assert_awaited_once()
+        call_url = mock_post.await_args.args[0]
+        assert "/me/messages" in call_url
+        call_kwargs = mock_post.await_args.kwargs
+        assert "json" in call_kwargs
+        assert call_kwargs["json"]["recipient"]["id"] == "12345"
+
+
+@pytest.mark.asyncio
+async def test_meta_provider_send_outbound_attachment(tmp_path):
+    from app.integrations.meta.provider import MetaProvider
+
+    test_file = tmp_path / "voice_test.m4a"
+    test_file.write_bytes(b"voice data")
+
+    mock_client = MagicMock()
+    mock_client.page_id = "101509818947526"
+    mock_client.send_attachment_message = AsyncMock(return_value={"message_id": "mid.att999", "recipient_id": "28495192496757118"})
+
+    provider = MetaProvider(client=mock_client)
+    res = await provider.send_outbound_attachment(
+        recipient_external_id="28495192496757118",
+        file_path=str(test_file),
+        attachment_type="audio",
+        channel="messenger",
+    )
+    assert res["external_message_id"] == "mid.att999"
+    assert res["recipient_id"] == "28495192496757118"
+    mock_client.send_attachment_message.assert_awaited_once_with(
+        recipient_id="28495192496757118",
+        file_path=str(test_file),
+        attachment_type="audio",
+        page_id="101509818947526",
+        tag=None,
+        db=None,
+        channel="messenger",
+    )
+
+
+

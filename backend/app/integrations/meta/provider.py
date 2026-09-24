@@ -217,29 +217,39 @@ class MetaProvider(BaseMessagingProvider):
 
     async def send_outbound_attachment(
         self,
-        recipient_external_id: str,
-        file_path: str,
+        recipient_external_id: Optional[str] = None,
+        file_path: str = "",
         attachment_type: str = "audio",
         page_id: Optional[str] = None,
         tag: Optional[str] = None,
         db: Optional[AsyncSession] = None,
+        recipient_id: Optional[str] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        active_db = db or self.db or kwargs.get("session") or kwargs.get("db")
-        channel = kwargs.get("channel") or getattr(self, "channel", ChannelEnum.MESSENGER)
+        extra_kwargs = dict(kwargs)
+        target_recipient = str(
+            recipient_external_id
+            or recipient_id
+            or extra_kwargs.pop("recipient_id", None)
+            or extra_kwargs.pop("recipient_external_id", None)
+            or ""
+        ).strip()
+        active_db = db or self.db or extra_kwargs.pop("session", None) or extra_kwargs.pop("db", None)
+        channel = extra_kwargs.pop("channel", None) or getattr(self, "channel", ChannelEnum.MESSENGER)
         target_page_id = page_id or self.page_id
         res = await self.client.send_attachment_message(
-            recipient_id=recipient_external_id,
+            recipient_id=target_recipient,
             file_path=file_path,
             attachment_type=attachment_type,
             page_id=target_page_id,
             tag=tag,
             db=active_db,
             channel=channel,
+            **extra_kwargs,
         )
         return {
             "external_message_id": res.get("message_id") or res.get("id"),
-            "recipient_id": res.get("recipient_id") or recipient_external_id,
+            "recipient_id": res.get("recipient_id") or target_recipient,
             "raw": res,
         }
 
