@@ -20,16 +20,20 @@ from app.services.connected_page_service import ConnectedPageService
 logger = logging.getLogger("app.services.meta_oauth")
 
 VALID_SCOPES = [
+    "public_profile",
     "pages_show_list",
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
-    "public_profile",
-    "instagram_basic",
-    "instagram_manage_messages",
 ]
 
-DEFAULT_SCOPES = VALID_SCOPES
+DEFAULT_SCOPES = [
+    "public_profile",
+    "pages_show_list",
+    "pages_messaging",
+    "pages_read_engagement",
+    "pages_manage_metadata",
+]
 
 DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
     "messages",
@@ -83,7 +87,12 @@ class MetaOAuthService:
             )
 
     @classmethod
-    def get_authorization_url(cls, state: str, redirect_uri: Optional[str] = None) -> str:
+    def get_authorization_url(
+        cls,
+        state: str,
+        redirect_uri: Optional[str] = None,
+        scopes: Optional[list[str]] = None,
+    ) -> str:
         """Build the Meta OAuth dialog authorization URL."""
         app_id = settings.META_APP_ID
         if not app_id or not str(app_id).strip():
@@ -101,10 +110,12 @@ class MetaOAuthService:
             else "https://webluxira.com/api/v1/meta/oauth/callback"
         )
 
+        effective_scopes = [s for s in (scopes or DEFAULT_SCOPES) if s in VALID_SCOPES] or DEFAULT_SCOPES
+
         params = {
             "client_id": str(app_id).strip(),
             "state": state,
-            "scope": ",".join(VALID_SCOPES),
+            "scope": ",".join(effective_scopes),
             "response_type": "code",
             "redirect_uri": effective_redirect,
         }

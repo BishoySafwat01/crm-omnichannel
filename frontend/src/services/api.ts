@@ -1324,8 +1324,14 @@ export const moderationApi = {
   },
 };
 
-export const getMetaLoginUrl = async (redirectUri?: string): Promise<{ authorization_url: string; state: string }> => {
-  const query = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}` : '';
+export const getMetaLoginUrl = async (
+  redirectUri?: string,
+  scope?: string
+): Promise<{ authorization_url: string; state: string }> => {
+  const params = new URLSearchParams();
+  if (redirectUri) params.append('redirect_uri', redirectUri);
+  if (scope) params.append('scope', scope);
+  const query = params.toString() ? `?${params.toString()}` : '';
   const res = await safeFetch(`/meta/oauth/login-url${query}`, {
     method: 'GET',
     headers: getAuthHeaders({ Accept: 'application/json' }),

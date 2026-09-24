@@ -19,7 +19,7 @@ import {
   Facebook,
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
-import { useChannelsStore } from '../../store/useChannelsStore';
+import { useChannelsStore, FACEBOOK_PAGE_SCOPES } from '../../store/useChannelsStore';
 import { metaApi } from '../../services/api';
 import { MetaChannelsSettings } from '../../components/settings/MetaChannelsSettings';
 
@@ -172,7 +172,7 @@ export const ChannelsPage: React.FC = () => {
             {/* Connect Pages Trigger Button (Secure Centered Popup) */}
             <div className="flex items-center gap-2">
               <button
-                onClick={() => initiateMetaConnect()}
+                onClick={() => initiateMetaConnect(undefined, FACEBOOK_PAGE_SCOPES)}
                 disabled={isConnecting}
                 className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-black rounded-xl shadow-lg hover:shadow-blue-500/30 transition-all flex items-center gap-2 border border-blue-400/30 disabled:opacity-60 active:scale-98 cursor-pointer"
               >

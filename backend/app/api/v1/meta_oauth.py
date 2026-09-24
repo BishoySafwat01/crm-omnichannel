@@ -14,7 +14,7 @@ from app.api.deps import require_admin
 from app.core.database import get_db
 from app.models.connected_page import ConnectedPage
 from app.models.user import User
-from app.services.meta_oauth_service import MetaOAuthService
+from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES, DEFAULT_SCOPES
 
 logger = logging.getLogger("app.api.v1.meta_oauth")
 
@@ -63,6 +63,10 @@ async def get_meta_oauth_login_url(
         None,
         description="Optional explicit frontend callback URL. Defaults to https://webluxira.com/api/v1/meta/oauth/callback if omitted.",
     ),
+    scope: Optional[str] = Query(
+        None,
+        description="Optional comma-separated list of scopes to request. Defaults to Facebook Pages scopes.",
+    ),
     current_user: User = Depends(require_admin),
 ) -> MetaOAuthLoginUrlResponse:
     """Generate signed CSRF state and return Meta authorization redirect URL (Superadmin / Admin only)."""
@@ -73,8 +77,16 @@ async def get_meta_oauth_login_url(
         else "https://webluxira.com/api/v1/meta/oauth/callback"
     )
 
+    requested_scopes = None
+    if scope and scope.strip():
+        requested_scopes = [s.strip() for s in scope.split(",") if s.strip() and s.strip() in VALID_SCOPES]
+
     state = MetaOAuthService.generate_oauth_state(user_id=current_user.id, redirect_uri=resolved_redirect_uri)
-    auth_url = MetaOAuthService.get_authorization_url(state=state, redirect_uri=resolved_redirect_uri)
+    auth_url = MetaOAuthService.get_authorization_url(
+        state=state,
+        redirect_uri=resolved_redirect_uri,
+        scopes=requested_scopes,
+    )
     return MetaOAuthLoginUrlResponse(authorization_url=auth_url, state=state)
 
 

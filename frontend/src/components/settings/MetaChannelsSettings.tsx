@@ -22,7 +22,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
-import { useChannelsStore } from '../../store/useChannelsStore';
+import { useChannelsStore, FACEBOOK_PAGE_SCOPES } from '../../store/useChannelsStore';
 import { useBrandStore } from '../../store/useBrandStore';
 
 export interface MetaChannelsSettingsProps {
@@ -168,7 +168,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
               {/* Connect Button & Manual Cancel Action */}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => initiateMetaConnect()}
+                  onClick={() => initiateMetaConnect(undefined, FACEBOOK_PAGE_SCOPES)}
                   disabled={isConnecting}
                   className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-black rounded-xl shadow-lg hover:shadow-blue-500/25 transition-all flex items-center gap-2 border border-blue-400/30 disabled:opacity-60 active:scale-98 cursor-pointer"
                 >
@@ -318,7 +318,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
             {!searchQuery && (
               <div className="inline-flex items-center gap-2">
                 <button
-                  onClick={() => initiateMetaConnect()}
+                  onClick={() => initiateMetaConnect(undefined, FACEBOOK_PAGE_SCOPES)}
                   disabled={isConnecting}
                   className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold rounded-xl shadow-md transition inline-flex items-center gap-2 disabled:opacity-60 cursor-pointer"
                 >

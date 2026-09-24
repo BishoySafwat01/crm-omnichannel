@@ -13,8 +13,8 @@ interface ChannelsState {
   successMessage: string | null;
 
   fetchConnectedPages: () => Promise<void>;
-  initiateMetaConnect: (customRedirectUri?: string) => Promise<void>;
-  connectMetaPage: (customRedirectUri?: string) => Promise<void>;
+  initiateMetaConnect: (customRedirectUri?: string, customScope?: string) => Promise<void>;
+  connectMetaPage: (customRedirectUri?: string, customScope?: string) => Promise<void>;
   cancelMetaConnect: () => void;
   handleOAuthCallback: (
     code: string,
@@ -28,6 +28,9 @@ interface ChannelsState {
   syncPageHistory: (pageId: string) => Promise<boolean>;
   clearFeedback: () => void;
 }
+
+export const FACEBOOK_PAGE_SCOPES =
+  'public_profile,pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
 
 let activeMetaPopup: Window | null = null;
 
@@ -54,7 +57,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     }
   },
 
-  initiateMetaConnect: async (customRedirectUri?: string) => {
+  initiateMetaConnect: async (customRedirectUri?: string, customScope?: string) => {
     set({ isConnecting: true, error: null, successMessage: null });
 
     try {
@@ -72,7 +75,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
             ? `${window.location.origin}/api/v1/meta/oauth/callback`
             : defaultCallback));
 
-      const res = await metaOAuthApi.getMetaLoginUrl(redirectUri);
+      const scopesToRequest = customScope || FACEBOOK_PAGE_SCOPES;
+      const res = await metaOAuthApi.getMetaLoginUrl(redirectUri, scopesToRequest);
       const authUrl = res?.authorization_url;
       if (!authUrl) throw new Error('فشل في إنشاء رابط تصريح Meta من الخادم');
 
@@ -142,8 +146,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     }
   },
 
-  connectMetaPage: async (customRedirectUri?: string) => {
-    return get().initiateMetaConnect(customRedirectUri);
+  connectMetaPage: async (customRedirectUri?: string, customScope?: string) => {
+    return get().initiateMetaConnect(customRedirectUri, customScope);
   },
 
   cancelMetaConnect: () => {

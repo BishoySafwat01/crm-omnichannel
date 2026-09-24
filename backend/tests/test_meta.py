@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 import httpx
 from httpx import ASGITransport, AsyncClient
@@ -37,8 +37,8 @@ async def test_meta_client_subscribe_page_success():
         assert call_kwargs["params"]["access_token"] == "test_token_xyz"
         assert "messages" in call_kwargs["params"]["subscribed_fields"]
         assert "messaging_postbacks" in call_kwargs["params"]["subscribed_fields"]
-        assert "messaging_referrals" in call_kwargs["params"]["subscribed_fields"]
         assert "message_echoes" in call_kwargs["params"]["subscribed_fields"]
+        assert "standby" in call_kwargs["params"]["subscribed_fields"]
 
 
 @pytest.mark.asyncio
@@ -315,31 +315,47 @@ async def test_startup_lifespan_auto_subscribe_non_blocking():
 
 
 def test_meta_oauth_sanitized_scopes():
-    from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES
+    from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES, DEFAULT_SCOPES
 
     expected_canonical_scopes = [
+        "public_profile",
         "pages_show_list",
         "pages_messaging",
         "pages_read_engagement",
         "pages_manage_metadata",
-        "instagram_basic",
-        "instagram_manage_messages",
     ]
     assert VALID_SCOPES == expected_canonical_scopes
+    assert DEFAULT_SCOPES == expected_canonical_scopes
 
-    # Ensure deprecated scopes are completely absent
-    for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
-        assert deprecated not in VALID_SCOPES
+    # Ensure unapproved/deprecated scopes are completely absent
+    for disallowed in (
+        "instagram_basic",
+        "instagram_manage_messages",
+        "pages_manage_posts",
+        "pages_read_user_content",
+        "instagram_manage_comments",
+    ):
+        assert disallowed not in VALID_SCOPES
 
     with patch.object(settings, "META_APP_ID", "1234567890"):
         url = MetaOAuthService.get_authorization_url(state="test_state_123")
         assert "client_id=1234567890" in url
         assert "state=test_state_123" in url
+        assert "public_profile" in url
         assert "pages_show_list" in url
         assert "pages_messaging" in url
-        assert "instagram_manage_messages" in url
-        for deprecated in ("pages_manage_posts", "pages_read_user_content", "instagram_manage_comments"):
-            assert deprecated not in url
+        assert "pages_read_engagement" in url
+        assert "pages_manage_metadata" in url
+        assert "instagram_manage_messages" not in url
+        assert "instagram_basic" not in url
+        for disallowed in (
+            "instagram_basic",
+            "instagram_manage_messages",
+            "pages_manage_posts",
+            "pages_read_user_content",
+            "instagram_manage_comments",
+        ):
+            assert disallowed not in url
 
 
 def test_generate_oauth_state_with_redirect_uri():
@@ -406,7 +422,7 @@ async def test_meta_oauth_server_callback_success():
             assert "window.close()" in content
 
         mock_exchange.assert_awaited_once_with(code="mock_oauth_code_456", redirect_uri="https://webluxira.com/api/v1/meta/oauth/callback")
-        mock_fetch.assert_awaited_once_with(long_lived_user_token="mock_long_lived_token_123")
+        mock_fetch.assert_awaited_once_with(long_lived_user_token="mock_long_lived_token_123", db=ANY)
         mock_save.assert_awaited_once()
 
 
