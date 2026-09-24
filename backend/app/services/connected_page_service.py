@@ -68,7 +68,7 @@ class ConnectedPageService:
         cls,
         session: AsyncSession,
         page_id: str,
-        subscribed_fields: Optional[str] = "messages,messaging_postbacks,message_echoes,messaging_referrals",
+        subscribed_fields: Optional[str] = "messages,messaging_postbacks,message_echoes,messaging_referrals,standby",
     ) -> bool:
         """Subscribe page to Meta App Webhook via POST /{page_id}/subscribed_apps and mark active in DB."""
         if not page_id or not str(page_id).strip():
@@ -106,6 +106,122 @@ class ConnectedPageService:
         except Exception as exc:
             logger.warning("[ConnectedPageService] Exception subscribing page %s: %s", pid, exc)
         return False
+
+    @classmethod
+    async def refresh_and_discover_pages(
+        cls,
+        session: AsyncSession,
+        user_id: Optional[uuid.UUID] = None,
+    ) -> dict[str, Any]:
+        """
+        Dynamically refresh and discover Facebook pages:
+        1. Fetch active admin user token from Redis/memory.
+        2. If user token exists:
+           - Calls GET /me/accounts via MetaOAuthService.fetch_user_pages.
+           - Identifies newly added pages vs existing DB pages.
+           - Upserts discovered pages into connected_pages and auto-subscribes webhooks.
+        3. If user token is missing or expired:
+           - Re-checks and re-subscribes all existing connected_pages in the DB.
+           - Returns summary with needs_reauth flag.
+        """
+        from app.services.meta_oauth_service import MetaOAuthService
+
+        user_token = await MetaOAuthService.get_active_admin_user_token()
+
+        # Query existing active/non-deleted pages from DB
+        stmt = (
+            select(ConnectedPage)
+            .where(ConnectedPage.deleted_at.is_(None))
+            .order_by(ConnectedPage.created_at.desc())
+        )
+        existing_res = await session.execute(stmt)
+        existing_pages = list(existing_res.scalars().all())
+        existing_pids = {p.page_id for p in existing_pages}
+
+        if user_token:
+            try:
+                logger.info("[ConnectedPageService] Executing dynamic discovery via /me/accounts with admin user token...")
+                discovered_pages = await MetaOAuthService.fetch_user_pages(
+                    long_lived_user_token=user_token,
+                    db=session,
+                )
+
+                if discovered_pages:
+                    # Identify newly authorized page IDs
+                    new_pids = [
+                        str(p.get("id")).strip()
+                        for p in discovered_pages
+                        if str(p.get("id")).strip() and str(p.get("id")).strip() not in existing_pids
+                    ]
+
+                    # Save / update all discovered pages & auto-subscribe webhooks
+                    saved_records = await MetaOAuthService.save_or_update_pages(
+                        pages=discovered_pages,
+                        user_id=user_id or (existing_pages[0].connected_by_user_id if existing_pages and existing_pages[0].connected_by_user_id else uuid.uuid4()),
+                        db=session,
+                    )
+
+                    new_page_names = [p.name for p in saved_records if p.page_id in new_pids]
+
+                    logger.info(
+                        "[ConnectedPageService] Dynamic discovery completed: %d total pages, %d newly added (%s)",
+                        len(saved_records),
+                        len(new_pids),
+                        ", ".join(new_page_names) if new_page_names else "none",
+                    )
+
+                    msg = (
+                        f"تم اكتشاف وتفعيل {len(new_pids)} صفحة جديدة بنجاح ({', '.join(new_page_names)}) وتفعيل اشتراك الويب هـوك تلقائياً ✨"
+                        if len(new_pids) > 0
+                        else f"تم التحقق وتحديث {len(saved_records)} صفحة بنجاح. جميع الصفحات المصرح بها متصلة ونشطة بالفعل."
+                    )
+
+                    return {
+                        "success": True,
+                        "status": "success",
+                        "total_pages": len(saved_records),
+                        "new_pages_count": len(new_pids),
+                        "new_pages": new_page_names,
+                        "needs_reauth": False,
+                        "message": msg,
+                        "pages": saved_records,
+                    }
+                else:
+                    logger.warning("[ConnectedPageService] /me/accounts returned no pages for admin user token.")
+            except Exception as fetch_exc:
+                logger.warning(
+                    "[ConnectedPageService] Dynamic page discovery with user token failed (%s). Falling back to DB verification.",
+                    fetch_exc,
+                )
+
+        # Fallback branch: Verify & re-subscribe existing pages in DB
+        logger.info("[ConnectedPageService] Running fallback verification and re-subscription for %d existing DB pages...", len(existing_pages))
+        subscribed_count = 0
+        for p in existing_pages:
+            try:
+                sub_ok = await cls.subscribe_page_to_webhooks(session, p.page_id)
+                if sub_ok:
+                    subscribed_count += 1
+            except Exception as sub_err:
+                logger.debug("Fallback webhook subscription failed for page %s: %s", p.page_id, sub_err)
+
+        msg = (
+            f"تم تحديث والتحقق من {len(existing_pages)} صفحة متصلة واشتراكات الويب هـوك ({subscribed_count} نشطة). "
+            "لاكتشاف صفحات جديدة تم إنشاؤها حديثاً على فيسبوك، يرجى الضغط على زر 'ربط صفحة فيسبوك جديدة' لمنح الصلاحيات."
+            if existing_pages
+            else "لا توجد صفحات متصلة حالياً. يرجى الضغط على 'ربط صفحة فيسبوك جديدة' للبدء."
+        )
+
+        return {
+            "success": True,
+            "status": "warning",
+            "total_pages": len(existing_pages),
+            "new_pages_count": 0,
+            "new_pages": [],
+            "needs_reauth": True,
+            "message": msg,
+            "pages": existing_pages,
+        }
 
 
     @classmethod

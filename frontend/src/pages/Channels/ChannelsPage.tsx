@@ -33,9 +33,11 @@ export const ChannelsPage: React.FC = () => {
     connectedPages,
     isLoadingPages,
     isConnecting,
+    isRefreshing,
     error,
     successMessage,
     fetchConnectedPages,
+    refreshMetaPages,
     initiateMetaConnect,
     cancelMetaConnect,
     clearFeedback,
@@ -154,18 +156,18 @@ export const ChannelsPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            {/* Refresh Button */}
+            {/* Dynamic Discovery & Refresh Button */}
             <button
-              onClick={() => {
-                fetchConnectedPages();
+              onClick={async () => {
+                await refreshMetaPages();
                 loadProviderStatus();
               }}
-              disabled={isLoadingPages || isLoadingProviders}
-              className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition backdrop-blur-sm border border-white/10 disabled:opacity-50"
-              title="تحديث البيانات"
+              disabled={isRefreshing || isLoadingPages || isLoadingProviders}
+              className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition backdrop-blur-sm border border-white/10 disabled:opacity-50 cursor-pointer"
+              title="تحديث واكتشاف الصفحات الجديدة واشتراكات الويب هـوك"
             >
               <RefreshCw
-                className={`w-4 h-4 ${isLoadingPages || isLoadingProviders ? 'animate-spin' : ''}`}
+                className={`w-4 h-4 ${isRefreshing || isLoadingPages || isLoadingProviders ? 'animate-spin' : ''}`}
               />
             </button>
 

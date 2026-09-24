@@ -521,4 +521,107 @@ async def test_meta_provider_send_outbound_attachment(tmp_path):
     )
 
 
+@pytest.mark.asyncio
+async def test_meta_oauth_get_authorization_url_rerequest():
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    url = MetaOAuthService.get_authorization_url(
+        state="test_state_123",
+        redirect_uri="https://webluxira.com/api/v1/meta/oauth/callback",
+    )
+    assert "auth_type=rerequest" in url
+    assert "client_id=" in url
+    assert "state=test_state_123" in url
+
+
+@pytest.mark.asyncio
+async def test_meta_oauth_cache_and_get_admin_user_token():
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    # Test in-memory cache directly
+    await MetaOAuthService.cache_admin_user_token("EAAtest_token_user_12345")
+    retrieved = await MetaOAuthService.get_active_admin_user_token()
+    assert retrieved == "EAAtest_token_user_12345"
+
+
+@pytest.mark.asyncio
+async def test_connected_page_refresh_and_discover_fallback():
+    from app.services.connected_page_service import ConnectedPageService
+    from app.services.meta_oauth_service import MetaOAuthService
+
+    # Clear cached user token
+    MetaOAuthService._latest_user_token = None
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = []
+    mock_session.execute.return_value = mock_res
+
+    with patch.object(MetaOAuthService, "get_active_admin_user_token", new_callable=AsyncMock) as mock_get_tok:
+        mock_get_tok.return_value = None
+        report = await ConnectedPageService.refresh_and_discover_pages(session=mock_session)
+
+        assert report["success"] is True
+        assert report["needs_reauth"] is True
+        assert report["new_pages_count"] == 0
+        assert "ربط صفحة فيسبوك جديدة" in report["message"]
+
+
+@pytest.mark.asyncio
+async def test_connected_page_refresh_and_discover_with_token():
+    import uuid
+    from app.services.connected_page_service import ConnectedPageService
+    from app.services.meta_oauth_service import MetaOAuthService
+    from app.models.connected_page import ConnectedPage
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    # Existing page in DB: Lotus blue cosmetic
+    existing_page = ConnectedPage(
+        id=uuid.uuid4(),
+        page_id="101509818947526",
+        name="Lotus blue cosmetic",
+        encrypted_access_token="enc_tok_1",
+        status="ACTIVE",
+        is_webhook_subscribed=True,
+    )
+    mock_res.scalars.return_value.all.return_value = [existing_page]
+    mock_session.execute.return_value = mock_res
+
+    discovered_pages = [
+        {"id": "101509818947526", "name": "Lotus blue cosmetic", "access_token": "tok_1"},
+        {"id": "100736899432829", "name": "LOOX KING WOMEN", "access_token": "tok_2"},
+    ]
+
+    new_page_record = ConnectedPage(
+        id=uuid.uuid4(),
+        page_id="100736899432829",
+        name="LOOX KING WOMEN",
+        encrypted_access_token="enc_tok_2",
+        status="ACTIVE",
+        is_webhook_subscribed=True,
+    )
+
+    with patch.object(MetaOAuthService, "get_active_admin_user_token", new_callable=AsyncMock) as mock_get_tok, \
+         patch.object(MetaOAuthService, "fetch_user_pages", new_callable=AsyncMock) as mock_fetch, \
+         patch.object(MetaOAuthService, "save_or_update_pages", new_callable=AsyncMock) as mock_save:
+
+        mock_get_tok.return_value = "EAA_valid_admin_token"
+        mock_fetch.return_value = discovered_pages
+        mock_save.return_value = [existing_page, new_page_record]
+
+        report = await ConnectedPageService.refresh_and_discover_pages(
+            session=mock_session,
+            user_id=uuid.uuid4(),
+        )
+
+        assert report["success"] is True
+        assert report["needs_reauth"] is False
+        assert report["total_pages"] == 2
+        assert report["new_pages_count"] == 1
+        assert "LOOX KING WOMEN" in report["new_pages"]
+        assert "تم اكتشاف وتفعيل 1 صفحة جديدة بنجاح" in report["message"]
+
+
+
 

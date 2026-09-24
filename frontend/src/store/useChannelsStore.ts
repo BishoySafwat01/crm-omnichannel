@@ -8,11 +8,13 @@ interface ChannelsState {
   isLoadingPages: boolean;
   isConnecting: boolean;
   isProcessingCallback: boolean;
+  isRefreshing: boolean;
   actionLoadingMap: Record<string, boolean>;
   error: string | null;
   successMessage: string | null;
 
   fetchConnectedPages: () => Promise<void>;
+  refreshMetaPages: () => Promise<{ success: boolean; new_pages_count: number; message: string }>;
   initiateMetaConnect: (customRedirectUri?: string, customScope?: string) => Promise<void>;
   connectMetaPage: (customRedirectUri?: string, customScope?: string) => Promise<void>;
   cancelMetaConnect: () => void;
@@ -39,6 +41,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   isLoadingPages: false,
   isConnecting: false,
   isProcessingCallback: false,
+  isRefreshing: false,
   actionLoadingMap: {},
   error: null,
   successMessage: null,
@@ -54,6 +57,36 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         error: err.message || 'فشل في تحميل الصفحات المتصلة',
         isLoadingPages: false,
       });
+    }
+  },
+
+  refreshMetaPages: async () => {
+    set({ isRefreshing: true, error: null, successMessage: null });
+    try {
+      const data = await metaOAuthApi.refreshConnectedPages();
+      if (Array.isArray(data.pages) && data.pages.length > 0) {
+        set({ connectedPages: data.pages, isRefreshing: false });
+      } else {
+        await get().fetchConnectedPages();
+        set({ isRefreshing: false });
+      }
+
+      set({ successMessage: data.message });
+
+      return {
+        success: true,
+        new_pages_count: data.new_pages_count || 0,
+        message: data.message,
+      };
+    } catch (err: any) {
+      console.warn('[ChannelsStore] Failed to dynamically refresh connected pages:', err);
+      await get().fetchConnectedPages();
+      const errMsg = err.message || 'فشل في تحديث الصفحات واكتشاف الصفحات الجديدة';
+      set({
+        isRefreshing: false,
+        error: errMsg,
+      });
+      return { success: false, new_pages_count: 0, message: errMsg };
     }
   },
 
@@ -77,8 +110,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
       const scopesToRequest = customScope || FACEBOOK_PAGE_SCOPES;
       const res = await metaOAuthApi.getMetaLoginUrl(redirectUri, scopesToRequest);
-      const authUrl = res?.authorization_url;
+      let authUrl = res?.authorization_url;
       if (!authUrl) throw new Error('فشل في إنشاء رابط تصريح Meta من الخادم');
+
+      // Ensure auth_type=rerequest is unconditionally present on the URL to force page selection
+      if (!authUrl.includes('auth_type=')) {
+        authUrl += (authUrl.includes('?') ? '&' : '?') + 'auth_type=rerequest';
+      }
 
       // 2. Open popup directly pointing to Facebook OAuth
       const width = 650;

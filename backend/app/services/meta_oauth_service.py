@@ -39,12 +39,53 @@ DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
     "messages",
     "messaging_postbacks",
     "message_echoes",
+    "messaging_referrals",
     "standby",
 ]
 
 
 class MetaOAuthService:
     """OAuth 2.0 Service for Meta (Facebook & Instagram) Multi-Page Onboarding."""
+
+    _latest_user_token: Optional[str] = None
+
+    @classmethod
+    async def cache_admin_user_token(cls, token: str) -> None:
+        """Cache the 60-day long-lived admin user token in-memory and Redis."""
+        if not token or not token.strip():
+            return
+        clean_token = token.strip()
+        cls._latest_user_token = clean_token
+        try:
+            from app.core.redis import get_redis_client
+            redis_client = await get_redis_client()
+            await redis_client.set("meta:admin_user_token", clean_token, ex=60 * 86400)
+            logger.info("[MetaOAuthService] Cached admin user token in Redis successfully (TTL: 60 days).")
+        except Exception as redis_exc:
+            logger.warning("[MetaOAuthService] Could not cache admin user token in Redis: %s", redis_exc)
+
+    @classmethod
+    async def get_active_admin_user_token(cls) -> Optional[str]:
+        """Retrieve active admin user token from Redis, in-memory cache, or configuration."""
+        try:
+            from app.core.redis import get_redis_client
+            redis_client = await get_redis_client()
+            cached = await redis_client.get("meta:admin_user_token")
+            if cached and str(cached).strip():
+                cls._latest_user_token = str(cached).strip()
+                return cls._latest_user_token
+        except Exception as redis_exc:
+            logger.debug("[MetaOAuthService] Redis lookup for admin user token failed: %s", redis_exc)
+
+        if cls._latest_user_token and cls._latest_user_token.strip():
+            return cls._latest_user_token
+
+        # Optional fallback from settings if configured
+        fallback_token = getattr(settings, "META_ADMIN_USER_TOKEN", None)
+        if fallback_token and str(fallback_token).strip():
+            return str(fallback_token).strip()
+
+        return None
 
     @staticmethod
     def generate_oauth_state(user_id: uuid.UUID, redirect_uri: Optional[str] = None) -> str:
@@ -180,10 +221,14 @@ class MetaOAuthService:
                     "Could not upgrade to long-lived token (%s), falling back to short-lived token.",
                     resp_long.text,
                 )
-                return short_token
+                final_token = short_token
+            else:
+                long_token = resp_long.json().get("access_token")
+                final_token = long_token or short_token
 
-            long_token = resp_long.json().get("access_token")
-            return long_token or short_token
+            if final_token:
+                await cls.cache_admin_user_token(final_token)
+            return final_token
 
     @classmethod
     async def fetch_user_pages(

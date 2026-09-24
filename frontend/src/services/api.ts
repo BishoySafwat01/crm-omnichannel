@@ -1438,6 +1438,36 @@ export const syncConnectedPageHistory = async (pageId: string): Promise<any> => 
   return await res.json();
 };
 
+export interface MetaPagesRefreshResponse {
+  success: boolean;
+  status: string;
+  total_pages: number;
+  new_pages_count: number;
+  new_pages: string[];
+  needs_reauth?: boolean;
+  message: string;
+  pages: ConnectedPage[];
+}
+
+export const refreshConnectedPages = async (): Promise<MetaPagesRefreshResponse> => {
+  const res = await safeFetch('/meta/pages/refresh', {
+    method: 'POST',
+    headers: getAuthHeaders({ Accept: 'application/json' }),
+  });
+  if (!res || !res.ok) {
+    const fallbackRes = await safeFetch('/meta/connected-pages/refresh', {
+      method: 'POST',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (!fallbackRes || !fallbackRes.ok) {
+      const err = await fallbackRes?.json().catch(() => ({ detail: 'فشل في تحديث واكتشاف الصفحات' }));
+      throw new Error(err?.detail || 'فشل في تحديث واكتشاف الصفحات');
+    }
+    return await fallbackRes.json();
+  }
+  return await res.json();
+};
+
 export const metaOAuthApi = {
   getMetaLoginUrl,
   submitMetaOAuthCallback,
@@ -1447,6 +1477,7 @@ export const metaOAuthApi = {
   deleteConnectedPage,
   subscribeConnectedPage,
   syncConnectedPageHistory,
+  refreshConnectedPages,
 };
 
 

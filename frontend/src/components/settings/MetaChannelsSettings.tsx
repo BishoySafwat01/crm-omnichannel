@@ -41,10 +41,12 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
     connectedPages,
     isLoadingPages,
     isConnecting,
+    isRefreshing,
     actionLoadingMap,
     error,
     successMessage,
     fetchConnectedPages,
+    refreshMetaPages,
     initiateMetaConnect,
     cancelMetaConnect,
     subscribePageWebhook,
@@ -137,13 +139,13 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
             <div className="flex items-center gap-2.5 shrink-0">
               {/* Refresh Button */}
               <button
-                onClick={() => fetchConnectedPages()}
-                disabled={isLoadingPages}
+                onClick={() => refreshMetaPages()}
+                disabled={isRefreshing || isLoadingPages}
                 className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition backdrop-blur-sm border border-white/10 disabled:opacity-50 cursor-pointer"
-                title="تحديث قائمة الصفحات"
+                title="تحديث واكتشاف الصفحات الجديدة واشتراكات الويب هـوك"
               >
                 <RefreshCw
-                  className={`w-4 h-4 ${isLoadingPages ? 'animate-spin' : ''}`}
+                  className={`w-4 h-4 ${isRefreshing || isLoadingPages ? 'animate-spin' : ''}`}
                 />
               </button>
 

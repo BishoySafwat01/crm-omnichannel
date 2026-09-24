@@ -14,6 +14,7 @@ from app.api.deps import require_admin
 from app.core.database import get_db
 from app.models.connected_page import ConnectedPage
 from app.models.user import User
+from app.services.connected_page_service import ConnectedPageService
 from app.services.meta_oauth_service import MetaOAuthService, VALID_SCOPES, DEFAULT_SCOPES
 
 logger = logging.getLogger("app.api.v1.meta_oauth")
@@ -49,6 +50,17 @@ class ConnectedPageResponse(BaseModel):
     deleted_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MetaPagesRefreshResponse(BaseModel):
+    success: bool = True
+    status: str = "success"
+    total_pages: int = 0
+    new_pages_count: int = 0
+    new_pages: list[str] = Field(default_factory=list)
+    needs_reauth: bool = False
+    message: str
+    pages: list[ConnectedPageResponse] = Field(default_factory=list)
 
 
 # --- Endpoints ---
@@ -390,4 +402,39 @@ async def subscribe_connected_page(
     await db.refresh(page)
     logger.info("Admin %s subscribed page %s to webhooks: %s", current_user.email, page_id, subscribed)
     return ConnectedPageResponse.model_validate(page)
+
+
+@router.post(
+    "/pages/refresh",
+    response_model=MetaPagesRefreshResponse,
+    summary="Dynamic Discovery & Refresh for Connected Pages",
+)
+@router.post(
+    "/connected-pages/refresh",
+    response_model=MetaPagesRefreshResponse,
+    summary="Dynamic Discovery & Refresh for Connected Pages (Alias)",
+)
+async def refresh_connected_pages(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> MetaPagesRefreshResponse:
+    """Dynamically re-query Meta Graph API /me/accounts using active admin user token,
+    discover newly authorized pages, upsert them into connected_pages, and auto-subscribe to webhooks.
+    """
+    result = await ConnectedPageService.refresh_and_discover_pages(
+        session=db,
+        user_id=current_user.id,
+    )
+    raw_pages = result.get("pages", [])
+    serialized_pages = [ConnectedPageResponse.model_validate(p) for p in raw_pages]
+    return MetaPagesRefreshResponse(
+        success=result.get("success", True),
+        status=result.get("status", "success"),
+        total_pages=result.get("total_pages", len(serialized_pages)),
+        new_pages_count=result.get("new_pages_count", 0),
+        new_pages=result.get("new_pages", []),
+        needs_reauth=result.get("needs_reauth", False),
+        message=result.get("message", ""),
+        pages=serialized_pages,
+    )
 
