@@ -388,12 +388,18 @@ class MetaImportService:
                     or norm_conv.customer_display_name
                 )
 
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=target_page_id,
+                    session=session,
+                )
+
                 customer, _ = await CustomerService.get_or_create_customer_with_identity(
                     session=session,
                     provider=ProviderEnum.META,
                     channel=channel,
                     external_user_id=cust_ext_id,
                     display_name=resolved_name,
+                    metadata_={"page_id": str(target_page_id).strip(), "brand": brand_name} if target_page_id else None,
                 )
 
                 # Enrich Customer profile details
@@ -415,11 +421,6 @@ class MetaImportService:
                     provider=ProviderEnum.META,
                     channel=channel,
                     external_conversation_id=norm_conv.external_conversation_id,
-                )
-
-                brand_name = await MetaImportService.resolve_brand_name_dynamically(
-                    entry_page_id=target_page_id,
-                    session=session,
                 )
                 if existing_conv:
                     conv = existing_conv
@@ -875,6 +876,12 @@ class MetaImportService:
                             last_result_msg_id = target_mid
                             continue
 
+                    brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                        entry_page_id=entry_page_id,
+                        session=session,
+                        active_connected_pages=active_connected_pages,
+                    )
+
                     # 3. Native outbound agent reply sent outside CRM (e.g. via Instagram / Facebook app)
                     # Resolve or create Customer & Identity for target_cust_id (the customer)
                     customer, identity = await CustomerService.get_or_create_customer_with_identity(
@@ -882,6 +889,7 @@ class MetaImportService:
                         provider=ProviderEnum.META,
                         channel=norm_event.channel,
                         external_user_id=target_cust_id,
+                        metadata_={"page_id": str(entry_page_id).strip(), "brand": brand_name} if entry_page_id else None,
                     )
 
                     if is_generic_display_name(customer.display_name):
@@ -893,12 +901,6 @@ class MetaImportService:
                                 channel=norm_event.channel,
                             )
                         )
-
-                    brand_name = await MetaImportService.resolve_brand_name_dynamically(
-                        entry_page_id=entry_page_id,
-                        session=session,
-                        active_connected_pages=active_connected_pages,
-                    )
 
                     if not conv:
                         conv = await ConversationService.get_or_create_conversation_for_identity(
@@ -1015,6 +1017,12 @@ class MetaImportService:
                     logger.info("Meta webhook: non-message event ignored for sender_psid=%s", norm_event.sender_psid)
                     continue
 
+                brand_name = await MetaImportService.resolve_brand_name_dynamically(
+                    entry_page_id=entry_page_id,
+                    session=session,
+                    active_connected_pages=active_connected_pages,
+                )
+
                 # 1. Resolve/create Customer & CustomerIdentity
                 customer, identity = await CustomerService.get_or_create_customer_with_identity(
                     session=session,
@@ -1022,6 +1030,7 @@ class MetaImportService:
                     channel=norm_event.channel,
                     external_user_id=norm_event.sender_psid,
                     workspace_id=entry_workspace_id,
+                    metadata_={"page_id": str(entry_page_id).strip(), "brand": brand_name} if entry_page_id else None,
                 )
 
                 # Guard: Silently ignore messages from blocked customers to protect agent inbox
@@ -1045,12 +1054,6 @@ class MetaImportService:
                             channel=norm_event.channel,
                         )
                     )
-
-                brand_name = await MetaImportService.resolve_brand_name_dynamically(
-                    entry_page_id=entry_page_id,
-                    session=session,
-                    active_connected_pages=active_connected_pages,
-                )
 
                 # 2. Resolve/create Conversation
                 conv = await ConversationService.get_or_create_conversation_for_identity(

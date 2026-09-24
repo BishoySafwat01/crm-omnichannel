@@ -327,8 +327,11 @@ class MessageService:
         )
         default_sender = conv_page_id or settings.META_PAGE_ID or "crm_agent"
 
-        # Resolve CustomerIdentity for provider/channel (prefer META provider, with universal fallback)
-        identity_stmt = (
+        # Tiered Recipient PSID / External User ID Resolution:
+        clean_recipient = None
+
+        # 1. Fetch all identities for this customer & channel
+        all_identities_stmt = (
             select(CustomerIdentity)
             .where(
                 CustomerIdentity.customer_id == conv.customer_id,
@@ -338,20 +341,105 @@ class MessageService:
                 case((CustomerIdentity.provider == ProviderEnum.META, 1), else_=2)
             )
         )
-        identity_res = await session.execute(identity_stmt)
-        identity = identity_res.scalars().first()
+        all_identities = (await session.execute(all_identities_stmt)).scalars().all()
 
-        if identity and identity.external_user_id:
-            clean_recipient = identity.external_user_id.strip()
-        elif conv.external_conversation_id and conv.provider != ProviderEnum.META:
+        # 1a. Identity specifically matching this page_id or brand in its metadata
+        if conv_page_id or conv.brand:
+            for ident in all_identities:
+                meta = getattr(ident, "metadata_", None) or {}
+                if isinstance(meta, dict):
+                    if conv_page_id and str(meta.get("page_id", "")).strip() == str(conv_page_id).strip():
+                        clean_recipient = ident.external_user_id.strip()
+                        break
+                    if conv.brand and str(meta.get("brand", "")).strip().lower() == str(conv.brand).strip().lower():
+                        clean_recipient = ident.external_user_id.strip()
+                        break
+
+        # 2. Look up the most recent inbound customer message in THIS conversation
+        # (Contains the exact Page-Scoped User ID assigned by Meta for this page)
+        if not clean_recipient or clean_recipient.startswith("t_"):
+            try:
+                cust_msg_stmt = (
+                    select(Message)
+                    .where(
+                        Message.conversation_id == conv.id,
+                        Message.sender_type == SenderTypeEnum.CUSTOMER,
+                        Message.deleted_at.is_(None),
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+                last_cust_msg = (await session.execute(cust_msg_stmt)).scalars().first()
+                if last_cust_msg:
+                    if last_cust_msg.sender_external_id and not str(last_cust_msg.sender_external_id).startswith("t_"):
+                        clean_recipient = str(last_cust_msg.sender_external_id).strip()
+                    elif last_cust_msg.metadata_ and isinstance(last_cust_msg.metadata_, dict):
+                        raw_sender = last_cust_msg.metadata_.get("raw", {}).get("sender", {}).get("id")
+                        if raw_sender and not str(raw_sender).startswith("t_"):
+                            clean_recipient = str(raw_sender).strip()
+            except Exception as exc:
+                logger.debug("Failed to extract recipient PSID from customer message: %s", exc)
+
+        # 3. Extract PSID from conv.external_conversation_id if formatted with resp_conv_ or conv_
+        if (not clean_recipient or clean_recipient.startswith("t_")) and conv.external_conversation_id:
+            ext_conv = conv.external_conversation_id.strip()
+            if ext_conv.startswith("resp_conv_"):
+                candidate = ext_conv[len("resp_conv_"):].strip()
+                if candidate and not candidate.startswith("t_"):
+                    clean_recipient = candidate
+            elif ext_conv.startswith("conv_"):
+                candidate = ext_conv[len("conv_"):].strip()
+                if candidate and not candidate.startswith("t_"):
+                    clean_recipient = candidate
+
+        # 4. Fallback to any valid customer identity (preferring META provider)
+        if not clean_recipient or clean_recipient.startswith("t_"):
+            meta_identities = [i for i in all_identities if i.provider == ProviderEnum.META and not i.external_user_id.startswith("t_")]
+            if meta_identities:
+                clean_recipient = meta_identities[0].external_user_id.strip()
+            elif all_identities:
+                valid_identities = [i for i in all_identities if not i.external_user_id.startswith("t_")]
+                if valid_identities:
+                    clean_recipient = valid_identities[0].external_user_id.strip()
+
+        # 5. Non-Meta channels fallback (WhatsApp, Telegram, etc.)
+        if not clean_recipient and conv.external_conversation_id and conv.provider != ProviderEnum.META:
             clean_recipient = conv.external_conversation_id.strip()
-        else:
+
+        if not clean_recipient:
             raise ValueError(
                 f"Customer recipient identity not found for conversation {conversation_id}."
             )
 
         if clean_recipient.startswith("t_"):
             clean_recipient = clean_recipient[2:]
+
+        # 6. Auto-Repair / Sync: ensure CustomerIdentity exists with page_id & brand metadata
+        try:
+            matched_ident = next((i for i in all_identities if i.external_user_id == clean_recipient), None)
+            if matched_ident:
+                m = dict(getattr(matched_ident, "metadata_", {}) or {})
+                needs_update = False
+                if conv_page_id and m.get("page_id") != conv_page_id:
+                    m["page_id"] = conv_page_id
+                    needs_update = True
+                if conv.brand and m.get("brand") != conv.brand:
+                    m["brand"] = conv.brand
+                    needs_update = True
+                if needs_update:
+                    matched_ident.metadata_ = m
+                    session.add(matched_ident)
+            else:
+                new_ident = CustomerIdentity(
+                    customer_id=conv.customer_id,
+                    provider=conv.provider,
+                    channel=conv.channel,
+                    external_user_id=clean_recipient,
+                    metadata_={"page_id": conv_page_id, "brand": conv.brand},
+                )
+                session.add(new_ident)
+        except Exception as repair_exc:
+            logger.debug("Identity auto-repair non-fatal notice: %s", repair_exc)
 
         # Idempotency Check BEFORE external API dispatch
         if clean_text:

@@ -545,6 +545,12 @@ class CustomerService:
                 )
                 session.add(identity)
                 await session.flush()
+            elif metadata_:
+                existing_meta = dict(getattr(identity, "metadata_", {}) or {})
+                existing_meta.update(metadata_)
+                identity.metadata_ = existing_meta
+                session.add(identity)
+                await session.flush()
             return existing_customer, identity
 
         customer = Customer(
