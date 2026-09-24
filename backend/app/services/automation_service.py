@@ -199,17 +199,20 @@ class AutomationService:
             session.add(execution_log)
             await session.commit()
 
-            # 5. Prepare Message Chunks (Line-by-line splitting if configured)
-            raw_text = rule.response_text or ""
-            should_split = getattr(rule, "split_lines", True)
-            if should_split and "\n" in raw_text:
-                chunks = [line.strip() for line in raw_text.split("\n") if line.strip()]
+            # 5. Multi-Message Sequential Dispatch on Newlines
+            raw_text = (rule.response_text or "").strip()
+            if not raw_text:
+                return None
+
+            # Split by line breaks (\n\n, \r\n, \n) into trimmed message segments
+            if "\n" in raw_text or "\r" in raw_text:
+                chunks = [seg.strip() for seg in re.split(r'[\r\n]+', raw_text) if seg.strip()]
             else:
-                chunks = [raw_text.strip()] if raw_text.strip() else []
+                chunks = [raw_text]
 
             outbound_msg = None
-            delay_sec = getattr(rule, "delay_seconds", 2) or 2
             sim_typing = getattr(rule, "human_typing_simulation", True)
+            inter_message_delay = 1.2  # Sequential delay between messages as specified
 
             import asyncio
             from app.services.message_service import MessageService
@@ -220,8 +223,8 @@ class AutomationService:
                     continue
 
                 if sim_typing:
-                    # Calculate human-like typing speed: ~40ms per character with min 0.8s and max 4.5s
-                    typing_delay = max(0.8, min(4.5, len(chunk) * 0.045))
+                    # Calculate human-like typing delay per segment
+                    typing_delay = max(0.6, min(2.5, len(chunk) * 0.03))
                     try:
                         await ws_broadcaster.broadcast_event(
                             target="conversation",
@@ -245,7 +248,7 @@ class AutomationService:
                         sender_external_id="automation_bot",
                     )
                     logger.info(
-                        "✅ [Automation Engine] Successfully dispatched message chunk %d/%d for Rule '%s'",
+                        "✅ [Automation Engine] Successfully dispatched message segment %d/%d for Rule '%s'",
                         idx + 1,
                         len(chunks),
                         rule.name,
@@ -254,38 +257,40 @@ class AutomationService:
                     msg_obj = getattr(outbound_res, "message", None)
                     if msg_obj:
                         outbound_msg = msg_obj
+                        msg_dict = msg_obj.model_dump(mode="json") if hasattr(msg_obj, "model_dump") else {
+                            "id": str(getattr(msg_obj, "id", "")),
+                            "conversation_id": str(conversation.id),
+                            "external_message_id": getattr(msg_obj, "external_message_id", None),
+                            "sender_type": "agent",
+                            "sender_external_id": "automation_bot",
+                            "sender_name": "المساعد الآلي",
+                            "message_type": "text",
+                            "text": getattr(msg_obj, "text", chunk),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "delivery_status": "delivered",
+                        }
                         await ws_broadcaster.broadcast_event(
                             target="conversation",
                             conversation_id=str(conversation.id),
                             payload={
                                 "type": "NEW_MESSAGE",
                                 "conversation_id": str(conversation.id),
-                                "message": {
-                                    "id": str(msg_obj.id),
-                                    "conversation_id": str(conversation.id),
-                                    "external_message_id": getattr(msg_obj, "external_message_id", None),
-                                    "sender_type": "agent",
-                                    "sender_external_id": "automation_bot",
-                                    "sender_name": "المساعد الآلي",
-                                    "message_type": "text",
-                                    "text": msg_obj.text,
-                                    "created_at": msg_obj.created_at.isoformat() if getattr(msg_obj, "created_at", None) else datetime.now(timezone.utc).isoformat(),
-                                    "delivery_status": "delivered",
-                                },
+                                "message": msg_dict,
                             }
                         )
                 except Exception as dispatch_err:
                     logger.error(
-                        "⚠️ [Automation Engine] Meta API dispatch error for Rule '%s' chunk %d: %s",
+                        "⚠️ [Automation Engine] Message dispatch error for Rule '%s' segment %d/%d: %s",
                         rule.name,
                         idx + 1,
+                        len(chunks),
                         dispatch_err,
                         exc_info=True,
                     )
 
-                # Wait delay between multiple consecutive messages
-                if idx < len(chunks) - 1 and delay_sec > 0:
-                    await asyncio.sleep(delay_sec)
+                # Wait 1.2s delay between multiple sequential messages
+                if idx < len(chunks) - 1:
+                    await asyncio.sleep(inter_message_delay)
 
             return outbound_msg
 

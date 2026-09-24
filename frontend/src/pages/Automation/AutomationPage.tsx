@@ -31,11 +31,44 @@ import { BadWordsModerationModal } from './components/BadWordsModerationModal';
 import { useBrandStore } from '../../store/useBrandStore';
 import { getBrandObject } from '../../components/ConversationAvatar';
 
-interface MessageBlock {
-  id: string;
-  text: string;
-  delaySeconds: number;
-}
+export const suggestSemanticName = (kws: string[]): string => {
+  const cleanKws = kws.map((k) => k.trim()).filter(Boolean);
+  if (cleanKws.length === 0) return '';
+  const text = cleanKws.join(' ').toLowerCase();
+  const firstKw = cleanKws[0] ? ` (${cleanKws[0].slice(0, 30)})` : '';
+
+  if (['سعر', 'بكم', 'كام', 'تكلفة', 'فلوس', 'اسعار', 'بكام', 'سعره', 'سعرها'].some((w) => text.includes(w))) {
+    return `قاعدة: استفسار السعر${firstKw}`;
+  }
+  if (['حجز', 'ثبت', 'طلب', 'اوردر', 'اشتري', 'ابعتلي', 'احجز', 'تثبيت', 'اريد', 'بدي'].some((w) => text.includes(w))) {
+    return `قاعدة: تأكيد وحجز الطلب${firstKw}`;
+  }
+  if (['توصيل', 'شحن', 'محافظات', 'مصاريف', 'مندوب', 'ميعاد', 'بيوصل'].some((w) => text.includes(w))) {
+    return `قاعدة: الشحن والتوصيل${firstKw}`;
+  }
+  if (['بشرتي', 'درجة', 'درجه', 'فاونديشن', 'لون', 'الوان', 'تغطية', 'كونسيلر'].some((w) => text.includes(w))) {
+    return `قاعدة: درجات البشرة والفاونديشن${firstKw}`;
+  }
+  if (['كلف', 'هالات', 'حبوب', 'اثار', 'تجاعيد', 'مسام', 'علاج', 'تصبغات', 'اكسدة', 'جفاف'].some((w) => text.includes(w))) {
+    return `قاعدة: مشاكل وعلاج البشرة${firstKw}`;
+  }
+  if (['عرض', 'عروض', 'خصم', 'خصومات', 'هدية', 'باكدج', 'بكج', 'تخفيض'].some((w) => text.includes(w))) {
+    return `قاعدة: العروض والخصومات${firstKw}`;
+  }
+  if (['طريقة', 'استخدام', 'استعمال', 'ازاي', 'كيفية', 'طريقه', 'ازى'].some((w) => text.includes(w))) {
+    return `قاعدة: طريقة الاستخدام${firstKw}`;
+  }
+  if (['عنوان', 'مكان', 'فرع', 'فروع', 'لوكيشن', 'موقع', 'المحل'].some((w) => text.includes(w))) {
+    return `قاعدة: الفروع والعنوان${firstKw}`;
+  }
+  if (['تفاصيل', 'معلومات', 'شرح', 'مكونات', 'عايزة اعرف', 'عبارة عن ايه'].some((w) => text.includes(w))) {
+    return `قاعدة: تفاصيل ومعلومات المنتج${firstKw}`;
+  }
+  if (['مرحبا', 'اهلا', 'سلام', 'صباح', 'مساء', 'الو', 'هااي', 'هالو', 'السلام'].some((w) => text.includes(w))) {
+    return `قاعدة: الترحيب والاستقبال${firstKw}`;
+  }
+  return `قاعدة: ${cleanKws.slice(0, 3).join(' / ')}`;
+};
 
 export const AutomationsManager: React.FC = () => {
   const brands = useBrandStore((state) => state.brands);
@@ -60,15 +93,7 @@ export const AutomationsManager: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [messageBlocks, setMessageBlocks] = useState<MessageBlock[]>([
-    { id: '1', text: '', delaySeconds: 0 },
-  ]);
-  const [enableHumanTyping, setEnableHumanTyping] = useState(true);
-  const [typingSpeed, setTypingSpeed] = useState<'fast' | 'natural' | 'careful'>('natural');
-
-  const [isPreviewRunning, setIsPreviewRunning] = useState(false);
-  const [simulatedSentIndex, setSimulatedSentIndex] = useState<number>(-1);
-  const [simulatedIsTyping, setSimulatedIsTyping] = useState(false);
+  const [responseText, setResponseText] = useState('');
 
   const [commentRules, setCommentRules] = useState<CommentAutomationRule[]>([]);
   const [isLoadingCommentRules, setIsLoadingCommentRules] = useState(false);
@@ -117,21 +142,17 @@ export const AutomationsManager: React.FC = () => {
 
   const openCreateModal = () => {
     setEditingRule(null);
-    setName('');
+    const initialKws = ['خصم', 'عروض'];
+    setKeywords(initialKws);
+    setName(suggestSemanticName(initialKws));
     setBrandId('all');
     setChannels(['messenger', 'instagram', 'whatsapp']);
     setMatchType('contains');
     setKeywordInput('');
-    setKeywords(['خصم', 'عروض']);
-    setMessageBlocks([{ id: '1', text: '', delaySeconds: 0 }]);
-    setEnableHumanTyping(true);
-    setTypingSpeed('natural');
+    setResponseText('');
     setCooldownMinutes(15);
     setIsActive(true);
     setFormError(null);
-    setIsPreviewRunning(false);
-    setSimulatedSentIndex(-1);
-    setSimulatedIsTyping(false);
     setIsModalOpen(true);
   };
 
@@ -143,81 +164,32 @@ export const AutomationsManager: React.FC = () => {
     setMatchType((rule.match_type as any) || 'contains');
     setKeywordInput('');
     setKeywords(rule.keywords || []);
-    const rawText = rule.response_text || '';
-    const parts = rawText.split('\n\n').filter((p) => p.trim());
-    if (parts.length > 0) {
-      setMessageBlocks(
-        parts.map((p, idx) => ({
-          id: String(idx + 1),
-          text: p.trim(),
-          delaySeconds: idx === 0 ? 0 : idx * 3,
-        }))
-      );
-    } else {
-      setMessageBlocks([{ id: '1', text: rawText, delaySeconds: 0 }]);
-    }
-    setEnableHumanTyping(true);
-    setTypingSpeed('natural');
+    setResponseText(rule.response_text || '');
     setCooldownMinutes(rule.cooldown_minutes);
     setIsActive(rule.is_active);
     setFormError(null);
-    setIsPreviewRunning(false);
-    setSimulatedSentIndex(-1);
-    setSimulatedIsTyping(false);
     setIsModalOpen(true);
-  };
-
-  const handleAddMessageBlock = () => {
-    const nextId = String(messageBlocks.length + 1);
-    const lastDelay = messageBlocks[messageBlocks.length - 1]?.delaySeconds || 0;
-    setMessageBlocks([...messageBlocks, { id: nextId, text: '', delaySeconds: lastDelay + 3 }]);
-  };
-
-  const handleRemoveMessageBlock = (id: string) => {
-    if (messageBlocks.length <= 1) return;
-    setMessageBlocks(messageBlocks.filter((b) => b.id !== id));
-  };
-
-  const handleUpdateMessageBlock = (id: string, field: 'text' | 'delaySeconds', value: any) => {
-    setMessageBlocks(
-      messageBlocks.map((b) => (b.id === id ? { ...b, [field]: value } : b))
-    );
-  };
-
-  const handleRunPreviewSimulation = () => {
-    if (isPreviewRunning) return;
-    setIsPreviewRunning(true);
-    setSimulatedSentIndex(-1);
-    setSimulatedIsTyping(true);
-
-    let current = 0;
-    const runStep = () => {
-      if (current >= messageBlocks.length) {
-        setSimulatedIsTyping(false);
-        setIsPreviewRunning(false);
-        return;
-      }
-      setSimulatedIsTyping(true);
-      setTimeout(() => {
-        setSimulatedSentIndex(current);
-        setSimulatedIsTyping(false);
-        current++;
-        if (current < messageBlocks.length) {
-          const delay = Math.max(1000, (messageBlocks[current]?.delaySeconds || 2) * 500);
-          setTimeout(runStep, delay);
-        } else {
-          setIsPreviewRunning(false);
-        }
-      }, 1200);
-    };
-    setTimeout(runStep, 800);
   };
 
   const handleAddKeyword = () => {
     const trimmed = keywordInput.trim();
     if (trimmed && !keywords.includes(trimmed)) {
-      setKeywords([...keywords, trimmed]);
+      const nextKws = [...keywords, trimmed];
+      setKeywords(nextKws);
       setKeywordInput('');
+      if (!name.trim() || name.startsWith('قاعدة:') || name.startsWith('Rule_')) {
+        setName(suggestSemanticName(nextKws));
+      }
+    }
+  };
+
+  const handleRemoveKeyword = (kwToRemove: string) => {
+    const nextKws = keywords.filter((k) => k !== kwToRemove);
+    setKeywords(nextKws);
+    if (!name.trim() || name.startsWith('قاعدة:') || name.startsWith('Rule_')) {
+      if (nextKws.length > 0) {
+        setName(suggestSemanticName(nextKws));
+      }
     }
   };
 
@@ -251,9 +223,9 @@ export const AutomationsManager: React.FC = () => {
       setFormError('يرجى إضافة كلمة مفتاحية واحدة على الأقل');
       return;
     }
-    const compiledText = messageBlocks.map((b) => b.text.trim()).filter(Boolean).join('\n\n');
-    if (!compiledText) {
-      setFormError('يرجى إدخال نص رسالة واحدة على الأقل');
+    const cleanText = responseText.trim();
+    if (!cleanText) {
+      setFormError('يرجى إدخال نص الرد التلقائي');
       return;
     }
     setIsSubmitting(true);
@@ -264,7 +236,7 @@ export const AutomationsManager: React.FC = () => {
       channels,
       match_type: matchType,
       keywords,
-      response_text: compiledText,
+      response_text: cleanText,
       cooldown_minutes: cooldownMinutes,
       is_active: isActive,
     };
@@ -478,7 +450,10 @@ export const AutomationsManager: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {rules.map((rule) => {
                   const brandObj = rule.brand_id && rule.brand_id !== 'all' ? getBrandObject(rule.brand_id, rule.brand_id) : null;
-                  const bubbles = (rule.response_text || '').split('\n\n').filter(Boolean);
+                  const bubbles = (rule.response_text || '')
+                    .split(/[\r\n]+/)
+                    .map((p) => p.trim())
+                    .filter(Boolean);
                   return (
                     <div key={rule.id} className={`bg-white rounded-2xl border p-5 shadow-xs transition duration-150 space-y-4 ${rule.is_active ? 'border-slate-200 hover:border-theme-primary/40' : 'border-slate-200/60 opacity-65 bg-slate-50/40'}`}>
                       <div className="flex items-start justify-between gap-2">
@@ -515,8 +490,8 @@ export const AutomationsManager: React.FC = () => {
                         </div>
                         <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
                           <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
-                            <span>الردود المتتالية ({bubbles.length} فقرة):</span>
-                            <span className="text-theme-primary font-semibold flex items-center gap-1"><Sparkles className="w-3 h-3" /> إرسال متتالي</span>
+                            <span>الردود المتتالية ({bubbles.length} رسالة):</span>
+                            <span className="text-theme-primary font-semibold flex items-center gap-1"><Sparkles className="w-3 h-3" /> إرسال متتالي تلقائي</span>
                           </div>
                           <div className="space-y-1">
                             {bubbles.map((b, idx) => (
@@ -611,13 +586,33 @@ export const AutomationsManager: React.FC = () => {
                   <p className="text-[11px] text-slate-500">حدد الكلمات المفتاحية والردود المتتالية المنفصلة</p>
                 </div>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl"><X className="w-4 h-4" /></button>
+              <button onClick={() => setIsModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
             {formError && (<div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2"><AlertCircle className="w-4 h-4" /> <span>{formError}</span></div>)}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم القاعدة:</label>
-                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: الرد الترحيبي" className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary" />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">اسم القاعدة:</label>
+                  {keywords.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setName(suggestSemanticName(keywords))}
+                      className="text-[11px] text-theme-primary hover:text-theme-primary-hover font-bold flex items-center gap-1 cursor-pointer transition"
+                      title="اقتراح اسم تلقائي بناءً على الكلمات المفتاحية"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>اقتراح اسم تلقائي 🪄</span>
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="مثال: قاعدة: استفسار السعر"
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -651,53 +646,51 @@ export const AutomationsManager: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 mb-1">الكلمات المفتاحية:</label>
                 <div className="flex items-center gap-2">
                   <input type="text" value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); handleAddKeyword(); } }} placeholder="اكتب ثم اضغط إضافة..." className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary" />
-                  <button type="button" onClick={handleAddKeyword} className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition">إضافة</button>
+                  <button type="button" onClick={handleAddKeyword} className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer">إضافة</button>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {keywords.map((kw, idx) => (
                     <span key={idx} className="px-2.5 py-1 bg-theme-primary-tint text-theme-primary text-xs font-bold rounded-lg border border-theme-primary/20 flex items-center gap-1.5">
                       <span>{kw}</span>
-                      <button type="button" onClick={() => setKeywords(keywords.filter(k => k !== kw))} className="text-theme-primary/70 hover:text-theme-primary">✕</button>
+                      <button type="button" onClick={() => handleRemoveKeyword(kw)} className="text-theme-primary/70 hover:text-theme-primary cursor-pointer">✕</button>
                     </span>
                   ))}
                 </div>
               </div>
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+
+              {/* Single Consolidated Response Textarea with Sequential Message Note */}
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5"><Layers className="w-4 h-4 text-theme-primary" /> <span>تقسيم الرسائل والتوقيت</span></h4>
-                  </div>
-                  <button type="button" onClick={handleAddMessageBlock} className="px-3 py-1.5 bg-theme-primary hover:bg-theme-primary-hover text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs">إضافة فقرة</button>
+                  <label className="block text-xs font-bold text-slate-700">نص الرد التلقائي:</label>
+                  <span className="text-[11px] text-theme-primary font-bold flex items-center gap-1 bg-theme-primary-tint px-2.5 py-0.5 rounded-lg border border-theme-primary/20">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>إرسال تسلسلي ذكي</span>
+                  </span>
                 </div>
-                <div className="space-y-3">
-                  {messageBlocks.map((block, idx) => (
-                    <div key={block.id} className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-theme-primary bg-theme-primary-tint px-2.5 py-0.5 rounded-md">الفقرة {idx + 1}</span>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                          <span>تأخير:</span>
-                          <input type="number" min={0} max={60} value={block.delaySeconds} onChange={(e) => handleUpdateMessageBlock(block.id, 'delaySeconds', Number(e.target.value))} className="w-14 bg-slate-50 text-center rounded-lg border" />
-                          <span>ثانية</span>
-                        </div>
-                      </div>
-                      <textarea rows={2} required value={block.text} onChange={(e) => handleUpdateMessageBlock(block.id, 'text', e.target.value)} className="w-full bg-slate-50 text-xs p-2.5 rounded-lg border" />
-                    </div>
-                  ))}
+                <textarea
+                  rows={5}
+                  required
+                  value={responseText}
+                  onChange={(e) => setResponseText(e.target.value)}
+                  placeholder="اكتب رسالة الرد التلقائي هنا...
+يمكنك كتابة عدة فقرات أو أسطر مفصولة، وسيقوم النظام بإرسال كل فقرة كرسالة منفصلة بشكل متتالي للعميل."
+                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary leading-relaxed shadow-2xs"
+                />
+                <div className="p-2.5 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                  <span className="text-sm shrink-0">💡</span>
+                  <span className="font-semibold text-[11px]">
+                    ملاحظة: كل سطر جديد أو فقرة مفصولة ستصل للعميل كرسالة منفصلة تلقائياً.
+                  </span>
                 </div>
-                <div className="pt-2 border-t flex flex-col sm:flex-row gap-3">
-                  <label className="flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={enableHumanTyping} onChange={(e) => setEnableHumanTyping(e.target.checked)} /> مظهر الكتابة البشرية</label>
-                </div>
-                <button type="button" onClick={handleRunPreviewSimulation} className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 border border-slate-200 shadow-2xs disabled:opacity-50">
-                  <Play className="w-3.5 h-3.5" /> <span>{isPreviewRunning ? 'جاري المعاينة...' : 'تجربة المعاينة'}</span>
-                </button>
               </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">فترة التهدئة (بالدقائق):</label>
                 <input type="number" min={0} value={cooldownMinutes} onChange={(e) => setCooldownMinutes(Number(e.target.value))} className="w-full bg-slate-50 text-xs font-medium p-2.5 rounded-xl border border-slate-200" />
               </div>
               <div className="flex items-center justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600">إلغاء</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold shadow-xs disabled:opacity-50">حفظ القاعدة</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100">إلغاء</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer">{isSubmitting ? 'جاري الحفظ...' : 'حفظ القاعدة'}</button>
               </div>
             </form>
           </div>

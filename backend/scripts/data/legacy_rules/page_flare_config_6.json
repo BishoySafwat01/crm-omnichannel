@@ -1,0 +1,14 @@
+{
+  "rules": [],
+  "config": {
+    "typingSpeed": 15,
+    "minTypingSpeed": 11,
+    "maxTypingSpeed": 19,
+    "minCooldown": 850,
+    "maxCooldown": 1150,
+    "scrollThread": true,
+    "highlightRows": true,
+    "monitoringInterval": 5000
+  },
+  "auto_start": false
+}
