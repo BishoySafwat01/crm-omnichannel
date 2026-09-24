@@ -36,7 +36,47 @@ def normalize_arabic(text: Optional[str]) -> str:
     return t
 
 
+GLOBAL_AUTOMATION_REDIS_KEY = "crm:automation:global_enabled"
+_in_memory_global_automation_enabled: bool = True
+
+
+async def is_global_automation_enabled() -> bool:
+    """Check if the global automation master switch is enabled via Redis cache with in-memory fallback."""
+    global _in_memory_global_automation_enabled
+    try:
+        from app.core.redis import get_redis_client
+        client = await get_redis_client()
+        val = await client.get(GLOBAL_AUTOMATION_REDIS_KEY)
+        if val is not None:
+            return str(val).lower() in ("true", "1", "yes")
+    except Exception as e:
+        logger.warning("[Automation Engine] Redis check for global toggle failed (%s), using in-memory state: %s", e, _in_memory_global_automation_enabled)
+    return _in_memory_global_automation_enabled
+
+
+async def set_global_automation_enabled(enabled: bool) -> bool:
+    """Set the global automation master switch state in Redis and in-memory cache."""
+    global _in_memory_global_automation_enabled
+    _in_memory_global_automation_enabled = enabled
+    try:
+        from app.core.redis import get_redis_client
+        client = await get_redis_client()
+        await client.set(GLOBAL_AUTOMATION_REDIS_KEY, "true" if enabled else "false")
+        logger.info("[Automation Engine] Successfully set global automation master toggle in Redis to: %s", enabled)
+    except Exception as e:
+        logger.warning("[Automation Engine] Failed to persist global automation toggle to Redis (%s), saved in-memory: %s", e, enabled)
+    return _in_memory_global_automation_enabled
+
+
 class AutomationService:
+    @staticmethod
+    async def is_global_enabled() -> bool:
+        return await is_global_automation_enabled()
+
+    @staticmethod
+    async def set_global_enabled(enabled: bool) -> bool:
+        return await set_global_automation_enabled(enabled)
+
     @staticmethod
     async def evaluate_inbound_message(
         session: AsyncSession,
@@ -45,6 +85,12 @@ class AutomationService:
         text: Optional[str],
     ) -> Optional[Message]:
         if not text or not text.strip():
+            return None
+
+        # 0. Global Master Automation Toggle Check
+        # If the global master circuit breaker is off, bypass all automation immediately across the entire CRM
+        if not await is_global_automation_enabled():
+            logger.info("[Automation Engine] Global automation master switch is disabled. Skipping auto-reply.")
             return None
 
         # Resolve Page ID from conversation context

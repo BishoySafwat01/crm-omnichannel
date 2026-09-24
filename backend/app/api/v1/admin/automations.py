@@ -13,10 +13,50 @@ from app.schemas.automation import (
     AutomationRuleCreate,
     AutomationRuleResponse,
     AutomationRuleUpdate,
+    GlobalAutomationToggleRequest,
+    GlobalAutomationToggleResponse,
 )
 from app.services.audit_service import AuditService
+from app.services.automation_service import (
+    is_global_automation_enabled,
+    set_global_automation_enabled,
+)
 
 router = APIRouter()
+
+
+@router.get("/global-toggle", response_model=GlobalAutomationToggleResponse)
+async def get_global_automation_toggle(
+    admin_user: User = Depends(require_admin),
+):
+    enabled = await is_global_automation_enabled()
+    return GlobalAutomationToggleResponse(is_global_automation_enabled=enabled, status="ok")
+
+
+@router.post("/global-toggle", response_model=GlobalAutomationToggleResponse)
+async def set_global_automation_toggle_endpoint(
+    payload: GlobalAutomationToggleRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    enabled = await set_global_automation_enabled(payload.enabled)
+
+    client_ip = request.client.host if request.client else None
+    await AuditService.log_action(
+        session=db,
+        user_id=admin_user.id,
+        action="automation.global_toggle",
+        resource_type="automation",
+        resource_id="global",
+        payload={
+            "is_global_automation_enabled": enabled,
+            "action": "enabled" if enabled else "disabled",
+        },
+        ip_address=client_ip,
+    )
+
+    return GlobalAutomationToggleResponse(is_global_automation_enabled=enabled, status="ok")
 
 
 @router.get("", response_model=list[AutomationRuleResponse])

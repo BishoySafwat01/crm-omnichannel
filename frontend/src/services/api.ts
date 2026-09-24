@@ -384,6 +384,7 @@ export interface AutomationRule {
   id: string;
   name: string;
   brand_id?: string | null;
+  page_id?: string | null;
   channels: string[];
   trigger_type: string;
   match_type: string;
@@ -409,6 +410,32 @@ export interface AutomationExecutionLog {
 }
 
 export const automationApi = {
+  async getGlobalToggle(): Promise<boolean> {
+    const res = await safeFetch('/admin/automations/global-toggle', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      return data.is_global_automation_enabled ?? true;
+    }
+    return true;
+  },
+
+  async setGlobalToggle(enabled: boolean): Promise<boolean> {
+    const res = await safeFetch('/admin/automations/global-toggle', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في تغيير حالة الأتمتة الشاملة' }));
+      throw new Error(err?.detail || 'فشل في تغيير حالة الأتمتة الشاملة');
+    }
+    const data = await res.json();
+    return data.is_global_automation_enabled ?? enabled;
+  },
+
   async listRules(): Promise<AutomationRule[]> {
     const res = await safeFetch('/admin/automations', {
       method: 'GET',

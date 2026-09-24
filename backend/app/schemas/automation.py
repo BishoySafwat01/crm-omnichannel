@@ -69,3 +69,13 @@ class AutomationExecutionLogResponse(BaseModel):
     rule_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class GlobalAutomationToggleRequest(BaseModel):
+    enabled: bool = Field(..., description="Enable or disable global CRM automation")
+
+
+class GlobalAutomationToggleResponse(BaseModel):
+    is_global_automation_enabled: bool
+    status: str = "ok"
+

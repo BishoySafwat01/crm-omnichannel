@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Bot,
   Plus,
@@ -19,14 +19,16 @@ import {
   Sparkles,
   MessageCircle,
   ShieldAlert,
+  Filter,
 } from 'lucide-react';
 import {
   automationApi,
   AutomationRule,
   AutomationExecutionLog,
   commentAutomationApi,
+  getConnectedPages,
 } from '../../services/api';
-import { CommentAutomationRule } from '../../types/crm';
+import { CommentAutomationRule, ConnectedPage } from '../../types/crm';
 import { BadWordsModerationModal } from './components/BadWordsModerationModal';
 import { useBrandStore } from '../../store/useBrandStore';
 import { getBrandObject } from '../../components/ConversationAvatar';
@@ -109,6 +111,16 @@ export const AutomationsManager: React.FC = () => {
   const [isCommentRuleActive, setIsCommentRuleActive] = useState(true);
   const [commentFormError, setCommentFormError] = useState<string | null>(null);
 
+  // Global Automation Master Toggle State
+  const [isGlobalEnabled, setIsGlobalEnabled] = useState<boolean>(true);
+  const [isTogglingGlobal, setIsTogglingGlobal] = useState<boolean>(false);
+  const [globalToggleError, setGlobalToggleError] = useState<string | null>(null);
+
+  // Multi-Filter State (by Account/Page and Channel)
+  const [connectedPages, setConnectedPages] = useState<ConnectedPage[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState<string>('all');
+  const [selectedChannel, setSelectedChannel] = useState<string>('all');
+
   const fetchRulesAndLogs = async () => {
     setIsLoading(true);
     try {
@@ -135,10 +147,82 @@ export const AutomationsManager: React.FC = () => {
     }
   };
 
+  const fetchGlobalToggle = async () => {
+    try {
+      const enabled = await automationApi.getGlobalToggle();
+      setIsGlobalEnabled(enabled);
+    } catch (e) {
+      console.warn('[AutomationsManager] Error fetching global toggle:', e);
+    }
+  };
+
+  const fetchConnectedPagesList = async () => {
+    try {
+      const pages = await getConnectedPages();
+      setConnectedPages(pages || []);
+    } catch (e) {
+      console.warn('[AutomationsManager] Error fetching connected pages:', e);
+    }
+  };
+
   useEffect(() => {
     fetchRulesAndLogs();
     fetchCommentRules();
+    fetchGlobalToggle();
+    fetchConnectedPagesList();
   }, []);
+
+  const handleToggleGlobal = async () => {
+    const nextState = !isGlobalEnabled;
+    setIsGlobalEnabled(nextState);
+    setIsTogglingGlobal(true);
+    setGlobalToggleError(null);
+    try {
+      const updated = await automationApi.setGlobalToggle(nextState);
+      setIsGlobalEnabled(updated);
+    } catch (err: any) {
+      setIsGlobalEnabled(!nextState); // Rollback optimistic update
+      setGlobalToggleError(err?.message || 'فشل في تغيير حالة التحكم الشامل بالأتمتة');
+    } finally {
+      setIsTogglingGlobal(false);
+    }
+  };
+
+  // Available pages for the filter dropdown
+  const availablePages = useMemo(() => {
+    const map = new Map<string, string>();
+    connectedPages.forEach((p) => {
+      if (p.page_id) {
+        map.set(p.page_id, p.name || p.page_id);
+      }
+    });
+    const knownNames: Record<string, string> = {
+      '101509818947526': 'Lotus Blue Cosmetic',
+      '100736899432829': 'Lavva',
+      '104710089055383': 'LOXX KING MAN',
+      '103412619187974': 'Hayat Cosmetics',
+      '801569813029844': 'Liora',
+    };
+    rules.forEach((r) => {
+      if (r.page_id && !map.has(r.page_id)) {
+        map.set(r.page_id, knownNames[r.page_id] || `صفحة (${r.page_id})`);
+      }
+    });
+    return Array.from(map.entries()).map(([page_id, name]) => ({ page_id, name }));
+  }, [connectedPages, rules]);
+
+  // Filtered Rules by Account/Page and Channel
+  const filteredRules = useMemo(() => {
+    return rules.filter((rule) => {
+      const matchesPage = selectedPageId === 'all' || rule.page_id === selectedPageId;
+      let matchesChannel = true;
+      if (selectedChannel !== 'all') {
+        const ruleChans = rule.channels || [];
+        matchesChannel = ruleChans.includes(selectedChannel);
+      }
+      return matchesPage && matchesChannel;
+    });
+  }, [rules, selectedPageId, selectedChannel]);
 
   const openCreateModal = () => {
     setEditingRule(null);
@@ -398,6 +482,65 @@ export const AutomationsManager: React.FC = () => {
           </div>
         </div>
 
+        {/* Global Master Automation Switch Card */}
+        <div className={`p-5 rounded-3xl border transition-all duration-200 shadow-xs ${
+          isGlobalEnabled 
+            ? 'bg-gradient-to-r from-emerald-500/10 via-white to-white border-emerald-200/80' 
+            : 'bg-gradient-to-r from-rose-500/10 via-white to-white border-rose-200/80'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                isGlobalEnabled
+                  ? 'bg-emerald-500 text-white shadow-emerald-500/20'
+                  : 'bg-rose-500 text-white shadow-rose-500/20'
+              }`}>
+                <Power className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="text-base font-black text-slate-900">
+                    التحكم الشامل بالأتمتة (Master Automation Control)
+                  </h2>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition ${
+                    isGlobalEnabled
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${isGlobalEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                    {isGlobalEnabled ? 'كافة القواعد مفعلة 🟢' : 'كافة القواعد متوقفة مؤقتاً 🔴'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">
+                  {isGlobalEnabled
+                    ? 'المحرك الآلي يعمل بنشاط ويستجيب تلقائياً لرسائل العملاء الواردة على كافة القنوات والصفحات المعتمدة.'
+                    : 'محرك الأتمتة متوقف شمولياً — لن يتم إرسال أي ردود آلية للعملاء على أي منصة أو حساب حتى إعادة التفعيل.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Master Switch Action Switch with instant feedback */}
+            <div className="flex items-center gap-3 self-end sm:self-center">
+              {globalToggleError && (
+                <span className="text-xs text-rose-600 font-bold">{globalToggleError}</span>
+              )}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isGlobalEnabled}
+                disabled={isTogglingGlobal}
+                onClick={handleToggleGlobal}
+                className={`w-16 h-8 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                  isGlobalEnabled ? 'bg-emerald-500 justify-start' : 'bg-slate-300 justify-end'
+                } ${isTogglingGlobal ? 'opacity-60 cursor-wait' : ''}`}
+                title={isGlobalEnabled ? 'إيقاف تشغيل الأتمتة بالكامل' : 'تشغيل الأتمتة بالكامل'}
+              >
+                <div className="w-6 h-6 rounded-full bg-white shadow-md transform transition-all duration-200" />
+              </button>
+            </div>
+          </div>
+        </div>
+
         {activeTab === 'messages' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -429,6 +572,90 @@ export const AutomationsManager: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* Advanced Multi-Filter Bar (by Account/Page and Independent Channels) */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 flex-1 flex-wrap">
+                {/* Account / Page Dropdown Filter */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0">
+                    <Layers className="w-4 h-4 text-theme-primary" />
+                    <span>الحساب / الصفحة:</span>
+                  </div>
+                  <select
+                    value={selectedPageId}
+                    onChange={(e) => setSelectedPageId(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-theme-primary transition cursor-pointer min-w-[200px]"
+                  >
+                    <option value="all">جميع الحسابات والصفحات (All Accounts)</option>
+                    {availablePages.map((page) => (
+                      <option key={page.page_id} value={page.page_id}>
+                        {page.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Independent Channel Segmented Pill Bar */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0">
+                    <Filter className="w-4 h-4 text-theme-primary" />
+                    <span>القناة:</span>
+                  </div>
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60 flex-wrap gap-1">
+                    {[
+                      { id: 'all', label: 'الكل (جميع القنوات)' },
+                      { id: 'whatsapp', label: 'واتساب (WhatsApp)' },
+                      { id: 'messenger', label: 'ماسنجر (Messenger)' },
+                      { id: 'instagram', label: 'إنستغرام (Instagram)' },
+                    ].map((chan) => {
+                      const isSelected = selectedChannel === chan.id;
+                      return (
+                        <button
+                          key={chan.id}
+                          type="button"
+                          onClick={() => setSelectedChannel(chan.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-white text-theme-primary shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {chan.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Counter & Reset Filter Option */}
+              <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0 border-t lg:border-t-0 pt-2 lg:pt-0 border-slate-100">
+                <div className="px-3 py-1.5 bg-slate-100 rounded-xl border border-slate-200/70 text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Bot className="w-3.5 h-3.5 text-theme-primary" />
+                  <span>
+                    عرض <span className="text-theme-primary font-black">{filteredRules.length}</span> من أصل{' '}
+                    <span className="text-slate-900 font-black">{rules.length}</span> قاعدة
+                  </span>
+                </div>
+
+                {(selectedPageId !== 'all' || selectedChannel !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPageId('all');
+                      setSelectedChannel('all');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition border border-rose-200 flex items-center gap-1 cursor-pointer"
+                    title="إعادة تعيين الفلاتر"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>إلغاء الفلترة</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
             {isLoading ? (
               <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center text-slate-400 text-xs font-medium">جاري تحميل قواعد الأتمتة...</div>
             ) : rules.length === 0 ? (
@@ -446,10 +673,31 @@ export const AutomationsManager: React.FC = () => {
                   <span>إضافة قاعدة</span>
                 </button>
               </div>
+            ) : filteredRules.length === 0 ? (
+              <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                  <Filter className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800">لا توجد قواعد أتمتة تطابق الفلاتر المحددة</h3>
+                <p className="text-xs text-slate-500">جرب تغيير الحساب/الصفحة أو القناة لعرض القواعد المرتبطة</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPageId('all');
+                    setSelectedChannel('all');
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>إعادة ضبط الفلاتر</span>
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {rules.map((rule) => {
+                {filteredRules.map((rule) => {
                   const brandObj = rule.brand_id && rule.brand_id !== 'all' ? getBrandObject(rule.brand_id, rule.brand_id) : null;
+                  const pageMatch = availablePages.find((p) => p.page_id === rule.page_id);
+                  const pageDisplayName = pageMatch ? pageMatch.name : (rule.page_id ? `صفحة (${rule.page_id})` : null);
                   const bubbles = (rule.response_text || '')
                     .split(/[\r\n]+/)
                     .map((p) => p.trim())
@@ -465,7 +713,7 @@ export const AutomationsManager: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                            البراند: {brandObj ? brandObj.name : 'كل البراندات'} | التهدئة: {rule.cooldown_minutes} دقيقة
+                            {pageDisplayName ? `الصفحة: ${pageDisplayName}` : (brandObj ? `البراند: ${brandObj.name}` : 'كل البراندات')} | التهدئة: {rule.cooldown_minutes} دقيقة
                           </p>
                         </div>
                         <button
