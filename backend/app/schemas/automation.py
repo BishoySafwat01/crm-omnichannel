@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class AutomationRuleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     brand_id: Optional[str] = Field(None, max_length=100)
+    page_id: Optional[str] = Field(None, max_length=64)
     channels: list[str] = Field(default_factory=lambda: ["messenger", "instagram", "whatsapp"])
     trigger_type: str = Field("keyword_match", max_length=50)
     match_type: str = Field("contains", max_length=50)  # exact, contains, regex
@@ -23,6 +24,7 @@ class AutomationRuleCreate(BaseModel):
 class AutomationRuleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     brand_id: Optional[str] = None
+    page_id: Optional[str] = None
     channels: Optional[list[str]] = None
     trigger_type: Optional[str] = None
     match_type: Optional[str] = None
@@ -40,6 +42,7 @@ class AutomationRuleResponse(BaseModel):
     id: uuid.UUID
     name: str
     brand_id: Optional[str] = None
+    page_id: Optional[str] = None
     channels: list[str]
     trigger_type: str
     match_type: str

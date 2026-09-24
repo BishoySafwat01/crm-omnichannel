@@ -20,6 +20,7 @@ import {
   Trash2,
   Power,
   Tag,
+  Bot,
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { useChannelsStore, FACEBOOK_PAGE_SCOPES } from '../../store/useChannelsStore';
@@ -51,6 +52,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
     cancelMetaConnect,
     subscribePageWebhook,
     togglePageStatus,
+    togglePageAutomation,
     disconnectPage,
     syncPageHistory,
     clearFeedback,
@@ -109,6 +111,9 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
   ).length;
   const activePagesCount = connectedPages.filter(
     (p) => p.status === 'ACTIVE'
+  ).length;
+  const automatedPagesCount = connectedPages.filter(
+    (p) => p.is_automation_enabled !== false
   ).length;
 
   return (
@@ -185,7 +190,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
           </div>
 
           {/* Quick Stats Strip */}
-          <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-3 gap-3 text-center md:text-right">
+          <div className="mt-5 pt-4 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-3 text-center md:text-right">
             <div>
               <span className="text-[11px] text-slate-300 font-medium">
                 الصفحات المتصلة:
@@ -210,7 +215,14 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                 {activePagesCount} من {connectedPages.length}
               </p>
             </div>
-
+            <div>
+              <span className="text-[11px] text-purple-300 font-medium">
+                الرد التلقائي مفعّل:
+              </span>
+              <p className="text-base font-black text-purple-300">
+                {automatedPagesCount} من {connectedPages.length}
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -339,8 +351,10 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
             {filteredPages.map((page) => {
               const isSubscribed = page.is_webhook_subscribed;
               const isActive = page.status === 'ACTIVE';
+              const isAutomationEnabled = page.is_automation_enabled !== false;
               const isSubscribing = actionLoadingMap[`sub_${page.page_id}`];
               const isStatusToggling = actionLoadingMap[`status_${page.page_id}`];
+              const isAutomationToggling = actionLoadingMap[`auto_${page.page_id}`];
               const isSyncing = actionLoadingMap[`sync_${page.page_id}`];
               const isDeleting = actionLoadingMap[`del_${page.page_id}`];
 
@@ -366,26 +380,52 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                         </div>
                       </div>
 
-                      {/* Active Status Toggle Badge */}
-                      <button
-                        onClick={() => togglePageStatus(page.page_id, page.status)}
-                        disabled={isStatusToggling}
-                        className={`text-[11px] px-3 py-1 rounded-full font-black flex items-center gap-1.5 transition border cursor-pointer ${
-                          isActive
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                        }`}
-                        title="اضغط لتغيير حالة تشغيل الصفحة"
-                      >
-                        {isStatusToggling ? (
-                          <Loader2 className="w-3 h-3 animate-spin text-slate-600" />
-                        ) : (
-                          <Power
-                            className={`w-3 h-3 ${isActive ? 'text-emerald-500' : 'text-slate-400'}`}
-                          />
-                        )}
-                        <span>{isActive ? 'نشط (Active)' : 'معطل (Inactive)'}</span>
-                      </button>
+                      {/* Status & Automation Toggles */}
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {/* Automation Toggle Button */}
+                        <button
+                          onClick={() => togglePageAutomation(page.page_id, isAutomationEnabled)}
+                          disabled={isAutomationToggling}
+                          className={`text-[11px] px-3 py-1 rounded-full font-black flex items-center gap-1.5 transition border cursor-pointer ${
+                            isAutomationEnabled
+                              ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                          }`}
+                          title="اضغط لتفعيل أو إيقاف الرد التلقائي لهذه الصفحة"
+                        >
+                          {isAutomationToggling ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                          ) : (
+                            <Bot
+                              className={`w-3 h-3 ${isAutomationEnabled ? 'text-purple-600' : 'text-slate-400'}`}
+                            />
+                          )}
+                          <span>
+                            {isAutomationEnabled ? 'الرد التلقائي: مفعّل 🤖' : 'الرد التلقائي: معطّل ⚪'}
+                          </span>
+                        </button>
+
+                        {/* Active Status Toggle Badge */}
+                        <button
+                          onClick={() => togglePageStatus(page.page_id, page.status)}
+                          disabled={isStatusToggling}
+                          className={`text-[11px] px-3 py-1 rounded-full font-black flex items-center gap-1.5 transition border cursor-pointer ${
+                            isActive
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                          }`}
+                          title="اضغط لتغيير حالة تشغيل الصفحة"
+                        >
+                          {isStatusToggling ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-slate-600" />
+                          ) : (
+                            <Power
+                              className={`w-3 h-3 ${isActive ? 'text-emerald-500' : 'text-slate-400'}`}
+                            />
+                          )}
+                          <span>{isActive ? 'نشط (Active)' : 'معطل (Inactive)'}</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Identifiers & Details */}
@@ -440,6 +480,25 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                           <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Clock className="w-3 h-3 text-amber-600" />
                             <span>معلق (Pending Subscription)</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Automation Status */}
+                      <div className="flex items-center justify-between pt-0.5">
+                        <span className="text-slate-400 text-[11px] flex items-center gap-1">
+                          <Bot className="w-3 h-3 text-purple-500" />
+                          حالة الرد التلقائي (Auto-Reply):
+                        </span>
+                        {isAutomationEnabled ? (
+                          <span className="text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                            <span>مفعّل (Enabled)</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Power className="w-3 h-3 text-slate-400" />
+                            <span>معطّل (Disabled)</span>
                           </span>
                         )}
                       </div>

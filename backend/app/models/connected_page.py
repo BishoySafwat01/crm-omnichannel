@@ -36,6 +36,9 @@ class ConnectedPage(Base):
     is_webhook_subscribed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+    is_automation_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
     connected_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

@@ -1370,6 +1370,8 @@ class MetaImportService:
                         "token": token,
                         "brand": cp.name,
                         "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                        "page_id": pid,
+                        "connected_page_id": cp.id,
                     })
                     platforms.append({
                         "name": f"instagram_{pid}",
@@ -1379,6 +1381,8 @@ class MetaImportService:
                         "token": token,
                         "brand": cp.name,
                         "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                        "page_id": pid,
+                        "connected_page_id": cp.id,
                     })
                 if cp.instagram_business_account_id:
                     ig_id = str(cp.instagram_business_account_id).strip()
@@ -1391,6 +1395,8 @@ class MetaImportService:
                         "token": token,
                         "brand": cp.name,
                         "workspace_id": cp.workspace_id or DEFAULT_WORKSPACE_ID,
+                        "page_id": cp.page_id or ig_id,
+                        "connected_page_id": cp.id,
                     })
 
         # Safe fallback if no ConnectedPage in DB but settings exist
@@ -1533,6 +1539,8 @@ class MetaImportService:
                                 brand=plat.get("brand") or "Default Business Page",
                                 last_message_at=datetime.utcnow(),
                                 workspace_id=plat_ws_id,
+                                page_id=plat.get("page_id"),
+                                connected_page_id=plat.get("connected_page_id"),
                             )
                             session.add(conversation)
                             await session.flush()
@@ -1543,6 +1551,12 @@ class MetaImportService:
                                 modified = True
                             if plat_ws_id and not conversation.workspace_id:
                                 conversation.workspace_id = plat_ws_id
+                                modified = True
+                            if plat.get("page_id") and not conversation.page_id:
+                                conversation.page_id = plat["page_id"]
+                                modified = True
+                            if plat.get("connected_page_id") and not conversation.connected_page_id:
+                                conversation.connected_page_id = plat["connected_page_id"]
                                 modified = True
                             if modified:
                                 await session.flush()

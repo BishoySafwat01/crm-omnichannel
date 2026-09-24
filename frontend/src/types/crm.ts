@@ -293,6 +293,7 @@ export interface ConnectedPage {
   status: string;
   is_active?: boolean;
   is_webhook_subscribed: boolean;
+  is_automation_enabled?: boolean;
   connected_by_user_id?: string | null;
   brand?: string | null;
   created_at: string;

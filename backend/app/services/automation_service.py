@@ -14,6 +14,28 @@ from app.models.message import Message
 logger = logging.getLogger("AutomationEngine")
 
 
+def normalize_arabic(text: Optional[str]) -> str:
+    """Normalize Arabic text (alif, taa marbuta, emojis, spaces, diacritics) for robust keyword matching."""
+    if not text:
+        return ""
+    t = text.lower()
+    # 1. Normalize Alif variations
+    t = re.sub(r"[إأآاٱ]", "ا", t)
+    # 2. Normalize Taa Marbuta / Haa
+    t = re.sub(r"ة", "ه", t)
+    # 3. Normalize Yaa / Alif Maqsura
+    t = re.sub(r"[ىيئ]", "ي", t)
+    # 4. Remove Tashkeel (diacritics)
+    t = re.sub(r"[\u064B-\u065F\u0670]", "", t)
+    # 5. Remove Tatweel / Kashida
+    t = re.sub(r"ـ", "", t)
+    # 6. Remove emojis and special symbols, replace with single space
+    t = re.sub(r"[^\w\s\u0600-\u06FF]", " ", t)
+    # 7. Collapse spaces
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 class AutomationService:
     @staticmethod
     async def evaluate_inbound_message(
@@ -25,62 +47,118 @@ class AutomationService:
         if not text or not text.strip():
             return None
 
-        clean_text = text.strip().lower()
+        # Resolve Page ID from conversation context
+        conv_page_id = (getattr(conversation, "page_id", None) or "").strip()
+        if not conv_page_id and getattr(conversation, "connected_page_id", None):
+            try:
+                from app.models.connected_page import ConnectedPage
+                cp_lookup = await session.get(ConnectedPage, conversation.connected_page_id)
+                if cp_lookup and cp_lookup.page_id:
+                    conv_page_id = cp_lookup.page_id.strip()
+            except Exception:
+                pass
 
-        # Query all active rules
-        stmt = select(AutomationRule).where(AutomationRule.is_active == True)
+        if not conv_page_id and conversation.brand:
+            try:
+                from app.models.connected_page import ConnectedPage
+                cp_by_brand = (await session.execute(
+                    select(ConnectedPage).where(
+                        ConnectedPage.name == conversation.brand,
+                        ConnectedPage.status == "ACTIVE",
+                        ConnectedPage.deleted_at.is_(None),
+                    ).limit(1)
+                )).scalars().first()
+                if cp_by_brand and cp_by_brand.page_id:
+                    conv_page_id = cp_by_brand.page_id.strip()
+            except Exception:
+                pass
+
+        # 1. Page-Level Automation Toggle Check
+        # If connected_page.is_automation_enabled is False, skip automated replies entirely
+        if conv_page_id:
+            from app.models.connected_page import ConnectedPage
+            stmt_page = select(ConnectedPage).where(
+                (ConnectedPage.page_id == conv_page_id) | (ConnectedPage.instagram_business_account_id == conv_page_id),
+                ConnectedPage.deleted_at.is_(None)
+            )
+            page_row = (await session.execute(stmt_page)).scalars().first()
+            if page_row and not page_row.is_automation_enabled:
+                logger.info(
+                    "[Automation Engine] Page %s ('%s') has automation disabled (is_automation_enabled=False). Skipping auto-reply.",
+                    conv_page_id,
+                    page_row.name,
+                )
+                return None
+
+        # 2. Strict Page-Level Isolation:
+        # Match keywords ONLY against active rules where rule.page_id == conv.page_id.
+        # Under no circumstance should a rule from one page trigger on another page.
+        if not conv_page_id:
+            logger.info("[Automation Engine] Conversation %s has no resolved page_id. Skipping auto-reply to enforce page isolation.", conversation.id)
+            return None
+
+        stmt = select(AutomationRule).where(
+            AutomationRule.is_active == True,
+            AutomationRule.page_id == conv_page_id,
+        )
         res = await session.execute(stmt)
         rules = list(res.scalars().all())
 
         if not rules:
+            logger.debug("[Automation Engine] No active rules found for page_id=%s", conv_page_id)
             return None
 
-        conv_brand = (conversation.brand or "").strip()
         conv_channel = conversation.channel.value.lower() if hasattr(conversation.channel, "value") else str(conversation.channel).lower()
+        clean_text = text.strip().lower()
+        norm_inbound = normalize_arabic(clean_text)
 
         for rule in rules:
-            # 1. Brand matching check
-            if rule.brand_id:
-                target_brand = rule.brand_id.strip()
-                if (
-                    target_brand.lower() not in ("all", "الكل")
-                    and target_brand != conv_brand
-                ):
-                    continue
-
-            # 2. Channel matching check
+            # Channel matching check
             if rule.channels and len(rule.channels) > 0:
                 rule_channels_lower = [c.lower() for c in rule.channels]
                 if "all" not in rule_channels_lower and conv_channel not in rule_channels_lower:
                     continue
 
-            # 3. Keyword trigger matching check
+            # Keyword trigger matching check with Arabic normalization
             matched = False
             keywords = rule.keywords or []
             match_type = (rule.match_type or "contains").lower()
 
-            if match_type == "exact":
-                matched = any(kw.strip().lower() == clean_text for kw in keywords if kw.strip())
-            elif match_type == "regex":
-                for kw in keywords:
-                    if not kw.strip():
-                        continue
+            for kw in keywords:
+                if not kw or not kw.strip():
+                    continue
+                clean_kw = kw.strip().lower()
+                norm_kw = normalize_arabic(clean_kw)
+
+                if match_type == "exact":
+                    if clean_kw == clean_text or (norm_kw and norm_inbound and norm_kw == norm_inbound):
+                        matched = True
+                        break
+                elif match_type == "regex":
                     try:
-                        pattern = re.compile(kw.strip(), re.IGNORECASE)
-                        if pattern.search(clean_text):
+                        pattern = re.compile(clean_kw, re.IGNORECASE)
+                        if pattern.search(clean_text) or pattern.search(norm_inbound):
                             matched = True
                             break
                     except re.error as re_err:
-                        logger.warning(f"[Automation Engine] Invalid regex pattern '{kw}' in rule {rule.id}: {re_err}")
-            else:  # default 'contains'
-                matched = any(kw.strip().lower() in clean_text for kw in keywords if kw.strip())
+                        logger.warning("[Automation Engine] Invalid regex pattern '%s' in rule %s: %s", clean_kw, rule.id, re_err)
+                else:  # default 'contains'
+                    if clean_kw in clean_text or (norm_kw and norm_inbound and norm_kw in norm_inbound):
+                        matched = True
+                        break
 
             if not matched:
                 continue
 
-            logger.info(f"[Automation Engine] Keyword match found! Rule: '{rule.name}' (ID: {rule.id}) for Customer: {customer.id}")
+            logger.info(
+                "✅ [Automation Engine] Page-scoped keyword match found! Rule: '%s' (ID: %s, Page: %s) for Customer: %s",
+                rule.name,
+                rule.id,
+                conv_page_id,
+                customer.id,
+            )
 
-            # 4. Cooldown Period Check
+            # 3. Cooldown Period Check
             log_stmt = (
                 select(AutomationExecutionLog)
                 .where(
@@ -103,12 +181,15 @@ class AutomationService:
 
                 if diff_minutes < rule.cooldown_minutes:
                     logger.info(
-                        f"[Automation Engine] Cooldown active ({diff_minutes:.1f}m < {rule.cooldown_minutes}m) "
-                        f"for Rule '{rule.name}' on Customer {customer.id}. Skipping auto-reply."
+                        "[Automation Engine] Cooldown active (%.1fm < %dm) for Rule '%s' on Customer %s. Skipping auto-reply.",
+                        diff_minutes,
+                        rule.cooldown_minutes,
+                        rule.name,
+                        customer.id,
                     )
                     continue
 
-            # 5. Execute Automation & Record Execution Log
+            # 4. Execute Automation & Record Execution Log
             execution_log = AutomationExecutionLog(
                 rule_id=rule.id,
                 conversation_id=conversation.id,
@@ -118,7 +199,7 @@ class AutomationService:
             session.add(execution_log)
             await session.commit()
 
-            # 6. Prepare Message Chunks (Line-by-line splitting if configured)
+            # 5. Prepare Message Chunks (Line-by-line splitting if configured)
             raw_text = rule.response_text or ""
             should_split = getattr(rule, "split_lines", True)
             if should_split and "\n" in raw_text:
@@ -139,50 +220,67 @@ class AutomationService:
                     continue
 
                 if sim_typing:
-                    # Calculate human-like typing speed: ~40ms per character with a min of 0.8s and max of 4.5s
+                    # Calculate human-like typing speed: ~40ms per character with min 0.8s and max 4.5s
                     typing_delay = max(0.8, min(4.5, len(chunk) * 0.045))
                     try:
-                        await ws_broadcaster.broadcast({
-                            "type": "TYPING_INDICATOR",
-                            "conversation_id": str(conversation.id),
-                            "is_typing": True,
-                            "sender_name": "المساعد الآلي",
-                        })
+                        await ws_broadcaster.broadcast_event(
+                            target="conversation",
+                            conversation_id=str(conversation.id),
+                            payload={
+                                "type": "TYPING_INDICATOR",
+                                "conversation_id": str(conversation.id),
+                                "is_typing": True,
+                                "sender_name": "المساعد الآلي",
+                            }
+                        )
                     except Exception:
                         pass
                     await asyncio.sleep(typing_delay)
 
                 try:
-                    outbound_msg = await MessageService.send_agent_reply(
+                    outbound_res = await MessageService.send_agent_reply(
                         session=session,
                         conversation_id=conversation.id,
                         text=chunk,
                         sender_external_id="automation_bot",
                     )
                     logger.info(
-                        f"✅ [Automation Engine] Successfully dispatched message chunk {idx+1}/{len(chunks)} for Rule '{rule.name}'"
+                        "✅ [Automation Engine] Successfully dispatched message chunk %d/%d for Rule '%s'",
+                        idx + 1,
+                        len(chunks),
+                        rule.name,
                     )
 
-                    if ws_manager and outbound_msg:
-                        await ws_manager.broadcast({
-                            "type": "NEW_MESSAGE",
-                            "conversation_id": str(conversation.id),
-                            "message": {
-                                "id": str(outbound_msg.id),
+                    msg_obj = getattr(outbound_res, "message", None)
+                    if msg_obj:
+                        outbound_msg = msg_obj
+                        await ws_broadcaster.broadcast_event(
+                            target="conversation",
+                            conversation_id=str(conversation.id),
+                            payload={
+                                "type": "NEW_MESSAGE",
                                 "conversation_id": str(conversation.id),
-                                "external_message_id": outbound_msg.external_message_id,
-                                "sender_type": "agent",
-                                "sender_external_id": "automation_bot",
-                                "sender_name": "المساعد الآلي",
-                                "message_type": "text",
-                                "text": outbound_msg.text,
-                                "created_at": outbound_msg.created_at.isoformat() if outbound_msg.created_at else datetime.now(timezone.utc).isoformat(),
-                                "delivery_status": "delivered",
-                            },
-                        })
+                                "message": {
+                                    "id": str(msg_obj.id),
+                                    "conversation_id": str(conversation.id),
+                                    "external_message_id": getattr(msg_obj, "external_message_id", None),
+                                    "sender_type": "agent",
+                                    "sender_external_id": "automation_bot",
+                                    "sender_name": "المساعد الآلي",
+                                    "message_type": "text",
+                                    "text": msg_obj.text,
+                                    "created_at": msg_obj.created_at.isoformat() if getattr(msg_obj, "created_at", None) else datetime.now(timezone.utc).isoformat(),
+                                    "delivery_status": "delivered",
+                                },
+                            }
+                        )
                 except Exception as dispatch_err:
                     logger.error(
-                        f"⚠️ [Automation Engine] Meta API dispatch error for Rule '{rule.name}' chunk {idx+1}: {dispatch_err}"
+                        "⚠️ [Automation Engine] Meta API dispatch error for Rule '%s' chunk %d: %s",
+                        rule.name,
+                        idx + 1,
+                        dispatch_err,
+                        exc_info=True,
                     )
 
                 # Wait delay between multiple consecutive messages

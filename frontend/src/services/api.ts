@@ -1395,6 +1395,19 @@ export const updateConnectedPageStatus = async (pageId: string, status: 'ACTIVE'
   return await res.json();
 };
 
+export const updateConnectedPageAutomation = async (pageId: string, isAutomationEnabled: boolean): Promise<ConnectedPage> => {
+  const res = await safeFetch(`/meta/connected-pages/${pageId}/automation`, {
+    method: 'PATCH',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+    body: JSON.stringify({ is_automation_enabled: isAutomationEnabled }),
+  });
+  if (!res || !res.ok) {
+    const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث حالة الرد التلقائي' }));
+    throw new Error(err?.detail || 'فشل في تحديث حالة الرد التلقائي');
+  }
+  return await res.json();
+};
+
 export const deleteConnectedPage = async (pageId: string): Promise<{ status: string; message: string }> => {
   const res = await safeFetch(`/meta/pages/${pageId}`, {
     method: 'DELETE',
@@ -1474,6 +1487,7 @@ export const metaOAuthApi = {
   submitCallback: submitMetaOAuthCallback,
   getConnectedPages,
   updateConnectedPageStatus,
+  updateConnectedPageAutomation,
   deleteConnectedPage,
   subscribeConnectedPage,
   syncConnectedPageHistory,

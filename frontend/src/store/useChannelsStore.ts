@@ -26,6 +26,7 @@ interface ChannelsState {
   ) => Promise<{ success: boolean; count?: number; pages?: ConnectedPage[]; error?: string }>;
   subscribePageWebhook: (pageId: string) => Promise<boolean>;
   togglePageStatus: (pageId: string, currentStatus: string) => Promise<boolean>;
+  togglePageAutomation: (pageId: string, currentVal: boolean) => Promise<boolean>;
   disconnectPage: (pageId: string) => Promise<boolean>;
   syncPageHistory: (pageId: string) => Promise<boolean>;
   clearFeedback: () => void;
@@ -332,6 +333,42 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       set((state) => ({
         actionLoadingMap: { ...state.actionLoadingMap, [`status_${pageId}`]: false },
         error: err.message || 'فشل في تغيير حالة الصفحة',
+      }));
+      return false;
+    }
+  },
+
+  togglePageAutomation: async (pageId: string, currentVal: boolean) => {
+    const nextVal = !currentVal;
+    // Optimistic update
+    set((state) => ({
+      connectedPages: state.connectedPages.map((p) =>
+        p.page_id === pageId ? { ...p, is_automation_enabled: nextVal } : p
+      ),
+      actionLoadingMap: { ...state.actionLoadingMap, [`auto_${pageId}`]: true },
+      error: null,
+      successMessage: null,
+    }));
+    try {
+      const updatedPage = await metaOAuthApi.updateConnectedPageAutomation(pageId, nextVal);
+      set((state) => ({
+        connectedPages: state.connectedPages.map((p) =>
+          p.page_id === pageId
+            ? { ...p, is_automation_enabled: updatedPage.is_automation_enabled }
+            : p
+        ),
+        actionLoadingMap: { ...state.actionLoadingMap, [`auto_${pageId}`]: false },
+        successMessage: `تم ${updatedPage.is_automation_enabled ? 'تفعيل 🤖' : 'تعطيل ⚪'} الرد التلقائي لصفحة (${updatedPage.name})`,
+      }));
+      return true;
+    } catch (err: any) {
+      // Rollback on failure
+      set((state) => ({
+        connectedPages: state.connectedPages.map((p) =>
+          p.page_id === pageId ? { ...p, is_automation_enabled: currentVal } : p
+        ),
+        actionLoadingMap: { ...state.actionLoadingMap, [`auto_${pageId}`]: false },
+        error: err.message || 'فشل في تحديث حالة الرد التلقائي',
       }));
       return false;
     }

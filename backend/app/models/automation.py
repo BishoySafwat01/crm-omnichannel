@@ -16,6 +16,7 @@ class AutomationRule(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     brand_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    page_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     channels: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list
     )  # e.g. ["messenger", "instagram", "whatsapp"]

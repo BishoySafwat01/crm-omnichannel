@@ -44,6 +44,7 @@ class ConnectedPageResponse(BaseModel):
     status: str
     is_active: bool = True
     is_webhook_subscribed: bool
+    is_automation_enabled: bool = True
     connected_by_user_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
@@ -350,6 +351,50 @@ async def update_connected_page_status(
     await db.commit()
     await db.refresh(page)
     logger.info("Admin %s updated page %s status to %s", current_user.email, page_id, payload.status)
+    return ConnectedPageResponse.model_validate(page)
+
+
+class UpdatePageAutomationRequest(BaseModel):
+    is_automation_enabled: bool = Field(..., description="Enable or disable automated replies for this page")
+
+
+@router.patch(
+    "/connected-pages/{page_id}/automation",
+    response_model=ConnectedPageResponse,
+    summary="Toggle Connected Page Automation Status",
+)
+@router.patch(
+    "/pages/{page_id}/automation",
+    response_model=ConnectedPageResponse,
+    summary="Toggle Connected Page Automation Status (Alias)",
+)
+async def update_connected_page_automation(
+    page_id: str,
+    payload: UpdatePageAutomationRequest,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ConnectedPageResponse:
+    """Toggle automated replies (is_automation_enabled) for a connected Facebook Page (Admin only)."""
+    stmt = select(ConnectedPage).where(
+        ConnectedPage.page_id == page_id,
+        ConnectedPage.deleted_at.is_(None),
+    )
+    res = await db.execute(stmt)
+    page = res.scalar_one_or_none()
+    if not page:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connected page with ID {page_id} not found.",
+        )
+    page.is_automation_enabled = payload.is_automation_enabled
+    await db.commit()
+    await db.refresh(page)
+    logger.info(
+        "Admin %s updated page %s automation to %s",
+        current_user.email,
+        page_id,
+        payload.is_automation_enabled,
+    )
     return ConnectedPageResponse.model_validate(page)
 
 

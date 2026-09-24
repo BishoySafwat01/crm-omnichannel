@@ -39,12 +39,16 @@ async def create_automation_rule(
     rule = AutomationRule(
         name=payload.name.strip(),
         brand_id=payload.brand_id.strip() if payload.brand_id else None,
+        page_id=payload.page_id.strip() if payload.page_id else None,
         channels=payload.channels,
         trigger_type=payload.trigger_type,
         match_type=payload.match_type,
         keywords=[k.strip() for k in payload.keywords if k.strip()],
         response_text=payload.response_text.strip(),
         response_media_url=payload.response_media_url,
+        split_lines=payload.split_lines,
+        delay_seconds=payload.delay_seconds,
+        human_typing_simulation=payload.human_typing_simulation,
         cooldown_minutes=payload.cooldown_minutes,
         is_active=payload.is_active,
         created_by=admin_user.id,
@@ -97,7 +101,7 @@ async def update_automation_rule(
             setattr(rule, key, [k.strip() for k in value if k.strip()])
         elif key == "name" and value is not None:
             setattr(rule, key, value.strip())
-        elif key == "brand_id" and value is not None:
+        elif key in ("brand_id", "page_id") and value is not None:
             setattr(rule, key, value.strip() if value else None)
         elif value is not None:
             setattr(rule, key, value)
