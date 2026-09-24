@@ -689,7 +689,7 @@ class MessageService:
         now_utc = datetime.now(timezone.utc)
 
         metadata_dict = {
-            "recipient_id": identity.external_user_id if identity else clean_recipient,
+            "recipient_id": clean_recipient,
             "provider_response": outbound_res.get("raw", {}) if isinstance(outbound_res, dict) else {},
         }
         if attachments:
