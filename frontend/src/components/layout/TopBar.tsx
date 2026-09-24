@@ -17,14 +17,12 @@ import {
   Bell,
   SlidersHorizontal,
   Globe,
-  Layers,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { metaApi } from '../../services/api';
-import { ProviderStatusIndicator } from '../ProviderStatusIndicator';
 import { getBrandObject } from '../ConversationAvatar';
 import luxiraLogo from '../../assets/luxira-logo.png';
 import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
@@ -36,8 +34,6 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
   const {
-    selectedProvider,
-    setSelectedProvider,
     selectedBrandId,
     setSelectedBrandId,
     selectedChannel,
@@ -330,49 +326,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               )}
             </div>
 
-            {/* 3. Segmented Provider Controller (No Emojis, Pure SVGs & Typography) */}
-            <div className="flex items-center bg-slate-100/70 p-0.5 rounded-xl border border-slate-200/60 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setSelectedProvider('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
-                  selectedProvider === 'all'
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="عرض كل المزودين"
-              >
-                <span>الكل</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedProvider('meta')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
-                  selectedProvider === 'meta'
-                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="محادثات Meta Graph API المباشرة"
-              >
-                <Globe className={`w-3.5 h-3.5 ${selectedProvider === 'meta' ? 'text-teal-600' : 'text-slate-400'}`} />
-                <span>ميتا مباشر</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedProvider('beon')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
-                  selectedProvider === 'beon'
-                    ? 'bg-white text-teal-700 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="محادثات مزود BeOn Gateway V3"
-              >
-                <Layers className={`w-3.5 h-3.5 ${selectedProvider === 'beon' ? 'text-teal-600' : 'text-slate-400'}`} />
-                <span>مزود BeOn</span>
-              </button>
-            </div>
-
-            {/* 4. Grouped Secondary Actions Popover (Location Filter & Quick Post) */}
+            {/* 3. Grouped Secondary Actions Popover (Location Filter & Quick Post) */}
             <div className="relative" ref={secondaryDropdownRef}>
               <button
                 type="button"
@@ -445,10 +399,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         )}
       </div>
 
-      {/* Left Side (RTL End): Provider Status, Notification Bell, Agent Profile & Logout */}
+      {/* Left Side (RTL End): Notification Bell, Agent Profile & Logout */}
       <div className="flex items-center gap-3">
-        {/* Provider Status Indicator (Hybrid Meta + BeOn) */}
-        <ProviderStatusIndicator />
 
         {/* Notification Bell Dropdown */}
         <div className="relative" ref={notifDropdownRef}>

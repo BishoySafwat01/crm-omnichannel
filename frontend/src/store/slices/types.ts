@@ -15,7 +15,7 @@ export interface UnreadSummary {
 }
 
 export interface FilterSlice {
-  selectedProvider: 'all' | 'beon' | 'meta';
+  selectedProvider: 'all' | 'meta';
   selectedBrand: string | null;
   selectedBrandId: string;
   showArchived: boolean;
@@ -32,7 +32,7 @@ export interface FilterSlice {
   activeFilterTab: FilterTab;
   selectedMetaTag: MetaMessageTag;
 
-  setSelectedProvider: (provider: 'all' | 'beon' | 'meta') => void;
+  setSelectedProvider: (provider: 'all' | 'meta') => void;
   setSelectedBrand: (brand: string | null) => void;
   setSelectedBrandId: (brandId: string) => void;
   toggleShowArchived: () => void;

@@ -165,7 +165,6 @@ export const ConversationList: React.FC = () => {
     setActiveFilterTab,
     unreadSummary,
     isTyping,
-    selectedProvider,
     isLoadingConversations,
     isLoadingMoreConversations,
     hasMoreConversations,
@@ -255,12 +254,6 @@ export const ConversationList: React.FC = () => {
     if (!conversations || !Array.isArray(conversations)) return [];
 
     return conversations.filter((conv) => {
-      // 0. Provider Filter
-      if (selectedProvider && selectedProvider !== 'all') {
-        const convProv = (conv.provider || 'meta').toLowerCase();
-        if (convProv !== selectedProvider.toLowerCase()) return false;
-      }
-
       // 1. Search Query Filter
       if (searchQuery && searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -638,15 +631,6 @@ export const ConversationList: React.FC = () => {
                           >
                             {customerName}
                           </h3>
-                          <span
-                            className={`px-1.5 py-0.5 rounded-full text-[8.5px] font-extrabold flex items-center gap-0.5 shrink-0 ${
-                              (conv.provider || '').toLowerCase() === 'beon'
-                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-2xs'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200/80 shadow-2xs'
-                            }`}
-                          >
-                            {(conv.provider || '').toLowerCase() === 'beon' ? '🚀 BeOn' : '🌐 Meta'}
-                          </span>
                           {isConversationLate(conv, messages[conv.id]) && (
                             <span
                               title="رسالة متأخرة بدون رد لأكثر من 10 دقائق"
