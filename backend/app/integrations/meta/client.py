@@ -381,22 +381,25 @@ class MetaClient:
                 res = await self._request(
                     "GET",
                     f"/{clean_psid}",
-                    params={"fields": "name,username,profile_pic"},
+                    params={"fields": "name,username"},
                     page_id=target_page_id,
                 )
                 if isinstance(res, dict):
                     res["display_name"] = res.get("name") or res.get("username") or ""
+                    res["profile_pic"] = None
+                    res["avatar_url"] = None
                 return res
             except Exception as exc:
                 logger.debug("Instagram profile query for %s failed: %s", clean_psid, exc)
                 return {}
 
-        # 1. Direct PSID query with standard permissions fields (first_name, last_name, name, profile_pic)
+        # 1. Direct PSID query with standard permissions fields (first_name, last_name, name)
+        # Note: profile_pic and picture sub-requests are completely omitted to prevent rate limit bleeding
         try:
             res = await self._request(
                 "GET",
                 f"/{clean_psid}",
-                params={"fields": "first_name,last_name,name,profile_pic"},
+                params={"fields": "first_name,last_name,name"},
                 page_id=target_page_id,
             )
             if isinstance(res, dict):
@@ -404,6 +407,8 @@ class MetaClient:
                 last_name = res.get("last_name", "")
                 full = f"{first_name} {last_name}".strip()
                 res["display_name"] = full or res.get("name") or ""
+                res["profile_pic"] = None
+                res["avatar_url"] = None
                 return res
         except MetaAPIError as exc:
             logger.debug("[MetaClient] Direct PSID profile query failed for %s: %s", clean_psid, exc)
@@ -434,11 +439,16 @@ class MetaClient:
                                         "name": cust_name,
                                         "display_name": cust_name,
                                         "profile_pic": None,
+                                        "avatar_url": None,
                                     }
             except Exception as conv_err:
                 logger.debug("[MetaClient] Conversation participant query failed for PSID %s: %s", clean_psid, conv_err)
 
         return {}
+
+    async def get_user_picture(self, *args, **kwargs) -> None:
+        """Disabled to eliminate Meta Graph API user picture calls and protect rate limits."""
+        return None
 
     async def send_message(
         self,

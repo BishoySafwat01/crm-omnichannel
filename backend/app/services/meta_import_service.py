@@ -221,7 +221,7 @@ class MetaImportService:
             return {}
 
         headers = {"Authorization": f"Bearer {token}"}
-        fields = "name,username,profile_pic" if is_ig else "first_name,last_name,name,profile_pic,locale"
+        fields = "name,username" if is_ig else "first_name,last_name,name,locale"
         url = f"https://graph.facebook.com/v23.0/{clean_psid}?fields={fields}&access_token={token}"
 
         try:
@@ -231,27 +231,12 @@ class MetaImportService:
 
                 # Fallback to Instagram fields if first_name fails on InstagramScopedID
                 if res.status_code == 400 and not is_ig and "first_name" in res.text:
-                    fallback_url = f"https://graph.facebook.com/v23.0/{clean_psid}?fields=name,username,profile_pic&access_token={token}"
+                    fallback_url = f"https://graph.facebook.com/v23.0/{clean_psid}?fields=name,username&access_token={token}"
                     res = await client.get(fallback_url)
                     MetaRateLimitGuard.inspect_response(res)
 
                 if res.status_code == 200:
                     data = res.json()
-                    pic_url = data.get("profile_pic")
-                    local_avatar_url = None
-                    if pic_url:
-                        try:
-                            pic_res = await client.get(pic_url)
-                            if pic_res.status_code == 200 and len(pic_res.content) > 500:
-                                dest_file = f"avatar_{clean_psid}.jpg"
-                                dest_path = os.path.join(avatars_dir, dest_file)
-                                with open(dest_path, "wb") as f:
-                                    f.write(pic_res.content)
-                                local_avatar_url = f"/uploads/avatars/{dest_file}"
-                        except Exception as pic_err:
-                            logger.debug("[Profile Enrichment] Failed to download avatar for %s: %s", clean_psid, pic_err)
-
-                    final_avatar = local_avatar_url or pic_url
                     first_name = data.get("first_name", "")
                     last_name = data.get("last_name", "")
                     name = data.get("name", "")
@@ -265,8 +250,8 @@ class MetaImportService:
                         "name": name,
                         "username": username,
                         "display_name": display_name,
-                        "profile_pic": final_avatar,
-                        "avatar_url": final_avatar,
+                        "profile_pic": None,
+                        "avatar_url": None,
                         "locale": data.get("locale"),
                     }
                 elif candidate_pages and not is_ig:
@@ -290,37 +275,20 @@ class MetaImportService:
                                             first_n = parts[0] if parts else ""
                                             last_n = " ".join(parts[1:]) if len(parts) > 1 else ""
 
-                                            local_avatar_url = None
-                                            try:
-                                                pic_ep = f"https://graph.facebook.com/v23.0/{clean_psid}/picture?redirect=0&access_token={p_token}"
-                                                pic_r = await client.get(pic_ep)
-                                                if pic_r.status_code == 200:
-                                                    purl = pic_r.json().get("data", {}).get("url")
-                                                    if purl:
-                                                        p_download = await client.get(purl)
-                                                        if p_download.status_code == 200 and len(p_download.content) > 500:
-                                                            dest_file = f"avatar_{clean_psid}.jpg"
-                                                            dest_path = os.path.join(avatars_dir, dest_file)
-                                                            with open(dest_path, "wb") as f:
-                                                                f.write(p_download.content)
-                                                            local_avatar_url = f"/uploads/avatars/{dest_file}"
-                                            except Exception:
-                                                pass
-
                                             return {
                                                 "first_name": first_n,
                                                 "last_name": last_n,
                                                 "name": cust_name,
                                                 "display_name": cust_name,
-                                                "profile_pic": local_avatar_url,
-                                                "avatar_url": local_avatar_url,
+                                                "profile_pic": None,
+                                                "avatar_url": None,
                                             }
 
                     MetaRateLimitGuard.record_failed_psid(clean_psid, ttl_seconds=600)
                 else:
                     MetaRateLimitGuard.record_failed_psid(clean_psid, ttl_seconds=600)
         except Exception as e:
-            logger.warning("Failed to fetch/cache avatar for PSID %s: %s", clean_psid, e)
+            logger.warning("Failed to fetch customer profile for PSID %s: %s", clean_psid, e)
             MetaRateLimitGuard.record_failed_psid(clean_psid, ttl_seconds=600)
         return {}
 
@@ -908,7 +876,7 @@ class MetaImportService:
                         external_user_id=target_cust_id,
                     )
 
-                    if not customer.avatar_url or is_generic_display_name(customer.display_name):
+                    if is_generic_display_name(customer.display_name):
                         asyncio.create_task(
                             MetaImportService.enrich_customer_profile_background(
                                 customer_id=customer.id,
@@ -1054,7 +1022,7 @@ class MetaImportService:
                     customer.display_name = norm_event.sender_name
                     session.add(customer)
 
-                if not customer.avatar_url or is_generic_display_name(customer.display_name):
+                if is_generic_display_name(customer.display_name):
                     # Fire profile enrichment asynchronously in the background to keep webhook response <500ms
                     asyncio.create_task(
                         MetaImportService.enrich_customer_profile_background(
@@ -1696,53 +1664,44 @@ class MetaImportService:
         page_id: Optional[str] = None,
         channel: Optional[Any] = None,
     ):
-        """Asynchronously fetches and updates customer profile info in background session."""
+        """Asynchronously fetches and updates customer display name in background session."""
         try:
             pinfo = await cls.fetch_and_cache_customer_profile(sender_psid, page_id=page_id, channel=channel)
-            resolved_avatar = pinfo.get("avatar_url") or pinfo.get("profile_pic")
             resolved_display_name = pinfo.get("display_name") or pinfo.get("name") or pinfo.get("username")
-            if not resolved_avatar and not resolved_display_name:
+            if not resolved_display_name:
                 return
 
             from app.core.database import AsyncSessionLocal
             from app.models.conversation import Conversation
             async with AsyncSessionLocal() as session:
                 cust = await session.get(Customer, customer_id)
-                if cust:
-                    updated = False
-                    if resolved_avatar and (not cust.avatar_url or cust.avatar_url.startswith("https://graph.facebook.com")):
-                        cust.avatar_url = resolved_avatar
-                        updated = True
-                    if resolved_display_name and is_generic_display_name(cust.display_name):
-                        cust.display_name = resolved_display_name
-                        updated = True
-                    if updated:
-                        session.add(cust)
-                        await session.commit()
-                        logger.info(
-                            "[Background Profile Enrichment] Updated customer %s (%s) -> name: %s, avatar: %s",
-                            customer_id,
-                            sender_psid,
-                            cust.display_name,
-                            bool(cust.avatar_url),
-                        )
-                        try:
-                            c_stmt = select(Conversation.id).where(Conversation.customer_id == cust.id)
-                            c_res = await session.execute(c_stmt)
-                            conv_ids = c_res.scalars().all()
-                            for c_id in conv_ids:
-                                await ws_broadcaster.broadcast_event(
-                                    channel_name="chat_events",
-                                    event_type="conversation_updated",
-                                    data={
-                                        "conversation_id": str(c_id),
-                                        "customer_id": str(cust.id),
-                                        "display_name": cust.display_name,
-                                        "avatar_url": cust.avatar_url,
-                                    },
-                                )
-                        except Exception as ws_err:
-                            logger.debug("[Profile Enrichment WS Broadcast Error]: %s", ws_err)
+                if cust and is_generic_display_name(cust.display_name):
+                    cust.display_name = resolved_display_name
+                    session.add(cust)
+                    await session.commit()
+                    logger.info(
+                        "[Background Profile Enrichment] Updated customer %s (%s) -> name: %s",
+                        customer_id,
+                        sender_psid,
+                        cust.display_name,
+                    )
+                    try:
+                        c_stmt = select(Conversation.id).where(Conversation.customer_id == cust.id)
+                        c_res = await session.execute(c_stmt)
+                        conv_ids = c_res.scalars().all()
+                        for c_id in conv_ids:
+                            await ws_broadcaster.broadcast_event(
+                                channel_name="chat_events",
+                                event_type="conversation_updated",
+                                data={
+                                    "conversation_id": str(c_id),
+                                    "customer_id": str(cust.id),
+                                    "display_name": cust.display_name,
+                                    "avatar_url": cust.avatar_url,
+                                },
+                            )
+                    except Exception as ws_err:
+                        logger.debug("[Profile Enrichment WS Broadcast Error]: %s", ws_err)
         except Exception as e:
             logger.warning("[Background Profile Enrichment Error] PSID %s: %s", sender_psid, e)
 

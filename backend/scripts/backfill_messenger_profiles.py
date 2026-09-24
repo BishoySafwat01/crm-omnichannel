@@ -75,15 +75,10 @@ async def backfill():
                     continue
 
                 new_name = profile_info.get("display_name") or profile_info.get("name")
-                new_avatar = profile_info.get("avatar_url") or profile_info.get("profile_pic")
 
                 changed = False
-                if new_name:
+                if new_name and is_generic_display_name(cust.display_name):
                     cust.display_name = new_name
-                    changed = True
-
-                if new_avatar:
-                    cust.avatar_url = new_avatar
                     changed = True
 
                 if changed:
