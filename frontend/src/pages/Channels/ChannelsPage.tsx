@@ -242,8 +242,8 @@ export const ChannelsPage: React.FC = () => {
               وضع المزود النشط:
             </span>
             <p className="text-xs font-extrabold text-white mt-2 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-              <span>Hybrid (Meta + BeOn)</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>ميتا مباشر (Meta Direct)</span>
             </p>
           </div>
         </div>
@@ -528,30 +528,29 @@ export const ChannelsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Fallback Gateway Details: BeOn Gateway V3 */}
-          <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-xs space-y-3">
+          {/* Fallback Gateway Details: BeOn Gateway V3 (Disabled) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-xs space-y-3 opacity-75">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold border border-indigo-100">
+                <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center font-bold border border-slate-200">
                   <Zap className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-extrabold text-slate-900">
-                    مزود BeOn Gateway V3 السحابي (Fallback Gateway)
+                  <h3 className="text-xs font-extrabold text-slate-700">
+                    مزود BeOn Gateway V3 السحابي (معطل)
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    يعمل كمزود احتياطي ومتوازي لنقل الرسائل واستقبال الردود السريعة
+                    تم تعطيل المزود واستبداله بوضع التكامل المباشر الفردي
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full font-bold">
-                نشط في الوضع الهجين (Hybrid Active)
+              <span className="text-[10px] bg-slate-200 text-slate-700 border border-slate-300 px-2.5 py-1 rounded-full font-bold">
+                معطل (Disabled)
               </span>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed pt-2 border-t border-slate-100">
-              يقوم محرك التكامل الهجين في LUXIRA بتوجيه الرسائل عبر Meta Direct Graph API للصفحات المتصلة ديناميكياً،
-              مع دعم التحويل التلقائي إلى BeOn Gateway V3 لضمان استمرارية الخدمة بنسبة 100% دون أي انقطاع في المحادثات.
+            <p className="text-xs text-slate-600 leading-relaxed pt-2 border-t border-slate-200">
+              يعمل النظام حالياً في وضع التكامل المباشر الحصري عبر Meta Direct Graph API لكافة الصفحات والمحادثات لضمان أقصى درجات السرعة والاستقرار والموثوقية.
             </p>
           </div>
         </div>

@@ -99,7 +99,7 @@ export const ProviderStatusIndicator: React.FC = () => {
 
         {/* Text */}
         <span className="tracking-tight">
-          {isHybrid ? 'Hybrid (Meta + BeOn)' : isDirectMeta ? 'Meta Direct' : 'BeOn Gateway'}
+          {isDirectMeta ? 'ميتا مباشر (Meta Direct)' : isHybrid ? 'Hybrid (Meta + BeOn)' : 'ميتا مباشر (Meta Direct)'}
         </span>
 
         <ChevronDown className={`w-3 h-3 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -110,13 +110,13 @@ export const ProviderStatusIndicator: React.FC = () => {
         <div className="absolute top-full mt-2 right-0 z-50 w-72 rounded-2xl bg-white/98 dark:bg-slate-900/98 backdrop-blur-xl border border-slate-200 dark:border-slate-800 shadow-xl p-3.5 text-xs space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
             <div className="flex items-center gap-2">
-              <div className={`p-1 rounded-lg ${isHybrid || isDirectMeta ? 'bg-emerald-500/10 text-emerald-600' : 'bg-indigo-500/10 text-indigo-600'}`}>
-                {isHybrid || isDirectMeta ? <Zap className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+              <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600">
+                <Zap className="w-3.5 h-3.5" />
               </div>
               <div>
-                <h4 className="font-bold text-[11px] text-slate-900 dark:text-slate-100">Provider Mode Engine</h4>
+                <h4 className="font-bold text-[11px] text-slate-900 dark:text-slate-100">محرك التوجيه (Routing Engine)</h4>
                 <p className="text-[10px] text-slate-500">
-                  {isHybrid ? 'Hybrid Meta Direct + BeOn' : isDirectMeta ? 'Meta Direct Graph API' : 'BeOn Omnichannel V3'}
+                  Meta Direct Graph API v23.0
                 </p>
               </div>
             </div>
@@ -134,36 +134,36 @@ export const ProviderStatusIndicator: React.FC = () => {
             <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
               <span className="text-slate-500">Gateway:</span>
               <span className="font-semibold text-slate-900 dark:text-slate-100">
-                {isDirectMeta ? 'Meta Graph API v23.0' : 'BeOn V3 Partner API'}
+                Meta Graph API v23.0
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-              <span className="text-slate-500">BeOn Health:</span>
-              <span className="flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="w-3 h-3" /> Connected (#1995)
+              <span className="text-slate-500">مزود BeOn:</span>
+              <span className="flex items-center gap-1 font-semibold text-slate-400 dark:text-slate-500">
+                معطل (Disabled)
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
               <span className="text-slate-500">Direct Meta Switch:</span>
-              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${isDirectMeta ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
-                {isDirectMeta ? 'ACTIVE' : 'BYPASSED'}
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">
+                ACTIVE
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
               <span className="text-slate-500">Meta Pages:</span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">
-                {status?.meta_pages_count ?? 5} Configured
+                {status?.meta_pages_count ?? 0} Configured
               </span>
             </div>
           </div>
 
           <div className="pt-1 text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
-            <span>Dynamic Failover Ready</span>
-            <span className="text-[9px] font-mono text-indigo-500 font-semibold">
-              v3.api.beon.chat
+            <span>وضع التكامل المباشر</span>
+            <span className="text-[9px] font-mono text-emerald-600 font-semibold">
+              Pure Meta Direct
             </span>
           </div>
         </div>

@@ -3,6 +3,7 @@ import logging
 import os
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import AsyncSessionLocal
 from app.core.security import get_password_hash
@@ -56,9 +57,16 @@ async def seed_superadmin() -> None:
             )
             session.add(user)
 
-        await session.commit()
-        await session.refresh(user)
-        logger.info("✅ Superadmin user successfully seeded! (ID: %s, Email: %s)", user.id, user.email)
+        try:
+            await session.commit()
+            await session.refresh(user)
+            logger.info("✅ Superadmin user successfully seeded! (ID: %s, Email: %s)", user.id, user.email)
+        except IntegrityError:
+            await session.rollback()
+            stmt = select(User).where(User.email == email)
+            res = await session.execute(stmt)
+            user = res.scalar_one_or_none()
+            logger.info("Existing superadmin user confirmed on collision: (ID: %s, Email: %s)", user.id if user else "none", email)
 
 
 if __name__ == "__main__":

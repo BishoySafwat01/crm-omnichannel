@@ -130,9 +130,8 @@ async def lifespan(app: FastAPI):
         auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
         meta_task = asyncio.create_task(meta_sync_loop())
         sla_task = asyncio.create_task(sla_eval_loop())
-        interval = getattr(settings, "BEON_SYNC_INTERVAL_SECONDS", 15)
-        beon_task = asyncio.create_task(start_beon_polling_worker(interval_seconds=interval))
-        leader_tasks = [auto_sub_task, meta_task, sla_task, beon_task]
+        # BeOn background worker is disabled in pure Meta Direct mode
+        leader_tasks = [auto_sub_task, meta_task, sla_task]
 
     def stop_leader_tasks():
         nonlocal leader_tasks

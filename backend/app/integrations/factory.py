@@ -13,7 +13,7 @@ logger = logging.getLogger("app.integrations.factory")
 
 
 class ProviderFactory:
-    """Dynamic Provider Factory with Hybrid Meta / BeOn Omnichannel Routing."""
+    """Dynamic Provider Factory - Pure Meta Direct Mode."""
 
     @classmethod
     def get_provider(
@@ -25,35 +25,16 @@ class ProviderFactory:
     ) -> BaseMessagingProvider:
         """Resolve and instantiate the appropriate messaging provider.
 
-        Switching Rules:
-        1. If settings.ENABLE_DIRECT_META is False:
-           -> ALL messaging routes via BeonOmnichannelProvider.
-        2. If settings.ENABLE_DIRECT_META is True:
-           -> Facebook Messenger routes via MetaProvider (Direct Graph API v23.0).
-           -> Other channels (WhatsApp, SMS, Instagram, TikTok) route via BeonOmnichannelProvider.
+        In pure Meta Direct mode:
+        -> All messaging routes via MetaProvider (Direct Graph API).
+        -> Conversations marked as BEON or HYBRID_META_BEON automatically route
+           to MetaProvider without attempting to contact external BeOn servers.
         """
-        # Global switch check
-        if not getattr(settings, "ENABLE_DIRECT_META", False):
-            logger.debug("Direct Meta disabled; routing via BeOn Omnichannel Provider.")
-            return BeonOmnichannelProvider()
+        logger.debug(
+            "[ProviderFactory] Routing provider='%s', channel='%s' to MetaProvider (page_id=%s)",
+            provider_name,
+            channel,
+            page_id,
+        )
+        return MetaProvider(page_id=page_id, db=db, channel=channel or ChannelEnum.MESSENGER)
 
-        # Hybrid mode: Direct Meta is enabled
-        channel_str = str(channel.value if isinstance(channel, ChannelEnum) else channel or "").lower().strip()
-        provider_str = str(provider_name.value if isinstance(provider_name, ProviderEnum) else provider_name or "").lower().strip()
-
-        if provider_str in ("beon", "beon gateway", "مزود beon"):
-            logger.debug(f"Routing provider '{provider_str}' directly to BeonOmnichannelProvider")
-            return BeonOmnichannelProvider()
-
-        if provider_str in ("meta", "direct_meta", "ميتا مباشر"):
-            logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id, db=db, channel=channel or ChannelEnum.MESSENGER)
-
-        is_meta_channel = channel_str in ("messenger", "facebook")
-
-        if is_meta_channel:
-            logger.debug(f"Routing to Direct MetaProvider (page_id={page_id})")
-            return MetaProvider(page_id=page_id, db=db, channel=channel or ChannelEnum.MESSENGER)
-
-        logger.debug(f"Routing channel '{channel_str}' to BeonOmnichannelProvider")
-        return BeonOmnichannelProvider()

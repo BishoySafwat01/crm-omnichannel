@@ -257,7 +257,7 @@ export const ConversationList: React.FC = () => {
     return conversations.filter((conv) => {
       // 0. Provider Filter
       if (selectedProvider && selectedProvider !== 'all') {
-        const convProv = (conv.provider || 'beon').toLowerCase();
+        const convProv = (conv.provider || 'meta').toLowerCase();
         if (convProv !== selectedProvider.toLowerCase()) return false;
       }
 

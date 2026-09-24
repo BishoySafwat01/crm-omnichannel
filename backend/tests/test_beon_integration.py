@@ -46,27 +46,14 @@ async def test_beon_conversations_normalization():
 
 @pytest.mark.asyncio
 async def test_provider_factory_dynamic_toggle():
-    """Verify ProviderFactory resolution for False vs True toggle states."""
-    # State 1: ENABLE_DIRECT_META = False -> All channels route to BeOn
-    settings.ENABLE_DIRECT_META = False
-    p1 = ProviderFactory.get_provider(channel=ChannelEnum.MESSENGER)
-    assert isinstance(p1, BeonOmnichannelProvider)
+    """Verify ProviderFactory always routes to MetaProvider in pure Meta Direct mode."""
+    p1 = ProviderFactory.get_provider(channel=ChannelEnum.MESSENGER, page_id="211839025349185")
+    assert isinstance(p1, MetaProvider)
     assert isinstance(p1, BaseMessagingProvider)
 
     p2 = ProviderFactory.get_provider(channel=ChannelEnum.WHATSAPP)
-    assert isinstance(p2, BeonOmnichannelProvider)
-
-    # State 2: ENABLE_DIRECT_META = True -> Hybrid routing
-    settings.ENABLE_DIRECT_META = True
-    p3 = ProviderFactory.get_provider(channel=ChannelEnum.MESSENGER, page_id="211839025349185")
-    assert isinstance(p3, MetaProvider)
-    assert isinstance(p3, BaseMessagingProvider)
-
-    p4 = ProviderFactory.get_provider(channel=ChannelEnum.WHATSAPP)
-    assert isinstance(p4, BeonOmnichannelProvider)
-
-    # Reset back to default
-    settings.ENABLE_DIRECT_META = False
+    assert isinstance(p2, MetaProvider)
+    assert isinstance(p2, BaseMessagingProvider)
 
 
 @pytest.mark.asyncio
@@ -93,26 +80,25 @@ async def test_social_comments_orm_and_endpoint():
 
 @pytest.mark.asyncio
 async def test_beon_status_endpoint():
-    """Verify GET /api/v1/beon/status endpoint."""
+    """Verify GET /api/v1/beon/status returns disabled in pure Meta Direct mode."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.get("/api/v1/beon/status")
         assert r.status_code == 200
         data = r.json()
         assert data.get("provider") == "beon"
-        assert data.get("status") == "connected"
-        assert data.get("account", {}).get("account_name") == "Luxira"
+        assert data.get("status") == "disabled"
 
 
 @pytest.mark.asyncio
 async def test_meta_integrations_status_endpoint():
-    """Verify GET /api/v1/meta/integrations/status includes BeOn & Provider details."""
+    """Verify GET /api/v1/meta/integrations/status reflects pure Meta Direct status."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.get("/api/v1/meta/integrations/status")
         assert r.status_code == 200
         data = r.json()
-        assert "direct_meta_enabled" in data
-        assert "active_provider" in data
-        assert data["beon_connected"] is True
+        assert data["direct_meta_enabled"] is True
+        assert data["active_provider"] == "DIRECT_META"
+        assert data["beon_connected"] is False
         assert data["meta_pages_count"] >= 5
 
 

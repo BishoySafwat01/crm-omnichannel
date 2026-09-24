@@ -42,27 +42,27 @@ async def get_meta_integrations_status():
     has_token = bool(page_token and page_token.strip())
 
     return {
-        "direct_meta_enabled": bool(settings.ENABLE_DIRECT_META),
-        "active_provider": "HYBRID_META_BEON" if settings.ENABLE_DIRECT_META else "BEON",
-        "beon_connected": has_beon_key,
+        "direct_meta_enabled": True,
+        "active_provider": "DIRECT_META",
+        "beon_connected": False,
         "meta_pages_count": len(meta_pages),
         "whatsapp": {
-            "connected": bool(wa_phone_id and wa_waba_id) or has_beon_key,
+            "connected": bool(wa_phone_id and wa_waba_id),
             "phone_number_id_configured": bool(wa_phone_id and wa_phone_id.strip()),
             "waba_id_configured": bool(wa_waba_id and wa_waba_id.strip()),
-            "status": "ACTIVE" if (wa_phone_id and wa_waba_id) or has_beon_key else "UNCONFIGURED",
+            "status": "ACTIVE" if (wa_phone_id and wa_waba_id) else "UNCONFIGURED",
         },
         "instagram": {
-            "connected": bool(ig_acc_id and (has_token or has_page)) or has_beon_key,
+            "connected": bool(ig_acc_id and (has_token or has_page)),
             "page_id_configured": bool(ig_acc_id and str(ig_acc_id).strip()),
             "username": "@luxira.official" if ig_acc_id else "غير مهيأ",
-            "status": "VALID" if ig_acc_id or has_beon_key else "UNCONFIGURED",
+            "status": "VALID" if ig_acc_id else "UNCONFIGURED",
         },
         "messenger": {
-            "connected": has_page or has_beon_key,
+            "connected": has_page,
             "page_id_configured": has_page,
             "pages": [p.get("name", "Page") for p in meta_pages.values()] if meta_pages else ["LUXIRA"],
-            "status": "SUBSCRIBED" if has_page or has_beon_key else "UNCONFIGURED",
+            "status": "SUBSCRIBED" if has_page else "UNCONFIGURED",
         },
         "webhook": {
             "url": settings.META_WEBHOOK_URL if hasattr(settings, "META_WEBHOOK_URL") else "/api/v1/meta/webhook",

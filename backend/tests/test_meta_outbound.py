@@ -67,13 +67,13 @@ async def test_outbound_unsupported_provider_and_channel_rejected():
         session.add(conv_tiktok)
         await session.commit()
 
-        # Should route or fail gracefully
+        # Should route or fail gracefully via MetaProvider
         with patch(
-            "app.integrations.beon.BeonOmnichannelProvider.send_outbound_message",
+            "app.integrations.meta.MetaProvider.send_outbound_message",
             new_callable=AsyncMock,
         ) as mock_send:
             mock_send.return_value = {
-                "external_message_id": "beon_tiktok_msg_1",
+                "external_message_id": "meta_tiktok_msg_1",
                 "recipient_id": "tiktok_123",
                 "raw": {"status": 200},
             }

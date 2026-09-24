@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,14 +302,19 @@ class MessageService:
         )
         default_sender = conv_page_id or settings.META_PAGE_ID or "crm_agent"
 
-        # Resolve CustomerIdentity for provider/channel
-        identity_stmt = select(CustomerIdentity).where(
-            CustomerIdentity.customer_id == conv.customer_id,
-            CustomerIdentity.provider == conv.provider,
-            CustomerIdentity.channel == conv.channel,
+        # Resolve CustomerIdentity for provider/channel (prefer META provider, with universal fallback)
+        identity_stmt = (
+            select(CustomerIdentity)
+            .where(
+                CustomerIdentity.customer_id == conv.customer_id,
+                CustomerIdentity.channel == conv.channel,
+            )
+            .order_by(
+                case((CustomerIdentity.provider == ProviderEnum.META, 1), else_=2)
+            )
         )
         identity_res = await session.execute(identity_stmt)
-        identity = identity_res.scalar_one_or_none()
+        identity = identity_res.scalars().first()
 
         if identity and identity.external_user_id:
             clean_recipient = identity.external_user_id.strip()

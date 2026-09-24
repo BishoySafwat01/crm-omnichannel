@@ -28,20 +28,15 @@ class BeonSyncEngine:
     async def sync_recent(self, limit: int = 30) -> dict[str, Any]:
         """
         Incrementally fetch and ingest recent conversations and messages from BeOn V3.
-        Dispatches real-time WebSocket events when new conversations or messages are persisted.
+        Disabled in pure Meta Direct mode.
         """
-        stats = {
+        logger.debug("[BeOn Provider] Disabled - Running in pure Meta Direct mode.")
+        return {
             "synced_conversations": 0,
             "new_conversations": 0,
             "new_messages": 0,
             "updated_conversations": 0,
         }
-
-        try:
-            resp = await self.client.get_conversations(page=1, per_page=limit)
-        except Exception as e:
-            logger.error(f"[BeOn Sync Engine] Error fetching recent conversations from BeOn: {e}")
-            return stats
 
         data_obj = resp.get("data") or {}
         records = data_obj.get("records") or []
@@ -307,8 +302,9 @@ class BeonSyncEngine:
         return stats
 
     async def sync_real_beon_data(self, max_pages: int = 100, per_page: int = 50) -> dict[str, Any]:
-        """Fetch real conversations and messages directly from BeOn V3 and persist them exhaustively."""
-        results = {
+        """Fetch real conversations and messages directly from BeOn V3 - Disabled in pure Meta Direct mode."""
+        logger.debug("[BeOn Provider] Disabled - Running in pure Meta Direct mode.")
+        return {
             "total_synced_conversations": 0,
             "total_synced_messages": 0,
             "imported_conversations": [],
