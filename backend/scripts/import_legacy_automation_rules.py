@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
 Import, name, and synchronize legacy automation rules into PostgreSQL `automation_rules`.
-1. Assign semantic, human-readable names to all rules based on their trigger keywords.
-2. Ingest rules for each respective page ID using deterministic UUIDs.
-3. Replicate and activate ALL 132 rules for Lotus Blue Cosmetic (page_id: 101509818947526).
-4. Ensure connected_pages has `is_automation_enabled = true` for all target pages.
+1. Enforce strict 1:1 page-level isolation based on Facebook Page IDs extracted from inboxUrls.
+2. Filter out corrupted, inverted, and cross-pollinated cross-brand rules.
+3. Assign semantic, human-readable Arabic names to all rules based on their trigger keywords.
+4. Ingest rules for each respective page ID using deterministic UUIDs.
+5. Verify exact expected counts per page (Lotus Blue: 40, LOXX KING: 25, Lavva: 25, Hayat: 23, Liora: 3, Total: 116).
+6. Ensure connected_pages has `is_automation_enabled = true` for all target pages.
 """
 
 import asyncio
@@ -21,7 +23,7 @@ BACKEND_DIR = SCRIPT_DIR.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from app.core.database import AsyncSessionLocal
 from app.models.automation import AutomationRule
 from app.models.connected_page import ConnectedPage
@@ -35,38 +37,38 @@ LOTUS_BLUE_BRAND = "Lotus blue cosmetic"
 CONFIG_SPECS = [
     {
         "filename": "page_103412619187974.json",
-        "alt_names": ["config.json"],
+        "alt_names": ["config.json", "config_2.json"],
         "page_id": "103412619187974",
         "brand": "Lavva",
         "expected_count": 25,
     },
     {
         "filename": "page_801569813029844.json",
-        "alt_names": ["config (2).json"],
+        "alt_names": ["config (2).json", "config (2)_2.json"],
         "page_id": "801569813029844",
         "brand": "Liora",
         "expected_count": 3,
     },
     {
         "filename": "page_101509818947526.json",
-        "alt_names": ["config (3).json"],
+        "alt_names": ["config (3).json", "config (3)_2.json"],
         "page_id": "101509818947526",
         "brand": "Lotus blue cosmetic",
-        "expected_count": 51,
+        "expected_count": 40,
     },
     {
         "filename": "page_100736899432829.json",
-        "alt_names": ["config (4).json"],
+        "alt_names": ["config (4).json", "config (4)_2.json"],
         "page_id": "100736899432829",
         "brand": "LOXX KING MAN",
-        "expected_count": 27,
+        "expected_count": 25,
     },
     {
         "filename": "page_104710089055383.json",
-        "alt_names": ["config (5).json"],
+        "alt_names": ["config (5).json", "config (5)_2.json"],
         "page_id": "104710089055383",
         "brand": "Hayat Cosmetics",
-        "expected_count": 26,
+        "expected_count": 23,
     },
     {
         "filename": "page_flare_config_6.json",
@@ -76,6 +78,35 @@ CONFIG_SPECS = [
         "expected_count": 0,
     },
 ]
+
+# Explicit exclusion sets for corrupted, inverted, duplicate, or cross-pollinated rules
+EXCLUDED_RULE_IDS = {
+    # Lotus Blue: exclude 8 country price rules for mascara copied from Hayat + 3 cross-pollinated mascara/corset rules (51 -> 40)
+    "101509818947526": {
+        "rule_1789744202475",  # LY mascara price
+        "rule_1789744401109",  # IQ mascara price
+        "rule_1789744491590",  # TR mascara price
+        "rule_1789744541429",  # OM mascara price
+        "rule_1789744623237",  # AE mascara price
+        "rule_1789744686327",  # BH mascara price
+        "rule_1789744697141",  # KW mascara price
+        "rule_1789744702269",  # QA mascara price
+        "rule_1789748626001",  # Mascara waterproof rule
+        "rule_1789748696360",  # Mascara/Corset cross-pollinated rule
+        "rule_1789748939047",  # Mascara all problems rule
+    },
+    # LOXX KING: exclude 1 inverted rule + 1 identical duplicate rule (27 -> 25)
+    "100736899432829": {
+        "rule_1789634614329",  # Inverted rule (reply text placed in keywords)
+        "rule_1789636169840",  # Duplicate of rule_1789635001313
+    },
+    # Hayat Cosmetics: exclude 1 corset cross-pollinated rule + 1 duplicate/contradiction + 1 duplicate country price (26 -> 23)
+    "104710089055383": {
+        "rule_1789754676988",  # Corset cross-pollinated rule (keywords mention مشد ضد الماء)
+        "rule_1789754630273",  # Contradictory waterproof rule duplicating Lotus Blue
+        "rule_1789754071577",  # Duplicate identical response text of rule_1789754065801
+    },
+}
 
 SEARCH_DIRS = [
     SCRIPT_DIR / "data" / "legacy_rules",
@@ -160,18 +191,21 @@ def generate_semantic_rule_name(keywords: list[str], fallback_prefix: str = "ق�
 
 
 async def run_import():
-    logger.info("Starting legacy automation rules ingestion & semantic naming...")
+    logger.info("Starting legacy automation rules ingestion with STRICT 1:1 page-level isolation...")
     total_created = 0
-    total_updated = 0
     total_skipped = 0
 
-    all_parsed_rules = []
-
     async with AsyncSessionLocal() as session:
-        # Step 1: Ingest rules for each respective page ID
+        # Step 1: Purge existing rules to enforce clean 1:1 page isolation
+        logger.info("Truncating automation_rules table CASCADE to reset rules cleanly...")
+        await session.execute(text("TRUNCATE TABLE automation_rules CASCADE;"))
+        await session.commit()
+
+        # Step 2: Ingest rules strictly into their extracted Page ID
         for spec in CONFIG_SPECS:
             page_id = spec["page_id"]
             brand = spec["brand"]
+            expected_count = spec.get("expected_count", 0)
             fpath = resolve_file(spec)
 
             if not fpath:
@@ -183,7 +217,7 @@ async def run_import():
                 data = json.load(f)
 
             raw_rules = data.get("rules", [])
-            logger.info("Found %d rules in %s for page_id=%s", len(raw_rules), fpath.name, page_id)
+            logger.info("Found %d raw rules in %s for page_id=%s", len(raw_rules), fpath.name, page_id)
 
             # Ensure page has automation enabled in connected_pages (if page_id is a real Facebook page)
             if page_id != "flare_page":
@@ -214,7 +248,18 @@ async def run_import():
                     )
                     session.add(connected_page)
 
+            page_created = 0
+            page_exclusions = EXCLUDED_RULE_IDS.get(page_id, set())
+
             for idx, r in enumerate(raw_rules, start=1):
+                source_id = str(r.get("id") or f"legacy_{page_id}_{idx}").strip()
+
+                # Filter out corrupted, inverted, duplicate, or cross-pollinated rules
+                if source_id in page_exclusions:
+                    logger.info("Skipping excluded rule %s for page_id=%s (%s)", source_id, page_id, brand)
+                    total_skipped += 1
+                    continue
+
                 reply = (r.get("reply") or "").strip()
                 if not reply:
                     total_skipped += 1
@@ -237,103 +282,13 @@ async def run_import():
 
                 is_active = bool(r.get("active", True))
                 semantic_name = generate_semantic_rule_name(keywords)
-                source_id = str(r.get("id") or f"legacy_{page_id}_{idx}").strip()
-
-                rule_dict = {
-                    "source_id": source_id,
-                    "original_page_id": page_id,
-                    "original_brand": brand,
-                    "name": semantic_name,
-                    "reply": reply,
-                    "keywords": keywords,
-                    "match_type": match_type,
-                    "is_active": is_active,
-                }
-                all_parsed_rules.append(rule_dict)
-
                 rule_uuid = get_rule_uuid(page_id, source_id)
-                existing = await session.get(AutomationRule, rule_uuid)
 
-                if existing:
-                    existing.name = semantic_name
-                    existing.keywords = keywords
-                    existing.match_type = match_type
-                    existing.is_active = is_active
-                    existing.brand_id = brand
-                    existing.page_id = page_id
-                    existing.response_text = reply
-                    existing.split_lines = True
-                    existing.delay_seconds = 2
-                    existing.human_typing_simulation = True
-                    existing.cooldown_minutes = 15
-                    session.add(existing)
-                    total_updated += 1
-                else:
-                    new_rule = AutomationRule(
-                        id=rule_uuid,
-                        name=semantic_name,
-                        brand_id=brand,
-                        page_id=page_id,
-                        channels=["messenger", "instagram", "whatsapp"],
-                        trigger_type="keyword_match",
-                        match_type=match_type,
-                        keywords=keywords,
-                        response_text=reply,
-                        split_lines=True,
-                        delay_seconds=2,
-                        human_typing_simulation=True,
-                        cooldown_minutes=15,
-                        is_active=is_active,
-                    )
-                    session.add(new_rule)
-                    total_created += 1
-
-            await session.commit()
-
-        # Step 2: Replicate and activate ALL 132 rules for Lotus Blue Cosmetic (101509818947526)
-        logger.info("Replicating all %d rules across all suites for Lotus Blue Cosmetic...", len(all_parsed_rules))
-        lotus_created = 0
-        lotus_updated = 0
-
-        # Ensure Lotus Blue page exists and has automation enabled
-        lotus_cp_stmt = select(ConnectedPage).where(ConnectedPage.page_id == LOTUS_BLUE_PAGE_ID)
-        lotus_cp = (await session.execute(lotus_cp_stmt)).scalars().first()
-        if lotus_cp:
-            lotus_cp.is_automation_enabled = True
-            lotus_cp.status = "ACTIVE"
-            session.add(lotus_cp)
-            await session.commit()
-
-        for r in all_parsed_rules:
-            reply = r["reply"]
-            keywords = r["keywords"]
-            match_type = r["match_type"]
-            semantic_name = r["name"]
-            source_id = r["source_id"]
-
-            lotus_rule_uuid = get_rule_uuid(LOTUS_BLUE_PAGE_ID, source_id)
-            existing_lotus = await session.get(AutomationRule, lotus_rule_uuid)
-
-            if existing_lotus:
-                existing_lotus.name = semantic_name
-                existing_lotus.keywords = keywords
-                existing_lotus.match_type = match_type
-                existing_lotus.is_active = True  # Always active for Lotus Blue
-                existing_lotus.brand_id = LOTUS_BLUE_BRAND
-                existing_lotus.page_id = LOTUS_BLUE_PAGE_ID
-                existing_lotus.response_text = reply
-                existing_lotus.split_lines = True
-                existing_lotus.delay_seconds = 2
-                existing_lotus.human_typing_simulation = True
-                existing_lotus.cooldown_minutes = 15
-                session.add(existing_lotus)
-                lotus_updated += 1
-            else:
-                lotus_rule = AutomationRule(
-                    id=lotus_rule_uuid,
+                new_rule = AutomationRule(
+                    id=rule_uuid,
                     name=semantic_name,
-                    brand_id=LOTUS_BLUE_BRAND,
-                    page_id=LOTUS_BLUE_PAGE_ID,
+                    brand_id=brand,
+                    page_id=page_id,
                     channels=["messenger", "instagram", "whatsapp"],
                     trigger_type="keyword_match",
                     match_type=match_type,
@@ -343,33 +298,49 @@ async def run_import():
                     delay_seconds=2,
                     human_typing_simulation=True,
                     cooldown_minutes=15,
-                    is_active=True,
+                    is_active=is_active,
                 )
-                session.add(lotus_rule)
-                lotus_created += 1
+                session.add(new_rule)
+                page_created += 1
+                total_created += 1
 
-        await session.commit()
-        logger.info("Lotus Blue replication complete: %d created, %d updated.", lotus_created, lotus_updated)
-
-        # Step 3: Global semantic name normalization pass for any legacy rules
-        all_rules_stmt = select(AutomationRule)
-        all_db_rules = (await session.execute(all_rules_stmt)).scalars().all()
-        renamed_count = 0
-        for rule in all_db_rules:
-            if not rule.name or rule.name.startswith("Rule_") or rule.name.isdigit():
-                rule.name = generate_semantic_rule_name(rule.keywords or [])
-                session.add(rule)
-                renamed_count += 1
-        if renamed_count > 0:
             await session.commit()
-            logger.info("Renamed %d legacy rules to human-readable semantic names.", renamed_count)
+            logger.info("Successfully imported %d rules for page_id=%s (%s)", page_created, page_id, brand)
+            if expected_count > 0 and page_created != expected_count:
+                raise RuntimeError(f"Expected {expected_count} rules for page {page_id} ({brand}), but imported {page_created}")
 
-    logger.info(
-        "Overall ingestion complete: %d page-scoped created, %d updated, %d Lotus Blue rules synced.",
-        total_created,
-        total_updated,
-        lotus_created + lotus_updated,
-    )
+        # Step 3: Verification & Audit Check
+        stmt_verify = (
+            select(AutomationRule.page_id, AutomationRule.brand_id, func.count(AutomationRule.id))
+            .group_by(AutomationRule.page_id, AutomationRule.brand_id)
+            .order_by(func.count(AutomationRule.id).desc())
+        )
+        res = (await session.execute(stmt_verify)).all()
+        actual_counts = {row[0]: row[2] for row in res}
+        total_rules = sum(actual_counts.values())
+
+        logger.info("=== AUTOMATION RULES AUDIT VERIFICATION ===")
+        for pid, b_name, count in res:
+            logger.info("  Page ID: %-16s | Brand: %-22s | Rules: %d", pid, b_name, count)
+        logger.info("  Total Rules in DB: %d", total_rules)
+
+        expected_targets = {
+            "101509818947526": 40,
+            "100736899432829": 25,
+            "103412619187974": 25,
+            "104710089055383": 23,
+            "801569813029844": 3,
+        }
+
+        for pid, exp in expected_targets.items():
+            act = actual_counts.get(pid, 0)
+            if act != exp:
+                raise RuntimeError(f"Verification FAILED for page_id={pid}: expected {exp}, got {act}")
+
+        if total_rules != 116:
+            raise RuntimeError(f"Verification FAILED: expected 116 total rules, got {total_rules}")
+
+        logger.info("SUCCESS: All 116 rules ingested with strict 1:1 page-level isolation.")
 
 
 if __name__ == "__main__":
