@@ -76,12 +76,14 @@ class MetaImportService:
             or_(
                 ConnectedPage.page_id == pid,
                 ConnectedPage.instagram_business_account_id == pid,
-            )
+            ),
+            ConnectedPage.deleted_at.is_(None),
         )
         res = await session.execute(stmt)
         cp = res.scalars().first()
         if cp and cp.name and not str(cp.name).startswith("Page "):
             return cp.name
+
 
         # Step C: If not in DB, query Meta Graph API dynamically and persist
         token = settings.META_PAGE_ACCESS_TOKEN
@@ -422,8 +424,10 @@ class MetaImportService:
                 if existing_conv:
                     conv = existing_conv
                     conv.last_message_at = norm_conv.last_message_at
-                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
+                    if brand_name:
                         conv.brand = brand_name
+                    if target_page_id:
+                        conv.page_id = str(target_page_id).strip()
                     await session.commit()
                 else:
                     conv = await ConversationService.create_conversation(
@@ -437,6 +441,10 @@ class MetaImportService:
                         brand=brand_name,
                         last_message_at=norm_conv.last_message_at,
                     )
+                    if target_page_id:
+                        conv.page_id = str(target_page_id).strip()
+                        await session.commit()
+
 
                 # Fetch Messages for this conversation (time-bounded to last 7 days)
                 norm_messages = await adapter.get_all_messages(
@@ -899,9 +907,14 @@ class MetaImportService:
                             brand=brand_name,
                         )
 
-                    if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
+                    if brand_name:
                         conv.brand = brand_name
-                        await session.commit()
+                    if entry_page_id:
+                        conv.page_id = str(entry_page_id).strip()
+                    if active_connected_pages and str(entry_page_id).strip() in active_connected_pages:
+                        conv.connected_page_id = active_connected_pages[str(entry_page_id).strip()].id
+                    await session.commit()
+
 
                     attachments_list = norm_event.attachments
                     first_att = attachments_list[0] if attachments_list and isinstance(attachments_list[0], dict) else {}
@@ -1047,9 +1060,14 @@ class MetaImportService:
                     workspace_id=entry_workspace_id,
                 )
 
-                if brand_name and (not conv.brand or conv.brand in ("LAVVA", "Default Business Page") or str(conv.brand).startswith("Page ")):
+                if brand_name:
                     conv.brand = brand_name
-                    await session.commit()
+                if entry_page_id:
+                    conv.page_id = str(entry_page_id).strip()
+                if active_connected_pages and str(entry_page_id).strip() in active_connected_pages:
+                    conv.connected_page_id = active_connected_pages[str(entry_page_id).strip()].id
+                await session.commit()
+
 
                 if norm_event.metadata_ and norm_event.metadata_.get("referral"):
                     logger.info("Referral attribution detected: %s", norm_event.metadata_["referral"])

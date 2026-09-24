@@ -64,6 +64,51 @@ class ConnectedPageService:
         return None
 
     @classmethod
+    async def subscribe_page_to_webhooks(
+        cls,
+        session: AsyncSession,
+        page_id: str,
+        subscribed_fields: Optional[str] = "messages,messaging_postbacks,message_echoes,messaging_referrals",
+    ) -> bool:
+        """Subscribe page to Meta App Webhook via POST /{page_id}/subscribed_apps and mark active in DB."""
+        if not page_id or not str(page_id).strip():
+            return False
+        pid = str(page_id).strip()
+        token = await cls.get_decrypted_token_by_page_id(session, pid) or settings.get_page_token(pid)
+        if not token:
+            logger.warning("[ConnectedPageService] Cannot subscribe page %s: No token found.", pid)
+            return False
+
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        url = f"https://graph.facebook.com/{version}/{pid}/subscribed_apps"
+        params = {"access_token": token, "subscribed_fields": subscribed_fields}
+        headers = {"Authorization": f"Bearer {token}"}
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, params=params, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    success = bool(data.get("success", False)) if isinstance(data, dict) else False
+                    if success:
+                        stmt = select(ConnectedPage).where(ConnectedPage.page_id == pid)
+                        p_row = (await session.execute(stmt)).scalar_one_or_none()
+                        if p_row:
+                            p_row.is_webhook_subscribed = True
+                            p_row.status = "ACTIVE"
+                            await session.commit()
+                        logger.info("[ConnectedPageService] Successfully subscribed page %s to webhooks", pid)
+                        return True
+                    else:
+                        logger.warning("[ConnectedPageService] Webhook subscription for page %s returned: %s", pid, data)
+                else:
+                    logger.warning("[ConnectedPageService] Webhook subscription for page %s failed with status %d: %s", pid, res.status_code, res.text)
+        except Exception as exc:
+            logger.warning("[ConnectedPageService] Exception subscribing page %s: %s", pid, exc)
+        return False
+
+
+    @classmethod
     async def soft_delete_page(
         cls,
         session: AsyncSession,

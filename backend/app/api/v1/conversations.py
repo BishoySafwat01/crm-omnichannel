@@ -1,9 +1,13 @@
 from datetime import datetime, timezone
+import logging
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("app.api.v1.conversations")
+
 
 from app.api.deps import (
     get_current_user,
@@ -431,10 +435,12 @@ async def send_outbound_reply(
             detail=err_msg,
         )
     except (MetaAPIError, BeonAPIError) as exc:
-        logger.error("[send_outbound_reply API Error] Conv %s: %s", conversation_id, exc.message, exc_info=True)
+        msg = getattr(exc, "message", None) or str(exc)
+        status_c = getattr(exc, "status_code", 400) or status.HTTP_400_BAD_REQUEST
+        logger.error("[send_outbound_reply API Error] Conv %s: %s", conversation_id, msg, exc_info=True)
         raise HTTPException(
-            status_code=exc.status_code or status.HTTP_400_BAD_REQUEST,
-            detail=exc.message,
+            status_code=status_c,
+            detail=msg,
         )
     except Exception as exc:
         logger.error("[send_outbound_reply Exception] Conv %s: %s", conversation_id, exc, exc_info=True)
@@ -442,6 +448,7 @@ async def send_outbound_reply(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Outbound message send failed: {str(exc)}",
         )
+
 
 
 @router.patch(

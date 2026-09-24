@@ -228,10 +228,20 @@ class MessageService:
             raise ValueError("العميل محظور حالياً من قِبل الإدارة. يرجى إلغاء الحظر أولاً لتتمكن من إرسال الرسائل.")
 
         # Resolve page_id from conversation context
-        conv_page_id = None
-        conv_meta = getattr(conv, "metadata_", None) or getattr(conv, "metadata", None)
-        if conv_meta and isinstance(conv_meta, dict):
-            conv_page_id = conv_meta.get("page_id")
+        conv_page_id = getattr(conv, "page_id", None)
+        if not conv_page_id and getattr(conv, "connected_page_id", None):
+            try:
+                from app.models.connected_page import ConnectedPage
+                cp = await session.get(ConnectedPage, conv.connected_page_id)
+                if cp and cp.page_id:
+                    conv_page_id = cp.page_id
+            except Exception:
+                pass
+
+        if not conv_page_id:
+            conv_meta = getattr(conv, "metadata_", None) or getattr(conv, "metadata", None)
+            if conv_meta and isinstance(conv_meta, dict):
+                conv_page_id = conv_meta.get("page_id")
         if not conv_page_id and getattr(conv, "sender_external_id", None):
             conv_page_id = getattr(conv, "sender_external_id", None)
 
@@ -242,12 +252,14 @@ class MessageService:
                 stmt_cp = select(ConnectedPage).where(
                     ConnectedPage.name == conv.brand,
                     ConnectedPage.status == "ACTIVE",
+                    ConnectedPage.deleted_at.is_(None),
                 )
                 cp_row = (await session.execute(stmt_cp)).scalars().first()
                 if cp_row and cp_row.page_id:
                     conv_page_id = cp_row.page_id
             except Exception as exc:
                 logger.debug("Failed to resolve page_id by conv.brand: %s", exc)
+
 
         # Step B: Lookup recipient ID recorded in recent customer messages
         if not conv_page_id:

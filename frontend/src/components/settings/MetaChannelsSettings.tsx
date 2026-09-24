@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 import { useChannelsStore, FACEBOOK_PAGE_SCOPES } from '../../store/useChannelsStore';
-import { useBrandStore } from '../../store/useBrandStore';
 
 export interface MetaChannelsSettingsProps {
   showHeader?: boolean;
@@ -36,7 +35,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
 }) => {
   const { user } = useAuthStore();
   const isAdmin = isAdminUser(user);
-  const brands = useBrandStore((state) => state.brands);
+
 
   const {
     connectedPages,
@@ -59,31 +58,14 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pageToDelete, setPageToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  // Page-to-Brand association mapping (persisted in localStorage)
-  const [pageBrandMap, setPageBrandMap] = useState<Record<string, string>>(() => {
-    try {
-      const stored = localStorage.getItem('crm_page_brand_associations');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-
   useEffect(() => {
     if (isAdmin) {
       fetchConnectedPages();
     }
   }, [isAdmin]);
 
-  const handleBrandChange = (pageId: string, brandId: string) => {
-    const updated = { ...pageBrandMap, [pageId]: brandId };
-    setPageBrandMap(updated);
-    try {
-      localStorage.setItem('crm_page_brand_associations', JSON.stringify(updated));
-    } catch {}
-  };
-
   const copyToClipboard = (text: string, id: string) => {
+
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(text);
       setCopiedId(id);
@@ -215,7 +197,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                 الويب هـوك مفعّل:
               </span>
               <p className="text-base font-black text-emerald-400">
-                {subscribedPagesCount}
+                {subscribedPagesCount} من {connectedPages.length}
               </p>
             </div>
             <div>
@@ -223,9 +205,10 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                 الصفحات النشطة:
               </span>
               <p className="text-base font-black text-blue-300">
-                {activePagesCount}
+                {activePagesCount} من {connectedPages.length}
               </p>
             </div>
+
           </div>
         </div>
       )}
@@ -358,7 +341,6 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
               const isStatusToggling = actionLoadingMap[`status_${page.page_id}`];
               const isSyncing = actionLoadingMap[`sync_${page.page_id}`];
               const isDeleting = actionLoadingMap[`del_${page.page_id}`];
-              const selectedBrand = pageBrandMap[page.page_id] || page.name || 'Default';
 
               return (
                 <div
@@ -460,26 +442,15 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                         )}
                       </div>
 
-                      {/* Brand Association Selector */}
+                      {/* Brand Association (Page Name) */}
                       <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                         <span className="text-slate-400 text-[11px] flex items-center gap-1">
                           <Tag className="w-3 h-3 text-slate-400" />
-                          ربط العلامة التجارية (Brand):
+                          العلامة التجارية (Brand):
                         </span>
-                        <select
-                          value={selectedBrand}
-                          onChange={(e) => handleBrandChange(page.page_id, e.target.value)}
-                          className="bg-slate-50 text-[11px] font-bold text-slate-700 px-2.5 py-1 rounded-xl border border-slate-200 focus:outline-none cursor-pointer"
-                        >
-                          {page.name && !brands.some((b) => b.name.toLowerCase() === page.name.toLowerCase()) && (
-                            <option value={page.name}>{page.name}</option>
-                          )}
-                          {brands.filter((b) => b.id !== 'all').map((b) => (
-                            <option key={b.id} value={b.name}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
+                        <span className="font-bold text-[11px] text-slate-800 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200/60">
+                          {page.name}
+                        </span>
                       </div>
                     </div>
                   </div>

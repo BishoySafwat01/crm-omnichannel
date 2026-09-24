@@ -417,6 +417,7 @@ class MetaOAuthService:
 
             if existing:
                 existing.name = name
+                existing.deleted_at = None
                 if encrypted_token:
                     existing.encrypted_access_token = encrypted_token
                 if category:
@@ -431,10 +432,12 @@ class MetaOAuthService:
                     existing.workspace_id = default_ws_id
                 existing.connected_by_user_id = user_id
                 existing.updated_at = func.now()
+                target_cp_id = existing.id
                 saved_records.append(existing)
             else:
+                new_cp_id = uuid.uuid4()
                 new_page = ConnectedPage(
-                    id=uuid.uuid4(),
+                    id=new_cp_id,
                     workspace_id=default_ws_id,
                     page_id=page_id,
                     name=name,
@@ -446,13 +449,32 @@ class MetaOAuthService:
                     connected_by_user_id=user_id,
                 )
                 db.add(new_page)
+                target_cp_id = new_cp_id
                 saved_records.append(new_page)
+
+            # Enforce brand = page.name across conversations for this page
+            try:
+                from app.models.conversation import Conversation
+                from sqlalchemy import or_, update
+                await db.execute(
+                    update(Conversation)
+                    .where(
+                        or_(
+                            Conversation.page_id == page_id,
+                            Conversation.connected_page_id == target_cp_id,
+                        )
+                    )
+                    .values(brand=name, page_id=page_id, connected_page_id=target_cp_id)
+                )
+            except Exception as align_exc:
+                logger.debug("Brand alignment across conversations skipped for %s: %s", page_id, align_exc)
 
             logger.info(
                 "[Meta OAuth] Successfully ingested page %s (%s) with permanent token and active webhooks",
                 page_id,
                 name,
             )
+
 
         await db.commit()
         for record in saved_records:
