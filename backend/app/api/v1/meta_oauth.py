@@ -46,6 +46,7 @@ class ConnectedPageResponse(BaseModel):
     connected_by_user_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -281,12 +282,21 @@ async def handle_meta_oauth_callback(
     response_model=list[ConnectedPageResponse],
     summary="List Connected Facebook Pages",
 )
+@router.get(
+    "/pages",
+    response_model=list[ConnectedPageResponse],
+    summary="List Connected Facebook Pages (Alias)",
+)
 async def list_connected_pages(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[ConnectedPageResponse]:
-    """Retrieve all onboarded Facebook Pages without exposing encrypted or plain access tokens (Superadmin / Admin only)."""
-    stmt = select(ConnectedPage).order_by(ConnectedPage.created_at.desc())
+    """Retrieve all active/non-deleted onboarded Facebook Pages without exposing encrypted or plain access tokens (Superadmin / Admin only)."""
+    stmt = (
+        select(ConnectedPage)
+        .where(ConnectedPage.deleted_at.is_(None))
+        .order_by(ConnectedPage.created_at.desc())
+    )
     result = await db.execute(stmt)
     pages = result.scalars().all()
     return [ConnectedPageResponse.model_validate(p) for p in pages]
@@ -301,6 +311,11 @@ class UpdatePageStatusRequest(BaseModel):
     response_model=ConnectedPageResponse,
     summary="Update Connected Page Status (Active/Inactive)",
 )
+@router.patch(
+    "/pages/{page_id}/status",
+    response_model=ConnectedPageResponse,
+    summary="Update Connected Page Status (Active/Inactive) (Alias)",
+)
 async def update_connected_page_status(
     page_id: str,
     payload: UpdatePageStatusRequest,
@@ -308,7 +323,10 @@ async def update_connected_page_status(
     db: AsyncSession = Depends(get_db),
 ) -> ConnectedPageResponse:
     """Toggle page operational status between ACTIVE and INACTIVE (Admin only)."""
-    stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
+    stmt = select(ConnectedPage).where(
+        ConnectedPage.page_id == page_id,
+        ConnectedPage.deleted_at.is_(None),
+    )
     res = await db.execute(stmt)
     page = res.scalar_one_or_none()
     if not page:
@@ -325,27 +343,21 @@ async def update_connected_page_status(
 
 @router.delete(
     "/connected-pages/{page_id}",
-    summary="Disconnect/Delete Connected Facebook Page",
+    summary="Cascading Soft-Delete Connected Facebook Page",
+)
+@router.delete(
+    "/pages/{page_id}",
+    summary="Cascading Soft-Delete Connected Facebook Page (Alias)",
 )
 async def delete_connected_page(
     page_id: str,
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Disconnect and remove an onboarded Facebook Page record from the system (Admin only)."""
-    stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
-    res = await db.execute(stmt)
-    page = res.scalar_one_or_none()
-    if not page:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Connected page with ID {page_id} not found.",
-        )
-    page_name = page.name
-    await db.delete(page)
-    await db.commit()
-    logger.info("Admin %s disconnected page %s (%s)", current_user.email, page_id, page_name)
-    return {"status": "success", "message": f"تم إلغاء ربط الصفحة {page_name} بنجاح.", "page_id": page_id}
+    """Disconnect and cascading soft-delete a Facebook Page, its conversations, and messages from the system (Admin only)."""
+    result = await ConnectedPageService.soft_delete_page(session=db, page_id=page_id)
+    logger.info("Admin %s cascading soft-deleted page %s", current_user.email, page_id)
+    return result
 
 
 @router.post(

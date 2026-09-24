@@ -1396,13 +1396,20 @@ export const updateConnectedPageStatus = async (pageId: string, status: 'ACTIVE'
 };
 
 export const deleteConnectedPage = async (pageId: string): Promise<{ status: string; message: string }> => {
-  const res = await safeFetch(`/meta/connected-pages/${pageId}`, {
+  const res = await safeFetch(`/meta/pages/${pageId}`, {
     method: 'DELETE',
     headers: getAuthHeaders({ Accept: 'application/json' }),
   });
   if (!res || !res.ok) {
-    const err = await res?.json().catch(() => ({ detail: 'فشل في إلغاء ربط الصفحة' }));
-    throw new Error(err?.detail || 'فشل في إلغاء ربط الصفحة');
+    const fallbackRes = await safeFetch(`/meta/connected-pages/${pageId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (!fallbackRes || !fallbackRes.ok) {
+      const err = await fallbackRes?.json().catch(() => ({ detail: 'فشل في حذف الصفحة' }));
+      throw new Error(err?.detail || 'فشل في حذف الصفحة');
+    }
+    return await fallbackRes.json();
   }
   return await res.json();
 };

@@ -300,7 +300,10 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   disconnectPage: async (pageId: string) => {
+    const prevPages = get().connectedPages;
+    // Immediately remove deleted page card from UI state
     set((state) => ({
+      connectedPages: state.connectedPages.filter((p) => p.page_id !== pageId && (p as any).id !== pageId),
       actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: true },
       error: null,
       successMessage: null,
@@ -308,15 +311,19 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     try {
       await metaOAuthApi.deleteConnectedPage(pageId);
       set((state) => ({
-        connectedPages: state.connectedPages.filter((p) => p.page_id !== pageId),
         actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: false },
-        successMessage: 'تم بنجاح إلغاء ربط الصفحة وحذفها من النظام 🗑️',
+        successMessage: 'تم بنجاح حذف الصفحة ونقلها ومحادثاتها ورسائلها إلى المحذوفات 🗑️',
       }));
+      try {
+        const { useBrandStore } = await import('./useBrandStore');
+        useBrandStore.getState().fetchBackendBrands();
+      } catch {}
       return true;
     } catch (err: any) {
       set((state) => ({
+        connectedPages: prevPages,
         actionLoadingMap: { ...state.actionLoadingMap, [`del_${pageId}`]: false },
-        error: err.message || 'فشل في إلغاء ربط الصفحة',
+        error: err.message || 'فشل في حذف الصفحة',
       }));
       return false;
     }

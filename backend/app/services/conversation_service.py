@@ -54,7 +54,10 @@ class ConversationService:
         # First check if customer ALREADY has an existing conversation thread
         stmt_cust = (
             select(Conversation)
-            .where(Conversation.customer_id == identity.customer_id)
+            .where(
+                Conversation.customer_id == identity.customer_id,
+                Conversation.deleted_at.is_(None),
+            )
             .order_by(Conversation.last_message_at.desc().nullslast(), Conversation.created_at.desc())
             .limit(1)
         )
@@ -122,8 +125,12 @@ class ConversationService:
         allowed_brands: Optional[list[str]] = None,
         allowed_channels: Optional[list[str]] = None,
     ) -> tuple[list[dict], int]:
-        stmt = select(Conversation).options(selectinload(Conversation.customer))
-        count_stmt = select(func.count(Conversation.id))
+        stmt = (
+            select(Conversation)
+            .options(selectinload(Conversation.customer))
+            .where(Conversation.deleted_at.is_(None))
+        )
+        count_stmt = select(func.count(Conversation.id)).where(Conversation.deleted_at.is_(None))
 
         # Enforce user authorization scoping for brands
         if allowed_brands is not None:
@@ -292,7 +299,10 @@ class ConversationService:
             )
             subq = (
                 select(Message.id.label("mid"), rn_col)
-                .where(Message.conversation_id.in_(conv_ids))
+                .where(
+                    Message.conversation_id.in_(conv_ids),
+                    Message.deleted_at.is_(None),
+                )
                 .subquery()
             )
             msg_stmt = (
@@ -394,7 +404,10 @@ class ConversationService:
     ) -> Optional[Conversation]:
         stmt = (
             select(Conversation)
-            .where(Conversation.id == conversation_id)
+            .where(
+                Conversation.id == conversation_id,
+                Conversation.deleted_at.is_(None),
+            )
             .options(
                 selectinload(Conversation.customer),
                 selectinload(Conversation.messages),
@@ -409,7 +422,10 @@ class ConversationService:
     ) -> Optional[dict]:
         stmt = (
             select(Conversation)
-            .where(Conversation.id == conversation_id)
+            .where(
+                Conversation.id == conversation_id,
+                Conversation.deleted_at.is_(None),
+            )
             .options(
                 selectinload(Conversation.customer).selectinload(Customer.identities),
             )
@@ -452,6 +468,7 @@ class ConversationService:
                 Conversation.provider == provider,
                 Conversation.channel == channel,
                 Conversation.external_conversation_id == external_conversation_id,
+                Conversation.deleted_at.is_(None),
             )
             .options(
                 selectinload(Conversation.customer),
@@ -467,7 +484,10 @@ class ConversationService:
     ) -> list[Conversation]:
         stmt = (
             select(Conversation)
-            .where(Conversation.customer_id == customer_id)
+            .where(
+                Conversation.customer_id == customer_id,
+                Conversation.deleted_at.is_(None),
+            )
             .order_by(Conversation.last_message_at.desc())
         )
         result = await session.execute(stmt)
@@ -529,7 +549,10 @@ class ConversationService:
                 Conversation.channel,
                 func.coalesce(func.sum(Conversation.unread_count), 0),
             )
-            .where(Conversation.unread_count > 0)
+            .where(
+                Conversation.unread_count > 0,
+                Conversation.deleted_at.is_(None),
+            )
         )
         if brand:
             stmt = stmt.where(Conversation.brand == brand)
@@ -570,7 +593,10 @@ class ConversationService:
 
         # Ensure all active connected Facebook Pages are present in brands_map
         try:
-            active_pages_stmt = select(ConnectedPage.name).where(ConnectedPage.status == "ACTIVE")
+            active_pages_stmt = select(ConnectedPage.name).where(
+                ConnectedPage.status == "ACTIVE",
+                ConnectedPage.deleted_at.is_(None),
+            )
             active_page_names = (await session.execute(active_pages_stmt)).scalars().all()
             for p_name in active_page_names:
                 clean_name = str(p_name or "").strip()

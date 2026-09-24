@@ -51,6 +51,12 @@ class ConnectedPage(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        index=True,
+    )
 
     connected_by_user = relationship("User", foreign_keys=[connected_by_user_id])
 

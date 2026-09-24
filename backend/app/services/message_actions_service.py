@@ -185,6 +185,7 @@ class MessageActionsService:
         meta["media_url"] = None
         msg.metadata_ = meta
         msg.text = None
+        msg.deleted_at = now_utc
 
         # Attempt deleting from Meta Messenger API if external_message_id exists
         if msg.external_message_id:
@@ -466,7 +467,11 @@ class MessageActionsService:
         stmt = (
             select(Message)
             .options(selectinload(Message.sender_user))
-            .where(Message.id == message_id, Message.conversation_id == source_conversation_id)
+            .where(
+                Message.id == message_id,
+                Message.conversation_id == source_conversation_id,
+                Message.deleted_at.is_(None),
+            )
         )
         res = await session.execute(stmt)
         orig_msg = res.scalar_one_or_none()
@@ -477,7 +482,10 @@ class MessageActionsService:
             )
 
         # 2. Fetch and authorize target conversation
-        target_conv_stmt = select(Conversation).where(Conversation.id == target_conversation_id)
+        target_conv_stmt = select(Conversation).where(
+            Conversation.id == target_conversation_id,
+            Conversation.deleted_at.is_(None),
+        )
         target_conv_res = await session.execute(target_conv_stmt)
         target_conv = target_conv_res.scalar_one_or_none()
         if not target_conv:

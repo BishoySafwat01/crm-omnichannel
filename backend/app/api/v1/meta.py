@@ -478,3 +478,17 @@ async def receive_meta_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process Meta webhook event.",
         )
+
+
+@router.delete(
+    "/pages/{page_id}",
+    summary="Cascading Soft-Delete Facebook Page (Delegated)",
+)
+async def delete_meta_page(
+    page_id: str,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.connected_page_service import ConnectedPageService
+    return await ConnectedPageService.soft_delete_page(session=db, page_id=page_id)
+

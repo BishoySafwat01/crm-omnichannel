@@ -155,7 +155,10 @@ class CustomerService:
         # 1. Fetch conversations for these customers ordered by last_activity_at desc
         conv_stmt = (
             select(Conversation)
-            .where(Conversation.customer_id.in_(cust_ids))
+            .where(
+                Conversation.customer_id.in_(cust_ids),
+                Conversation.deleted_at.is_(None),
+            )
             .order_by(Conversation.last_activity_at.desc(), Conversation.created_at.desc())
         )
         conv_res = await session.execute(conv_stmt)
@@ -183,6 +186,7 @@ class CustomerService:
                 .where(
                     Message.conversation_id.in_(conv_ids),
                     Message.sender_type == SenderTypeEnum.AGENT,
+                    Message.deleted_at.is_(None),
                 )
                 .order_by(Message.created_at.desc())
             )
@@ -358,7 +362,10 @@ class CustomerService:
         # Fetch latest active conversation
         conv_stmt = (
             select(Conversation)
-            .where(Conversation.customer_id == customer_id)
+            .where(
+                Conversation.customer_id == customer_id,
+                Conversation.deleted_at.is_(None),
+            )
             .order_by(Conversation.last_activity_at.desc(), Conversation.created_at.desc())
             .limit(1)
         )
@@ -391,6 +398,7 @@ class CustomerService:
                 .where(
                     Message.conversation_id == conv.id,
                     Message.sender_type == SenderTypeEnum.AGENT,
+                    Message.deleted_at.is_(None),
                 )
                 .order_by(Message.created_at.desc())
                 .limit(1)
@@ -634,7 +642,10 @@ class CustomerService:
             identities = (await session.execute(stmt_identities)).scalars().all()
 
             if identities:
-                stmt_conv = select(Conversation).where(Conversation.customer_id == customer.id)
+                stmt_conv = select(Conversation).where(
+                    Conversation.customer_id == customer.id,
+                    Conversation.deleted_at.is_(None),
+                )
                 convs = (await session.execute(stmt_conv)).scalars().all()
                 target_page_ids = set()
                 for c in convs:
@@ -642,6 +653,7 @@ class CustomerService:
                         stmt_cp = select(ConnectedPage).where(
                             ConnectedPage.name == c.brand,
                             ConnectedPage.status == "ACTIVE",
+                            ConnectedPage.deleted_at.is_(None),
                         )
                         cp_row = (await session.execute(stmt_cp)).scalars().first()
                         if cp_row and cp_row.page_id:
@@ -730,7 +742,10 @@ class CustomerService:
             identities = (await session.execute(stmt_identities)).scalars().all()
 
             if identities:
-                stmt_conv = select(Conversation).where(Conversation.customer_id == customer.id)
+                stmt_conv = select(Conversation).where(
+                    Conversation.customer_id == customer.id,
+                    Conversation.deleted_at.is_(None),
+                )
                 convs = (await session.execute(stmt_conv)).scalars().all()
                 target_page_ids = set()
                 for c in convs:
@@ -738,6 +753,7 @@ class CustomerService:
                         stmt_cp = select(ConnectedPage).where(
                             ConnectedPage.name == c.brand,
                             ConnectedPage.status == "ACTIVE",
+                            ConnectedPage.deleted_at.is_(None),
                         )
                         cp_row = (await session.execute(stmt_cp)).scalars().first()
                         if cp_row and cp_row.page_id:

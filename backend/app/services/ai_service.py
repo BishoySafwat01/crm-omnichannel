@@ -40,7 +40,10 @@ class AIService:
 
         stmt = (
             select(Message)
-            .where(Message.conversation_id == conversation.id)
+            .where(
+                Message.conversation_id == conversation.id,
+                Message.deleted_at.is_(None),
+            )
             .order_by(Message.created_at.asc())
             .limit(20)
         )

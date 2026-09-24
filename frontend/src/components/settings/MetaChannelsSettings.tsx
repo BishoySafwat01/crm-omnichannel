@@ -539,19 +539,21 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
         )}
       </div>
 
-      {/* Disconnect Confirmation Modal */}
+      {/* Soft-Delete Confirmation Modal */}
       {pageToDelete && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 dir-rtl text-right animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
               <Trash2 className="w-6 h-6" />
             </div>
-            <div className="text-center space-y-1">
-              <h3 className="text-base font-black text-slate-900">تأكيد إلغاء ربط الصفحة</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                هل أنت متأكد من رغبتك في إلغاء ربط الصفحة <strong className="text-slate-800 font-extrabold">{pageToDelete.name}</strong>؟
-                سيتم حذف مفاتيح الوصول الخاصة بها وإيقاف استلام الرسائل عبرها.
+            <div className="text-center space-y-2">
+              <h3 className="text-base font-black text-slate-900">تأكيد حذف الصفحة</h3>
+              <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                هل أنت متأكد من حذف هذه الصفحة؟ سيتم نقل الصفحة وجميع محادثاتها ورسائلها إلى المحذوفات تلقائياً.
               </p>
+              <div className="bg-slate-50 py-1.5 px-3 rounded-xl border border-slate-200/60 text-xs font-bold text-slate-800 inline-block">
+                {pageToDelete.name}
+              </div>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
@@ -570,7 +572,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                 }}
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-500/20 cursor-pointer"
               >
-                نعم، إلغاء الربط الآن
+                نعم، تأكيد الحذف
               </button>
             </div>
           </div>

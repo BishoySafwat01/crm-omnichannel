@@ -52,10 +52,13 @@ async def get_active_brands(
     seen_brands = set()
     brands_list = []
 
-    # Query ONLY active ConnectedPages ordered by name
+    # 1. Query ONLY active, non-deleted ConnectedPages ordered by name
     page_stmt = (
         select(ConnectedPage.name, ConnectedPage.page_id)
-        .where(ConnectedPage.status == "ACTIVE")
+        .where(
+            ConnectedPage.status == "ACTIVE",
+            ConnectedPage.deleted_at.is_(None),
+        )
         .order_by(ConnectedPage.name.asc())
     )
     pages = (await db.execute(page_stmt)).all()
@@ -67,6 +70,26 @@ async def get_active_brands(
                 "id": clean_name,
                 "name": clean_name,
                 "page_id": p_id,
+            })
+
+    # 2. Also query active brands from non-deleted conversations
+    conv_brand_stmt = (
+        select(Conversation.brand)
+        .where(
+            Conversation.deleted_at.is_(None),
+            Conversation.brand.isnot(None),
+        )
+        .distinct()
+    )
+    conv_brands = (await db.execute(conv_brand_stmt)).scalars().all()
+    for c_brand in conv_brands:
+        clean_name = str(c_brand or "").strip()
+        if clean_name and not clean_name.startswith("Page ") and clean_name.lower() not in seen_brands:
+            seen_brands.add(clean_name.lower())
+            brands_list.append({
+                "id": clean_name,
+                "name": clean_name,
+                "page_id": "",
             })
 
     # Fallback if no connected pages are active
@@ -348,6 +371,7 @@ async def send_outbound_reply(
                 .where(
                     Message.id == payload.reply_to_message_id,
                     Message.conversation_id == conversation_id,
+                    Message.deleted_at.is_(None),
                 )
             )
             ref_res = await db.execute(ref_stmt)

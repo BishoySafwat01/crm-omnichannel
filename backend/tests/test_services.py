@@ -13,7 +13,10 @@ from app.services import (
     CustomerService,
     MessageService,
     MigrationService,
+    ConnectedPageService,
 )
+from app.models.connected_page import ConnectedPage
+
 
 
 @pytest.mark.asyncio
@@ -104,3 +107,95 @@ async def test_migration_service():
         )
         assert completed_job.status == MigrationStatusEnum.COMPLETED
         assert completed_job.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_page_cascades_to_conversations_and_messages(monkeypatch):
+    import httpx
+
+    async def mock_delete(self, *args, **kwargs):
+        class MockResp:
+            status_code = 200
+            text = '{"success": true}'
+            def json(self):
+                return {"success": True}
+        return MockResp()
+
+    monkeypatch.setattr(httpx.AsyncClient, "delete", mock_delete)
+
+
+    from app.core.security import encrypt_token
+    import uuid
+
+    unique_pid = f"test_p_{uuid.uuid4().hex[:10]}"
+
+    async with AsyncSessionLocal() as session:
+        # Create a connected page
+        page = ConnectedPage(
+            page_id=unique_pid,
+            name="Delete Test Page",
+            encrypted_access_token=encrypt_token("fake_token_for_test"),
+            status="CONNECTED",
+            is_webhook_subscribed=True,
+        )
+
+
+
+
+        session.add(page)
+        await session.flush()
+
+        customer = await CustomerService.create_customer(
+            session=session, display_name="Soft Delete Customer"
+        )
+
+        conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer.id,
+            provider=ProviderEnum.META,
+            channel=ChannelEnum.MESSENGER,
+            external_conversation_id=f"ext_conv_{uuid.uuid4().hex[:10]}",
+            brand="DeleteTestBrand",
+        )
+        conv.page_id = page.page_id
+        conv.connected_page_id = page.id
+        await session.flush()
+
+        msg = await MessageService.create_message(
+            session=session,
+            conversation_id=conv.id,
+            sender_type=SenderTypeEnum.CUSTOMER,
+            external_message_id=f"msg_{uuid.uuid4().hex[:10]}",
+            text="Cascading test message",
+        )
+
+        await session.commit()
+
+        # Perform soft delete
+        res = await ConnectedPageService.soft_delete_page(session, page.page_id)
+        assert res["status"] == "success"
+        assert res["page_id"] == page.page_id
+
+
+        # Verify page is soft-deleted
+        from sqlalchemy import select
+        deleted_page = (
+            await session.execute(
+                select(ConnectedPage).where(ConnectedPage.page_id == page.page_id)
+            )
+        ).scalar_one_or_none()
+        assert deleted_page is not None
+        assert deleted_page.deleted_at is not None
+        assert deleted_page.status == "DELETED"
+        assert not deleted_page.is_webhook_subscribed
+
+
+        # Verify conversation is filtered out in active listings
+        active_convs, _ = await ConversationService.list_conversations(session)
+        assert conv.id not in [c["id"] for c in active_convs]
+
+        # Verify messages are filtered out
+        active_msgs = await MessageService.list_messages_for_conversation(session, conv.id)
+        assert len(active_msgs) == 0
+
+

@@ -129,7 +129,10 @@ class MessageService:
         stmt = (
             select(Message)
             .options(selectinload(Message.sender_user))
-            .where(Message.conversation_id == conversation_id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.deleted_at.is_(None),
+            )
             .order_by(Message.created_at.asc())
         )
         if limit is not None:
@@ -145,13 +148,17 @@ class MessageService:
         page_size: int = 20,
         order: str = "asc",
     ) -> tuple[list[Message], int]:
-        conv_stmt = select(Conversation).where(Conversation.id == conversation_id)
+        conv_stmt = select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.deleted_at.is_(None),
+        )
         conv_res = await session.execute(conv_stmt)
         if not conv_res.scalar_one_or_none():
             raise ValueError(f"Conversation {conversation_id} not found.")
 
         count_stmt = select(func.count(Message.id)).where(
-            Message.conversation_id == conversation_id
+            Message.conversation_id == conversation_id,
+            Message.deleted_at.is_(None),
         )
         total_res = await session.execute(count_stmt)
         total = total_res.scalar() or 0
@@ -159,7 +166,10 @@ class MessageService:
         stmt = (
             select(Message)
             .options(selectinload(Message.sender_user))
-            .where(Message.conversation_id == conversation_id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.deleted_at.is_(None),
+            )
         )
         order_str = str(getattr(order, "default", order) or "asc").lower()
         if order_str == "desc":
@@ -247,6 +257,7 @@ class MessageService:
                     .where(
                         Message.conversation_id == conv.id,
                         Message.sender_type == SenderTypeEnum.CUSTOMER,
+                        Message.deleted_at.is_(None),
                     )
                     .order_by(Message.created_at.desc())
                     .limit(1)
@@ -269,13 +280,15 @@ class MessageService:
                     stmt_cp = select(ConnectedPage).where(
                         ConnectedPage.instagram_business_account_id.isnot(None),
                         ConnectedPage.status == "ACTIVE",
+                        ConnectedPage.deleted_at.is_(None),
                     ).limit(1)
                     cp_row = (await session.execute(stmt_cp)).scalars().first()
                     if cp_row:
                         conv_page_id = cp_row.instagram_business_account_id or cp_row.page_id
                 else:
                     stmt_cp = select(ConnectedPage).where(
-                        ConnectedPage.status == "ACTIVE"
+                        ConnectedPage.status == "ACTIVE",
+                        ConnectedPage.deleted_at.is_(None),
                     ).limit(1)
                     cp_row = (await session.execute(stmt_cp)).scalars().first()
                     if cp_row and cp_row.page_id:
@@ -336,6 +349,7 @@ class MessageService:
                     Message.conversation_id == conv.id,
                     Message.sender_type == SenderTypeEnum.AGENT,
                     Message.text == clean_text,
+                    Message.deleted_at.is_(None),
                 )
                 .order_by(Message.created_at.desc())
                 .limit(1)

@@ -30,7 +30,10 @@ class LocationService:
         # Fetch last 5 messages in thread
         stmt = (
             select(Message)
-            .where(Message.conversation_id == conversation_id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.deleted_at.is_(None),
+            )
             .order_by(Message.created_at.desc())
             .limit(5)
         )

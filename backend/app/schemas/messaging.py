@@ -161,6 +161,13 @@ class MessageResponse(MessageBase):
         edited_by_user_id = meta_dict.get("edited_by_user_id")
         is_deleted = meta_dict.get("is_deleted", False)
         deleted_at = meta_dict.get("deleted_at")
+        if not deleted_at:
+            if not isinstance(data, dict):
+                deleted_at = getattr(data, "deleted_at", None)
+            elif isinstance(data, dict) and data.get("deleted_at"):
+                deleted_at = data.get("deleted_at")
+            if deleted_at:
+                is_deleted = True
         deleted_by_name = meta_dict.get("deleted_by_name")
         reactions = meta_dict.get("reactions", [])
         forwarded = meta_dict.get("forwarded", False)

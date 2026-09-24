@@ -74,6 +74,9 @@ class Message(Base):
     metadata_: Mapped[Optional[dict[str, Any]]] = mapped_column(
         "metadata", JSONB, nullable=True, default=dict
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, index=True
+    )
 
     conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="messages"

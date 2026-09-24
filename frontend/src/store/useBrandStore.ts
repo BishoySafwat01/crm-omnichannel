@@ -106,6 +106,7 @@ export const useBrandStore = create<BrandState>((set, get) => ({
     try {
       const backendBrands = await fetchActiveBrandsDirect();
       if (backendBrands && Array.isArray(backendBrands)) {
+        cachedBackendBrandNames.clear();
         backendBrands.forEach((b) => {
           if (b.name) cachedBackendBrandNames.add(b.name);
         });
