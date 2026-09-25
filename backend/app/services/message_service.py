@@ -104,6 +104,8 @@ class MessageService:
                 "sender_external_id": message.sender_external_id,
                 "message_type": message.message_type.value if hasattr(message.message_type, "value") else str(message.message_type),
                 "text": message.text,
+                "metadata": message.metadata_,
+                "metadata_": message.metadata_,
                 "created_at": message.created_at.isoformat() if message.created_at else None,
                 "brand": getattr(conversation, "brand", None) if conversation else None,
             }
@@ -205,6 +207,8 @@ class MessageService:
         sender_user_id: Optional[uuid.UUID] = None,
         reply_to: Optional[dict[str, Any]] = None,
         forwarded_from: Optional[dict[str, Any]] = None,
+        metadata_: Optional[dict[str, Any]] = None,
+        sender_name: Optional[str] = None,
     ) -> AgentReplyResultDTO:
         clean_text = (text or "").strip()
         if not clean_text and not attachments:
@@ -699,6 +703,17 @@ class MessageService:
         if forwarded_from:
             metadata_dict["forwarded"] = True
             metadata_dict["forwarded_from"] = forwarded_from
+        if metadata_:
+            metadata_dict.update(metadata_)
+
+        resolved_sender_name = sender_name
+        if not resolved_sender_name and sender_user_id:
+            from app.models.user import User
+            user_obj = await session.get(User, sender_user_id)
+            if user_obj and user_obj.full_name:
+                resolved_sender_name = user_obj.full_name
+        if not resolved_sender_name and metadata_ and metadata_.get("bot_sender_name"):
+            resolved_sender_name = metadata_["bot_sender_name"]
 
         db_text = clean_text if clean_text != "مرفق وسائط" else ""
         if has_media and (not clean_text or clean_text == "مرفق وسائط"):
@@ -743,23 +758,18 @@ class MessageService:
             try:
                 from app.services.customer_timeline_service import CustomerTimelineService
                 chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
-                sender_name = "موظف الدعم"
-                if sender_user_id:
-                    from app.models.user import User
-                    user_obj = await session.get(User, sender_user_id)
-                    if user_obj and user_obj.full_name:
-                        sender_name = user_obj.full_name
+                sender_display_name = resolved_sender_name or "موظف الدعم"
 
                 await CustomerTimelineService.record_event(
                     session=session,
                     customer_id=conv.customer_id,
                     event_type="message.outbound",
                     channel=chan_str,
-                    summary=f"{sender_name} رد على العميل عبر {chan_str}",
+                    summary=f"{sender_display_name} رد على العميل عبر {chan_str}",
                     details={
                         "text": db_text[:150] if db_text else "مرفق وسائط",
                         "sender_user_id": str(sender_user_id) if sender_user_id else None,
-                        "sender_name": sender_name,
+                        "sender_name": sender_display_name,
                         "brand": getattr(conv, "brand", "LAVVA"),
                         "conversation_id": str(conv.id),
                         "channel": chan_str,
@@ -869,25 +879,18 @@ class MessageService:
         await session.commit()
         await session.refresh(new_message)
 
-        sender_name: Optional[str] = None
-        if sender_user_id:
-            from app.models.user import User
-            user_obj = await session.get(User, sender_user_id)
-            if user_obj:
-                sender_name = user_obj.full_name
-
         msg_resp = MessageResponse.model_validate(new_message)
         if sender_user_id:
             msg_resp.sender_user_id = sender_user_id
-        if sender_name:
-            msg_resp.sender_name = sender_name
+        if resolved_sender_name:
+            msg_resp.sender_name = resolved_sender_name
         if updated_loc:
             msg_resp.updated_customer_location = updated_loc
 
         return AgentReplyResultDTO(
             message=msg_resp,
             sender_user_id=sender_user_id,
-            sender_name=sender_name,
+            sender_name=resolved_sender_name,
             updated_customer_location=updated_loc,
             location_detection_status=location_status,
         )

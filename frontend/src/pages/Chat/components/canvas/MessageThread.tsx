@@ -79,7 +79,18 @@ export const MemoizedMessageBubble = React.memo<{
 
   if (!hasContent) return null;
 
-  const isAgent = msg.sender_type === 'agent';
+  const sType = (msg.sender_type || '').toLowerCase();
+  const isAgent = sType === 'agent' || sType === 'bot';
+  const isAutomated = Boolean(
+    msg.metadata?.is_automated ||
+    msg.metadata_?.is_automated ||
+    sType === 'bot'
+  );
+  const botSenderName =
+    msg.metadata?.bot_sender_name ||
+    msg.metadata_?.bot_sender_name ||
+    (msg.sender_name && msg.sender_name.includes('(Bot)') ? msg.sender_name : null) ||
+    'Bot';
   const isPending = msg.delivery_status === 'pending';
   const isFailed = msg.delivery_status === 'failed';
   const isDeleted = Boolean(msg.is_deleted);
@@ -112,14 +123,23 @@ export const MemoizedMessageBubble = React.memo<{
               : 'bg-white text-[#1E293B] border border-slate-100 rounded-2xl rounded-tr-none font-normal'
           }`}
         >
-          {/* Sender Tag for Agent Messages */}
+          {/* Sender Tag for Agent / Bot Messages */}
           {isAgent && !isDeleted && (
             <span className="text-[10px] text-[#137333] font-bold block mb-1">
-              {msg.sender_name ||
-                (msg.sender_user_id && msg.sender_user_id === currentUser?.id
-                  ? currentUser?.full_name
-                  : null) ||
-                'موظف الدعم'}
+              {isAutomated ? (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-[11px] leading-none" role="img" aria-label="Bot">🤖</span>
+                  <span>{botSenderName}</span>
+                </span>
+              ) : (
+                <span>
+                  {msg.sender_name ||
+                    (msg.sender_user_id && msg.sender_user_id === currentUser?.id
+                      ? currentUser?.full_name
+                      : null) ||
+                    'موظف الدعم'}
+                </span>
+              )}
             </span>
           )}
 
@@ -338,14 +358,17 @@ export const MemoizedMessageBubble = React.memo<{
           >
             <span>{formatMessageTime(msg.created_at)}</span>
             {isAgent &&
-              (msg.sender_name ||
+              (isAutomated ||
+                msg.sender_name ||
                 (msg.sender_user_id &&
                   teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
                 <span className="text-[10px] text-[#137333] font-semibold flex items-center gap-0.5">
                   <span>•</span>
                   <span>
-                    {msg.sender_name ||
-                      teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name}
+                    {isAutomated
+                      ? botSenderName
+                      : (msg.sender_name ||
+                        teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)}
                   </span>
                 </span>
               )}

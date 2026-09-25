@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.automation import AutomationExecutionLog, AutomationRule
 from app.models.conversation import Conversation
 from app.models.customer import Customer
+from app.models.enums import UserRole
 from app.models.message import Message
+from app.models.user import User
 
 logger = logging.getLogger("AutomationEngine")
 
@@ -277,6 +279,36 @@ class AutomationService:
             else:
                 chunks = [raw_text]
 
+            # 5a. Creator Name Resolution for Bot Attribution
+            creator_name = None
+            if rule.created_by:
+                creator_user = await session.get(User, rule.created_by)
+                if creator_user and creator_user.full_name:
+                    creator_name = creator_user.full_name
+
+            if not creator_name:
+                admin_stmt = (
+                    select(User)
+                    .where(
+                        User.role.in_([UserRole.ADMIN, UserRole.SUPERADMIN]),
+                        User.is_active == True,
+                    )
+                    .order_by(User.created_at.asc())
+                    .limit(1)
+                )
+                admin_user = (await session.execute(admin_stmt)).scalars().first()
+                if admin_user and admin_user.full_name:
+                    creator_name = admin_user.full_name
+                else:
+                    creator_name = "النظام"
+
+            bot_sender_name = f"{creator_name} (Bot)"
+            auto_metadata = {
+                "is_automated": True,
+                "automation_rule_id": str(rule.id),
+                "bot_sender_name": bot_sender_name,
+            }
+
             outbound_msg = None
             sim_typing = getattr(rule, "human_typing_simulation", True)
             inter_message_delay = 1.2  # Sequential delay between messages as specified
@@ -300,7 +332,7 @@ class AutomationService:
                                 "type": "TYPING_INDICATOR",
                                 "conversation_id": str(conversation.id),
                                 "is_typing": True,
-                                "sender_name": "المساعد الآلي",
+                                "sender_name": bot_sender_name,
                             }
                         )
                     except Exception:
@@ -313,12 +345,15 @@ class AutomationService:
                         conversation_id=conversation.id,
                         text=chunk,
                         sender_external_id="automation_bot",
+                        metadata_=auto_metadata,
+                        sender_name=bot_sender_name,
                     )
                     logger.info(
-                        "✅ [Automation Engine] Successfully dispatched message segment %d/%d for Rule '%s'",
+                        "✅ [Automation Engine] Successfully dispatched message segment %d/%d for Rule '%s' (Bot: %s)",
                         idx + 1,
                         len(chunks),
                         rule.name,
+                        bot_sender_name,
                     )
 
                     msg_obj = getattr(outbound_res, "message", None)
@@ -330,18 +365,32 @@ class AutomationService:
                             "external_message_id": getattr(msg_obj, "external_message_id", None),
                             "sender_type": "agent",
                             "sender_external_id": "automation_bot",
-                            "sender_name": "المساعد الآلي",
+                            "sender_name": bot_sender_name,
                             "message_type": "text",
                             "text": getattr(msg_obj, "text", chunk),
+                            "metadata": auto_metadata,
+                            "metadata_": auto_metadata,
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "delivery_status": "delivered",
                         }
+                        if not msg_dict.get("metadata"):
+                            msg_dict["metadata"] = auto_metadata
+                        if not msg_dict.get("metadata_"):
+                            msg_dict["metadata_"] = auto_metadata
+                        if not msg_dict.get("sender_name"):
+                            msg_dict["sender_name"] = bot_sender_name
+
+                        brand_val = getattr(conversation, "brand", None)
+                        if brand_val and "brand" not in msg_dict:
+                            msg_dict["brand"] = brand_val
+
                         await ws_broadcaster.broadcast_event(
                             target="conversation",
                             conversation_id=str(conversation.id),
                             payload={
                                 "type": "NEW_MESSAGE",
                                 "conversation_id": str(conversation.id),
+                                "brand": brand_val,
                                 "message": msg_dict,
                             }
                         )

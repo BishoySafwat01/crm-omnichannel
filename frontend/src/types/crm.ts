@@ -83,7 +83,7 @@ export interface MessageReplyReference {
 export interface Message {
   id: string;
   conversation_id: string;
-  sender_type: 'customer' | 'agent' | 'system';
+  sender_type: 'customer' | 'agent' | 'system' | 'BOT' | 'bot';
   sender_user_id?: string;
   sender_name?: string;
   sender_external_id?: string;
@@ -97,6 +97,7 @@ export interface Message {
   meta_tag?: MetaMessageTag;
   error_message?: string;
   metadata_?: Record<string, any>;
+  metadata?: Record<string, any>;
 
   // Message Actions
   reply_to?: MessageReplyReference;

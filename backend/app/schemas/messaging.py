@@ -59,6 +59,7 @@ class MessageResponse(MessageBase):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     updated_customer_location: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = None
     # P3-2: Delivery tracking and Meta messaging tag
     delivery_status: Optional[str] = None
     meta_tag: Optional[str] = None
@@ -188,6 +189,8 @@ class MessageResponse(MessageBase):
             data["updated_customer_location"] = loc
             data.setdefault("sender_user_id", s_user_id)
             data.setdefault("sender_name", s_name)
+            data["metadata"] = meta_dict
+            data["metadata_"] = meta_dict
             # P3-2: propagate delivery_status and meta_tag from raw dict
             data.setdefault("delivery_status", data.get("delivery_status"))
             data.setdefault("meta_tag", data.get("meta_tag"))
@@ -218,6 +221,7 @@ class MessageResponse(MessageBase):
                 "sender_name": s_name,
                 "message_type": m_type or getattr(data, "message_type"),
                 "text": None if is_deleted else getattr(data, "text", None),
+                "metadata": metadata,
                 "metadata_": metadata,
                 "created_at": getattr(data, "created_at"),
                 "attachments": atts,
