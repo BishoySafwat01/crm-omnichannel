@@ -40,21 +40,17 @@ class Topic:
 
     name: str
     match_phrases: tuple[str, ...]
+    excluded_phrases: tuple[str, ...] = ()
 
 
 TOPICS: tuple[Topic, ...] = (
     Topic(
         "كيف طريقة الدفع",
         (
-            "كيف طريقة الدفع",
-            "كيف الدفع",
-            "الدفع كيف",
-            "الدفع عند الاستلام",
-            "دفع عند الاستلام",
-            "الدفع كاش",
-            "ادفع كاش",
-            "دفع عالباب",
-            "دفع على الباب",
+            "دفع",
+            "كاش",
+            "عالباب",
+            "على الباب",
         ),
     ),
     Topic(
@@ -147,15 +143,12 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         "طريقة الاستخدام",
         (
-            "طريقة الاستخدام",
-            "طريقه الاستخدام",
-            "طريقة استخدام",
-            "طريقه استخدام",
-            "كيفية الاستعمال",
-            "كيفيه الاستعمال",
+            "استخدام",
+            "استعمال",
             "كيف استخدمه",
             "كيف استعمله",
         ),
+        ("دفع", "كاش"),
     ),
     Topic(
         "غالي",
@@ -209,8 +202,8 @@ def normalize_for_matching(value: str) -> str:
     return _WHITESPACE.sub(" ", normalized).strip()
 
 
-def rule_matches_topic(rule: AutomationRule, topic: Topic) -> bool:
-    """Return whether a rule name or one of its keywords identifies a topic."""
+def topic_match_score(rule: AutomationRule, topic: Topic) -> int:
+    """Count topic phrase overlaps in a rule, respecting negative markers."""
     searchable_values = [rule.name or ""]
     searchable_values.extend(
         keyword
@@ -221,10 +214,22 @@ def rule_matches_topic(rule: AutomationRule, topic: Topic) -> bool:
     normalized_phrases = [
         normalize_for_matching(phrase) for phrase in topic.match_phrases
     ]
-    return any(
+    normalized_exclusions = [
+        normalize_for_matching(phrase) for phrase in topic.excluded_phrases
+    ]
+
+    if any(
         phrase and phrase in value
         for value in normalized_values
+        for phrase in normalized_exclusions
+    ):
+        return 0
+
+    return sum(
+        1
+        for value in normalized_values
         for phrase in normalized_phrases
+        if phrase and phrase in value
     )
 
 
@@ -309,30 +314,44 @@ async def consolidate_negotiation_rules() -> tuple[int, int, int]:
             )
             all_rules = list(rule_result.scalars().all())
 
-            matches_by_topic: list[tuple[Topic, list[AutomationRule]]] = []
-            topics_by_rule_id: dict[object, list[str]] = {}
-            for topic in TOPICS:
-                matching_rules = [
-                    rule for rule in all_rules if rule_matches_topic(rule, topic)
-                ]
-                matches_by_topic.append((topic, matching_rules))
-                for rule in matching_rules:
-                    topics_by_rule_id.setdefault(rule.id, []).append(topic.name)
-
-            ambiguous = {
-                rule_id: topic_names
-                for rule_id, topic_names in topics_by_rule_id.items()
-                if len(topic_names) > 1
+            rules_by_topic_name: dict[str, list[AutomationRule]] = {
+                topic.name: [] for topic in TOPICS
             }
-            if ambiguous:
-                details = "; ".join(
-                    f"{rule_id}: {', '.join(topic_names)}"
-                    for rule_id, topic_names in ambiguous.items()
+            for rule in all_rules:
+                scored_topics = [
+                    (topic_match_score(rule, topic), topic_index, topic)
+                    for topic_index, topic in enumerate(TOPICS)
+                ]
+                positive_matches = [
+                    match for match in scored_topics if match[0] > 0
+                ]
+                if not positive_matches:
+                    continue
+
+                # Highest overlap wins. Earlier TOPICS order is the stable
+                # tie-breaker, so every rule belongs to at most one topic.
+                winning_score, _, winning_topic = max(
+                    positive_matches,
+                    key=lambda match: (match[0], -match[1]),
                 )
-                raise RuntimeError(
-                    "Refusing to consolidate rules that match multiple topics: "
-                    f"{details}"
-                )
+                rules_by_topic_name[winning_topic.name].append(rule)
+
+                if len(positive_matches) > 1:
+                    logger.info(
+                        "Rule %s matched multiple topics; assigned to '%s' "
+                        "with overlap score %d (candidates: %s).",
+                        rule.id,
+                        winning_topic.name,
+                        winning_score,
+                        ", ".join(
+                            f"{topic.name}={score}"
+                            for score, _, topic in positive_matches
+                        ),
+                    )
+
+            matches_by_topic = [
+                (topic, rules_by_topic_name[topic.name]) for topic in TOPICS
+            ]
 
             topics_consolidated = 0
             secondary_rule_ids: list[object] = []
