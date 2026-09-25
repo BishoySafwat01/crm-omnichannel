@@ -530,9 +530,9 @@ export const AutomationsManager: React.FC = () => {
   const activeRulesCount = rules.filter((r) => r.is_active).length;
 
   return (
-    <div className="flex-1 bg-slate-50/50 p-6 overflow-y-auto" dir="rtl">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+    <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
               <Bot className="w-6 h-6" />
@@ -544,7 +544,7 @@ export const AutomationsManager: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/60">
               <button
                 onClick={() => setActiveTab('messages')}

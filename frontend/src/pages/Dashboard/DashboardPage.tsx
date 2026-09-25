@@ -80,9 +80,9 @@ export const ExecutiveDashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-slate-50/60 overflow-y-auto p-6 space-y-6" dir="rtl">
+    <div className="flex-1 bg-slate-50/60 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
       {/* Header Toolbar */}
-      <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white/80 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-theme-primary text-white flex items-center justify-center shadow-md shadow-theme-primary/20">
             <Activity className="w-6 h-6" />
@@ -148,7 +148,7 @@ export const ExecutiveDashboard: React.FC = () => {
       </div>
 
       {/* Top KPI Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Conversations Card */}
         <div className="bg-white/80 backdrop-blur-md p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
@@ -227,7 +227,7 @@ export const ExecutiveDashboard: React.FC = () => {
       </div>
 
       {/* Main Grid: Channels & Brand Volume */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Channel Share Distribution */}
         <div className="bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -324,7 +324,7 @@ export const ExecutiveDashboard: React.FC = () => {
       </div>
 
       {/* Peak Inflow Hours & SLA Compliance Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Peak Inflow Hours Heatmap (2 Cols) */}
         <div className="lg:col-span-2 bg-white/80 backdrop-blur-md p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">

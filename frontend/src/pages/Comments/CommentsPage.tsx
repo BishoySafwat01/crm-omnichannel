@@ -265,8 +265,8 @@ export const SocialCommentsManager: React.FC = () => {
   const sentimentScore = totalCommentsCount > 0 ? Math.round(((positiveCount + autoRepliedCount) / totalCommentsCount) * 100) : 100;
 
   return (
-    <div className="flex-1 bg-slate-50/50 p-6 overflow-y-auto" dir="rtl">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
         {/* Toast Notification Alert */}
         {actionNotification && (
           <div className="fixed bottom-6 left-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in slide-in-from-bottom-5 duration-200">
@@ -276,7 +276,7 @@ export const SocialCommentsManager: React.FC = () => {
         )}
 
         {/* Header Title & Quick Actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
               <MessageCircle className="w-6 h-6" />

@@ -13,7 +13,17 @@ import { BlockCustomerModal } from '../../../components/common/BlockCustomerModa
 import { useBrandStore } from '../../../store/useBrandStore';
 import { useAuthStore, isAdminUser } from '../../../store/useAuthStore';
 
-export const CustomerProfileSidebar: React.FC = () => {
+export interface CustomerProfileSidebarProps {
+  isDrawerMode?: boolean;
+  onClose?: () => void;
+  className?: string;
+}
+
+export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
+  isDrawerMode = false,
+  onClose,
+  className = '',
+}) => {
   const brands = useBrandStore((state) => state.brands);
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = isAdminUser(currentUser);
@@ -184,7 +194,25 @@ export const CustomerProfileSidebar: React.FC = () => {
 
   if (!customer || !activeConversation) {
     return (
-      <aside className="w-72 xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex-col hidden lg:flex relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2">
+      <aside
+        className={`${
+          isDrawerMode
+            ? 'w-full bg-white flex flex-col items-center justify-center p-6 text-center text-slate-400 space-y-2 h-full'
+            : 'w-full xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex flex-col relative z-10 items-center justify-center p-6 text-center text-slate-400 space-y-2'
+        } ${className}`}
+      >
+        {isDrawerMode && (
+          <div className="w-full flex justify-end mb-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              title="إغلاق"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <User className="w-8 h-8 text-slate-300 mx-auto mb-1" />
         <p className="text-xs font-extrabold text-slate-700">لا توجد محادثة محددة</p>
         <p className="text-[11px] text-slate-400 font-medium">اختر محادثة لعرض بيانات وتفاصيل العميل</p>
@@ -233,7 +261,38 @@ export const CustomerProfileSidebar: React.FC = () => {
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
   return (
-    <aside className="w-72 xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex flex-col hidden lg:flex relative z-10 overflow-hidden p-3 space-y-3">
+    <aside
+      className={`${
+        isDrawerMode
+          ? 'w-full bg-white flex flex-col h-full min-h-0 overflow-hidden p-3.5 space-y-3'
+          : 'w-full xl:w-80 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl shrink-0 h-full min-h-0 flex flex-col relative z-10 overflow-hidden p-3 space-y-3'
+      } ${className}`}
+    >
+      {/* Drawer Mode Top Header with Close Button */}
+      {isDrawerMode && (
+        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">
+              <User className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-900">ملف العميل</h3>
+              <p className="text-[10px] text-slate-400 font-medium">
+                {customer?.display_name || 'تفاصيل العميل'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+            title="إغلاق"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Scrollable Container with 3 Distinct Glass Cards */}
       <div className="flex-1 overflow-y-auto space-y-3.5 scrollbar-none pr-0.5">
         

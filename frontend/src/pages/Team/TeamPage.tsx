@@ -381,9 +381,9 @@ export const TeamGovernance: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[#F8FAFC] overflow-y-auto p-6 space-y-6" dir="rtl">
+    <div className="flex-1 flex flex-col min-h-0 bg-[#F8FAFC] overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
       {/* Header Banner */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center font-bold shadow-md">
             <Users className="w-6 h-6" />
@@ -472,8 +472,8 @@ export const TeamGovernance: React.FC = () => {
                 <p className="text-[11px] text-slate-500">قم بإضافة أعضاء جدد أو تغيير كلمة البحث.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
+              <div className="w-full overflow-x-auto scrollbar-thin">
+                <table className="w-full min-w-[768px] text-right border-collapse">
                   <thead>
                     <tr className="bg-slate-50/80 text-[11px] font-bold text-slate-500 border-b border-slate-200/80">
                       <th className="py-3.5 px-4">العضو والمستخدم</th>
@@ -688,8 +688,8 @@ export const TeamGovernance: React.FC = () => {
                 <p className="text-xs text-slate-400">جرّب تغيير خيارات البحث أو التصفية</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
+              <div className="w-full overflow-x-auto scrollbar-thin">
+                <table className="w-full min-w-[768px] text-right border-collapse">
                   <thead>
                     <tr className="bg-slate-50/80 text-[11px] font-bold text-slate-500 border-b border-slate-200/80">
                       <th className="py-3.5 px-4">التاريخ والوقت</th>
@@ -781,8 +781,8 @@ export const TeamGovernance: React.FC = () => {
 
       {/* Audit Log Detail Modal */}
       {selectedAuditLog && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150" dir="rtl">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full mx-4 p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150" dir="rtl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">
@@ -867,8 +867,8 @@ export const TeamGovernance: React.FC = () => {
 
       {/* Add / Edit Member Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-theme-primary-tint text-theme-primary flex items-center justify-center font-bold">

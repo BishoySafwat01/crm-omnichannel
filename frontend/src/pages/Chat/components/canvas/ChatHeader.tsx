@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserCheck, Ban, AlertTriangle, RotateCcw } from 'lucide-react';
+import { UserCheck, Ban, AlertTriangle, RotateCcw, ChevronRight, User } from 'lucide-react';
 import { Conversation, MetaMessageTag } from '../../../../types/crm';
 import { ConversationAvatar, getBrandObject } from '../../../../components/ConversationAvatar';
 import { PresenceState } from '../../../../utils/presence';
@@ -7,6 +7,7 @@ import { MessageSearchToolbar, ChatEmployeeItem } from './MessageSearchToolbar';
 import { AiInsightsDrawer, AiInsightsData } from './AiInsightsDrawer';
 import { META_TAGS } from '../../constants/chatConstants';
 import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
+import { useCrmStore } from '../../../../store/useCrmStore';
 
 export interface ChatHeaderProps {
   activeConv: Conversation;
@@ -16,6 +17,9 @@ export interface ChatHeaderProps {
   setSelectedMetaTag: (tag: MetaMessageTag) => void;
   setConversationStatus: (convId: string, status: any) => void;
   onOpenBlockModal: (mode: 'block' | 'unblock') => void;
+  onToggleProfile?: () => void;
+  isProfileOpen?: boolean;
+  onBackToList?: () => void;
 
   // Search Toolbar Props
   isSearchOpen: boolean;
@@ -49,6 +53,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   setSelectedMetaTag,
   setConversationStatus,
   onOpenBlockModal,
+  onToggleProfile,
+  isProfileOpen,
+  onBackToList,
 
   isSearchOpen,
   onOpenSearch,
@@ -84,10 +91,29 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
       ? 'pending'
       : 'open';
 
+  const handleBack = () => {
+    if (onBackToList) {
+      onBackToList();
+    } else {
+      useCrmStore.setState({ activeConversationId: null });
+    }
+  };
+
   return (
-    <header className="h-13 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-4 flex items-center justify-between shrink-0 z-20">
+    <header className="h-13 bg-white/80 backdrop-blur-md border-b border-slate-100/80 px-2.5 sm:px-4 flex items-center justify-between shrink-0 z-20">
       {/* Customer Avatar & Name & Status Subtitle (RTL Right) */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        {/* Back Button for mobile & tablet (< 1024px / < lg) */}
+        <button
+          type="button"
+          onClick={handleBack}
+          className="lg:hidden flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition shrink-0 cursor-pointer shadow-2xs"
+          title="العودة لقائمة المحادثات"
+        >
+          <ChevronRight className="w-4 h-4 rtl:rotate-0 ltr:rotate-180 text-slate-600 shrink-0" />
+          <span className="hidden sm:inline">عودة</span>
+        </button>
+
         <ConversationAvatar
           customerName={customerName}
           customerAvatarUrl={avatarUrl}
@@ -100,20 +126,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           presenceStatusText={presence.statusText}
         />
 
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xs font-bold text-slate-900">{customerName}</h2>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <h2 className="text-xs font-bold text-slate-900 truncate max-w-[90px] sm:max-w-[150px] md:max-w-none">{customerName}</h2>
             {brandObj.isDirect ? (
-              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-bold">
-                محادثة خاصة (Direct)
+              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 sm:px-2 py-0.5 rounded-full font-bold truncate">
+                محادثة خاصة
               </span>
             ) : (
-              <span className="text-[10px] bg-theme-primary-tint text-theme-primary border border-theme-primary/20 px-2 py-0.5 rounded-full font-bold">
+              <span className="text-[10px] bg-theme-primary-tint text-theme-primary border border-theme-primary/20 px-1.5 sm:px-2 py-0.5 rounded-full font-bold truncate">
                 {brandObj.name}
               </span>
             )}
           </div>
-          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5 truncate">
             <span className={presence.colorClass}>{presence.statusText}</span>
             <span>•</span>
             <span className="capitalize">{activeConv.channel || 'messenger'}</span>
@@ -122,7 +148,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
       </div>
 
       {/* Grouped Actions Toolbar (RTL Left) */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* In-Chat Search & Employee Filter Toolbar */}
         <MessageSearchToolbar
           isSearchOpen={isSearchOpen}
@@ -240,6 +266,23 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             <Ban className="w-3.5 h-3.5" />
           </button>
         ) : null}
+
+        {/* Customer Profile Drawer Toggle (< 1280px / xl) */}
+        {onToggleProfile && (
+          <button
+            type="button"
+            onClick={onToggleProfile}
+            className={`xl:hidden flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition border cursor-pointer shrink-0 ${
+              isProfileOpen
+                ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/80 shadow-2xs'
+            }`}
+            title="عرض ملف العميل"
+          >
+            <User className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">العميل</span>
+          </button>
+        )}
       </div>
     </header>
   );

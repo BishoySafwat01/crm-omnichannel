@@ -319,7 +319,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   };
 
   return (
-    <footer className="px-6 mb-4 mt-1 bg-transparent relative z-20">
+    <footer className="px-2.5 sm:px-4 xl:px-6 mb-3 sm:mb-4 mt-1 bg-transparent relative z-20 w-full">
       {/* Hidden File Inputs for Categories */}
       <input
         type="file"
@@ -573,8 +573,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             </div>
           ) : isRecording ? (
             /* Live Audio Recording Dock */
-            <div className="flex items-center justify-between gap-3 px-3 py-2 bg-rose-50/90 rounded-xl border border-rose-200/80 animate-in fade-in duration-150">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 py-2 bg-rose-50/90 rounded-xl border border-rose-200/80 animate-in fade-in duration-150 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
                 <span className="flex h-3 w-3 relative">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600" />
@@ -638,7 +638,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
           {/* Controls Bar */}
           {!isRecording && !editingMessage && (
-            <div className="flex items-center justify-between pt-1 border-t border-slate-100 relative">
+            <div className="flex items-center justify-between pt-1 border-t border-slate-100 relative w-full">
               <div className="flex items-center gap-1 relative">
                 {/* Paperclip Button & Popover */}
                 <div className="relative">
@@ -657,7 +657,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
                   {/* Categorized Attachment Menu Popover */}
                   {showAttachmentMenu && (
-                    <div className="absolute bottom-full right-0 mb-2 w-52 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="absolute bottom-full right-0 mb-2 w-52 max-w-[calc(100vw-3rem)] bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/80 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
                       <button
                         type="button"
                         onClick={() => {

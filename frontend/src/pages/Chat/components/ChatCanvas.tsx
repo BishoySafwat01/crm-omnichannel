@@ -13,7 +13,17 @@ import { ChatComposer } from './canvas/ChatComposer';
 import { MediaLightboxModal } from './canvas/MediaLightboxModal';
 import { resolveMedia } from '../utils/mediaResolver';
 
-export const ChatCanvas: React.FC = () => {
+export interface ChatCanvasProps {
+  onToggleProfile?: () => void;
+  isProfileOpen?: boolean;
+  onBackToList?: () => void;
+}
+
+export const ChatCanvas: React.FC<ChatCanvasProps> = ({
+  onToggleProfile,
+  isProfileOpen = false,
+  onBackToList,
+}) => {
   const currentUser = useAuthStore((state) => state.user);
   const {
     conversations,
@@ -460,6 +470,9 @@ export const ChatCanvas: React.FC = () => {
         isAnalyzingAI={isAnalyzingAI}
         onRunAIAnalysis={handleRunAIAnalysis}
         onSelectSmartReply={(reply) => setDraftText(reply)}
+        onToggleProfile={onToggleProfile}
+        isProfileOpen={isProfileOpen}
+        onBackToList={onBackToList}
       />
 
       {/* Pinned Messages Banner */}

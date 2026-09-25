@@ -239,7 +239,7 @@ export const CustomerDataHub: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-slate-50/60 overflow-y-auto p-6 space-y-6" dir="rtl">
+    <div className="flex-1 bg-slate-50/60 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
       {/* Header Toolbar */}
       <div className="bg-white/80 backdrop-blur-md rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -402,8 +402,8 @@ export const CustomerDataHub: React.FC = () => {
 
       {/* Data Grid Table */}
       <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
+        <div className="w-full overflow-x-auto scrollbar-thin">
+          <table className="w-full min-w-[768px] text-right text-xs">
             <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">اسم العميل</th>
