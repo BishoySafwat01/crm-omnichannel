@@ -553,7 +553,7 @@ export const AutomationsManager: React.FC = () => {
 
   return (
     <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
-      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
@@ -835,7 +835,7 @@ export const AutomationsManager: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {filteredRules.map((rule) => {
                   const prKeys = rule.page_responses ? Object.keys(rule.page_responses) : [];
                   const brandObj = rule.brand_id && rule.brand_id !== 'all' ? getBrandObject(rule.brand_id, rule.brand_id) : null;
@@ -942,7 +942,7 @@ export const AutomationsManager: React.FC = () => {
                 <button onClick={openCreateCommentModal} className="px-4 py-2 bg-theme-primary hover:bg-theme-primary-hover text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" /> <span>إنشاء أول قاعدة تعليقات</span></button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                 {commentRules.map((cRule) => (
                   <div key={cRule.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 hover:border-theme-primary/40 transition">
                     <div className="flex items-start justify-between gap-2">
@@ -1451,4 +1451,3 @@ export const AutomationsManager: React.FC = () => {
 
 export { AutomationsManager as AutomationPage };
 export default AutomationsManager;
-

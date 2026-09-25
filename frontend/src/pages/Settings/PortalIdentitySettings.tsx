@@ -77,7 +77,7 @@ export const PortalIdentitySettings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 dir-rtl text-right">
+    <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6 dir-rtl text-right">
       {/* Header Info */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div className="space-y-1">

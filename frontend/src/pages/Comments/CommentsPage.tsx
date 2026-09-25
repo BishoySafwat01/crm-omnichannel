@@ -266,7 +266,7 @@ export const SocialCommentsManager: React.FC = () => {
 
   return (
     <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
-      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 space-y-4 sm:space-y-6">
         {/* Toast Notification Alert */}
         {actionNotification && (
           <div className="fixed bottom-6 left-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in slide-in-from-bottom-5 duration-200">
@@ -1278,4 +1278,3 @@ export const SocialCommentsManager: React.FC = () => {
 
 export { SocialCommentsManager as CommentsPage };
 export default SocialCommentsManager;
-
