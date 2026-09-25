@@ -9,10 +9,50 @@ from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.message import Message
-from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum
+from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum, SenderTypeEnum
 
 
 class ConversationService:
+    @staticmethod
+    async def sync_unread_state_with_latest_message(
+        session: AsyncSession,
+        conversation: Conversation,
+        increment_customer: bool = False,
+    ) -> Optional[SenderTypeEnum]:
+        """Reconcile unread state using the latest persisted, non-deleted message."""
+        locked_conversation_id = (
+            await session.execute(
+                select(Conversation.id)
+                .where(Conversation.id == conversation.id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not locked_conversation_id:
+            return None
+
+        await session.refresh(conversation, attribute_names=["unread_count"])
+        latest_sender_type = (
+            await session.execute(
+                select(Message.sender_type)
+                .where(
+                    Message.conversation_id == conversation.id,
+                    Message.deleted_at.is_(None),
+                )
+                .order_by(Message.created_at.desc(), Message.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        if latest_sender_type == SenderTypeEnum.CUSTOMER:
+            if increment_customer:
+                conversation.unread_count = (getattr(conversation, "unread_count", 0) or 0) + 1
+            conversation.is_unread = (getattr(conversation, "unread_count", 0) or 0) > 0
+        else:
+            conversation.unread_count = 0
+            conversation.is_unread = False
+
+        return latest_sender_type
+
     @staticmethod
     async def create_conversation(
         session: AsyncSession,
@@ -349,6 +389,9 @@ class ConversationService:
             else:
                 last_text = getattr(conv, 'last_message_text', None) or "محادثة نشطة"
 
+            if last_sender_type != SenderTypeEnum.CUSTOMER.value:
+                unread_cnt = 0
+
             cust_msg_at = conv.last_customer_message_at
             if not cust_msg_at and latest_msg and last_sender_type == "customer":
                 cust_msg_at = latest_msg.created_at
@@ -364,6 +407,7 @@ class ConversationService:
                 "priority": prio,
                 "assigned_agent_id": agent_id,
                 "unread_count": unread_cnt,
+                "is_unread": unread_cnt > 0 and last_sender_type == SenderTypeEnum.CUSTOMER.value,
                 "customer_id": conv.customer_id,
                 "customer_display_name": cust_name,
                 "customer_avatar_url": cust_avatar,
@@ -438,6 +482,25 @@ class ConversationService:
 
         customer_obj = conv.customer
         identities = customer_obj.identities if customer_obj else []
+        latest_message = (
+            await session.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == conv.id,
+                    Message.deleted_at.is_(None),
+                )
+                .order_by(Message.created_at.desc(), Message.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        last_sender_type = None
+        if latest_message:
+            last_sender_type = (
+                latest_message.sender_type.value
+                if hasattr(latest_message.sender_type, "value")
+                else str(latest_message.sender_type)
+            )
+        unread_count = conv.unread_count if last_sender_type == SenderTypeEnum.CUSTOMER.value else 0
 
         return {
             "id": conv.id,
@@ -448,6 +511,9 @@ class ConversationService:
             "external_conversation_id": conv.external_conversation_id,
             "subject": conv.subject,
             "status": conv.status,
+            "unread_count": unread_count,
+            "is_unread": unread_count > 0,
+            "last_sender_type": last_sender_type,
             "created_at": conv.created_at,
             "updated_at": conv.updated_at,
             "last_message_at": conv.last_message_at,
@@ -543,6 +609,17 @@ class ConversationService:
         brand: Optional[str] = None,
     ) -> dict[str, Any]:
         """Aggregate total, per-channel, and per-brand unread message counts via optimized SQL aggregation."""
+        latest_sender_type = (
+            select(Message.sender_type)
+            .where(
+                Message.conversation_id == Conversation.id,
+                Message.deleted_at.is_(None),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(1)
+            .correlate(Conversation)
+            .scalar_subquery()
+        )
         stmt = (
             select(
                 Conversation.brand,
@@ -552,6 +629,7 @@ class ConversationService:
             .where(
                 Conversation.unread_count > 0,
                 Conversation.deleted_at.is_(None),
+                latest_sender_type == SenderTypeEnum.CUSTOMER,
             )
         )
         if brand:
@@ -613,4 +691,3 @@ class ConversationService:
             "channels": channels_map,
             "brands": brands_map,
         }
-

@@ -18,6 +18,7 @@ from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderT
 from app.models.message import Message
 from app.infrastructure.realtime.ws_broadcaster import ws_broadcaster
 from app.schemas.messaging import AgentReplyResultDTO, MessageResponse
+from app.services.conversation_service import ConversationService
 
 logger = logging.getLogger("MessageService")
 
@@ -90,6 +91,14 @@ class MessageService:
                         )
                     except Exception as tl_in_err:
                         logger.error("[Customer 360 Timeline] Error logging inbound message: %s", tl_in_err)
+
+        await session.flush()
+        if conversation:
+            await ConversationService.sync_unread_state_with_latest_message(
+                session=session,
+                conversation=conversation,
+                increment_customer=sender_type == SenderTypeEnum.CUSTOMER,
+            )
 
         await session.commit()
         await session.refresh(message)
@@ -466,6 +475,8 @@ class MessageService:
                 diff_sec = (datetime.now(timezone.utc) - msg_time).total_seconds()
                 if diff_sec < 2.0:
                     logger.warning("[Idempotency] Duplicate outbound message detected within 2s for conversation %s. Skipping duplicate dispatch.", conv.id)
+                    await ConversationService.sync_unread_state_with_latest_message(session, conv)
+                    await session.commit()
                     return recent_agent_msg
 
         # Send message through adapter (Check binary file attachment upload for Meta)
@@ -674,6 +685,8 @@ class MessageService:
             existing_res = await session.execute(existing_stmt)
             existing_msg = existing_res.scalar_one_or_none()
             if existing_msg:
+                await ConversationService.sync_unread_state_with_latest_message(session, conv)
+                await session.commit()
                 return existing_msg
 
         # Determine Message Type
@@ -732,6 +745,9 @@ class MessageService:
         )
         session.add(new_message)
         conv.last_message_at = now_utc
+        conv.last_activity_at = now_utc
+        await session.flush()
+        await ConversationService.sync_unread_state_with_latest_message(session, conv)
 
         # Auto-detect location from outbound text and update customer record
         if clean_text:

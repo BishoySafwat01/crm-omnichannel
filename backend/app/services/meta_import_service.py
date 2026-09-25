@@ -824,6 +824,10 @@ class MetaImportService:
                             select(Message).where(Message.external_message_id == target_mid)
                         )).scalar_one_or_none()
                         if existing_by_mid:
+                            existing_conv = await session.get(Conversation, existing_by_mid.conversation_id)
+                            if existing_conv:
+                                await ConversationService.sync_unread_state_with_latest_message(session, existing_conv)
+                                await session.commit()
                             logger.info(
                                 "[Webhook Echo] Deduplicated: mid=%s already exists in DB (id=%s)",
                                 target_mid,
@@ -866,6 +870,7 @@ class MetaImportService:
                             or recent_agent_msg.external_message_id.startswith("tmp_")
                         ):
                             recent_agent_msg.external_message_id = target_mid
+                            await ConversationService.sync_unread_state_with_latest_message(session, conv)
                             await session.commit()
                             logger.info(
                                 "✅ [Echo Deduplicated] Linked Meta MID %s to existing agent message %s",
@@ -961,6 +966,8 @@ class MetaImportService:
                     )
                     session.add(echo_msg)
                     try:
+                        await session.flush()
+                        await ConversationService.sync_unread_state_with_latest_message(session, conv)
                         await session.commit()
                         await session.refresh(echo_msg)
                         created_count += 1
@@ -1257,13 +1264,17 @@ class MetaImportService:
                     conv.last_message_at = norm_event.created_at
 
                 sender_type_str = norm_event.sender_type.value if hasattr(norm_event.sender_type, "value") else str(norm_event.sender_type)
-                if not is_echo and sender_type_str == "customer":
-                    conv.unread_count = (getattr(conv, "unread_count", 0) or 0) + 1
+                is_customer_message = not is_echo and sender_type_str == "customer"
+                await ConversationService.sync_unread_state_with_latest_message(
+                    session=session,
+                    conversation=conv,
+                    increment_customer=is_customer_message,
+                )
+                if is_customer_message:
                     conv.updated_at = datetime.now(timezone.utc)
                     # Update last_customer_message_at so the 24h Meta messaging window is tracked correctly
                     if conv.last_customer_message_at is None or norm_event.created_at > conv.last_customer_message_at:
                         conv.last_customer_message_at = norm_event.created_at
-
                 await session.commit()
 
                 # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for inbound customer messages
@@ -1614,6 +1625,12 @@ class MetaImportService:
                                 except Exception as exc:
                                     logger.warning("[MetaImportService] Message mid=%s duplicate or flush conflict: %s", mid, exc)
                                     continue
+
+                                await ConversationService.sync_unread_state_with_latest_message(
+                                    session=session,
+                                    conversation=conversation,
+                                    increment_customer=new_msg.sender_type == SenderTypeEnum.CUSTOMER,
+                                )
 
                                 # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for newly polled customer messages
                                 if new_msg.sender_type == SenderTypeEnum.CUSTOMER:
