@@ -14,8 +14,8 @@ export const ChatPage: React.FC = () => {
       <div
         className={`h-full min-h-0 shrink-0 ${
           activeConversationId
-            ? 'hidden lg:flex w-72 xl:w-80'
-            : 'flex w-full lg:w-72 xl:w-80'
+            ? 'hidden lg:flex w-80 xl:w-96'
+            : 'flex w-full lg:w-80 xl:w-96'
         }`}
       >
         <ConversationList className="w-full h-full" />
@@ -23,7 +23,7 @@ export const ChatPage: React.FC = () => {
 
       {/* Center Column: Active Chat Canvas */}
       <div
-        className={`h-full min-h-0 flex-1 ${
+        className={`h-full min-h-0 flex-1 min-w-[380px] ${
           activeConversationId ? 'flex w-full' : 'hidden lg:flex'
         }`}
       >
@@ -34,14 +34,14 @@ export const ChatPage: React.FC = () => {
         />
       </div>
 
-      {/* Left Column: Lead Attributes & Customer Hub (Desktop >= 1280px / xl) */}
-      <div className="hidden xl:flex shrink-0 h-full w-72 xl:w-80 min-h-0">
+      {/* Left Column: Lead Attributes & Customer Hub (Desktop >= 1400px / 2xl) */}
+      <div className="hidden 2xl:flex shrink-0 h-full w-80 min-h-0">
         <CustomerProfileSidebar />
       </div>
 
-      {/* Laptop & Tablet & Mobile Slide-Out Drawer Overlay (< 1280px / xl) */}
+      {/* Laptop, Tablet & Mobile Slide-Out Drawer Overlay (< 1400px / 2xl) */}
       {isProfileOpen && (
-        <div className="fixed inset-0 z-50 xl:hidden">
+        <div className="fixed inset-0 z-50 2xl:hidden">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"

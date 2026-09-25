@@ -267,12 +267,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </button>
         ) : null}
 
-        {/* Customer Profile Drawer Toggle (< 1280px / xl) */}
+        {/* Customer Profile Drawer Toggle (< 1400px / 2xl) */}
         {onToggleProfile && (
           <button
             type="button"
             onClick={onToggleProfile}
-            className={`xl:hidden flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition border cursor-pointer shrink-0 ${
+            className={`2xl:hidden flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition border cursor-pointer shrink-0 ${
               isProfileOpen
                 ? 'bg-theme-primary text-white border-theme-primary shadow-xs'
                 : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/80 shadow-2xs'

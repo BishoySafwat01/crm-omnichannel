@@ -387,7 +387,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
   ];
 
   return (
-    <aside className={`w-full bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-full min-h-0 relative z-10 overflow-hidden ${className}`}>
+    <aside className={`w-full min-w-0 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-full min-h-0 relative z-10 overflow-hidden ${className}`}>
       {/* Header Search & Filter Toolbar */}
       <div className="p-3 border-b border-slate-100/70 space-y-2.5">
         <div className="flex items-center gap-1.5">
@@ -576,7 +576,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       {/* Clean Minimalist Glass Conversation Cards with Continuous Messenger Stream */}
       <div
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1 scrollbar-none"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 space-y-1 scrollbar-none"
       >
         {isLoadingConversations ? (
           <div className="p-8 text-center text-xs text-slate-400 animate-pulse font-medium">
@@ -604,7 +604,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                 <div
                   key={conv.id}
                   onClick={() => setActiveConversationId(conv.id)}
-                  className={`p-3 cursor-pointer transition-all duration-150 rounded-2xl ${
+                  className={`px-3.5 py-3 cursor-pointer transition-all duration-150 rounded-2xl ${
                     isActive
                       ? 'bg-theme-primary-subtle/50 border-r-4 border-r-theme-primary shadow-2xs font-medium'
                       : 'bg-transparent hover:bg-white/90'
@@ -654,9 +654,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                   </div>
 
                   {/* 2. Bottom Row: Truncated Single-line Message Preview + Unread Count Badge */}
-                  <div className="flex items-center justify-between gap-2 pr-12">
+                  <div className="flex items-center gap-2 pr-12 pl-0.5 min-w-0">
                     <p
-                      className={`text-xs truncate ${
+                      className={`min-w-0 flex-1 text-xs truncate ${
                         unreadCount > 0 ? 'font-bold text-slate-900' : 'text-slate-500 font-normal'
                       }`}
                     >
@@ -685,4 +685,3 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     </aside>
   );
 };
-
