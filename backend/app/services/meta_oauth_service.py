@@ -24,9 +24,6 @@ VALID_SCOPES = [
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
-    "instagram_basic",
-    "instagram_manage_messages",
-    "instagram_manage_comments",
     "public_profile",
 ]
 
@@ -35,9 +32,6 @@ DEFAULT_SCOPES = [
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
-    "instagram_basic",
-    "instagram_manage_messages",
-    "instagram_manage_comments",
     "public_profile",
 ]
 

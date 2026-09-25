@@ -322,9 +322,6 @@ def test_meta_oauth_sanitized_scopes():
         "pages_messaging",
         "pages_read_engagement",
         "pages_manage_metadata",
-        "instagram_basic",
-        "instagram_manage_messages",
-        "instagram_manage_comments",
         "public_profile",
     ]
     assert VALID_SCOPES == expected_canonical_scopes
@@ -332,6 +329,9 @@ def test_meta_oauth_sanitized_scopes():
 
     # Ensure unapproved/deprecated scopes are completely absent
     for disallowed in (
+        "instagram_basic",
+        "instagram_manage_messages",
+        "instagram_manage_comments",
         "pages_manage_posts",
         "pages_read_user_content",
     ):
@@ -347,9 +347,12 @@ def test_meta_oauth_sanitized_scopes():
         assert "pages_messaging" in url
         assert "pages_read_engagement" in url
         assert "pages_manage_metadata" in url
-        assert "instagram_manage_messages" in url
-        assert "instagram_basic" in url
-        assert "instagram_manage_comments" in url
+        for disallowed in (
+            "instagram_basic",
+            "instagram_manage_messages",
+            "instagram_manage_comments",
+        ):
+            assert disallowed not in url
 
 
 def test_generate_oauth_state_with_redirect_uri():
