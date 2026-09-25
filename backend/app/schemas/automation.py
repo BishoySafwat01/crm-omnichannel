@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AutomationRuleCreate(BaseModel):
@@ -21,6 +21,15 @@ class AutomationRuleCreate(BaseModel):
     cooldown_minutes: int = Field(15, ge=0)
     is_active: bool = True
 
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def deduplicate_keywords(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return list(dict.fromkeys([k.strip() for k in v if isinstance(k, str) and k.strip()]))
+        return v
+
 
 class AutomationRuleUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -38,6 +47,15 @@ class AutomationRuleUpdate(BaseModel):
     human_typing_simulation: Optional[bool] = None
     cooldown_minutes: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def deduplicate_keywords(cls, v: Any) -> Optional[list[str]]:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return list(dict.fromkeys([k.strip() for k in v if isinstance(k, str) and k.strip()]))
+        return v
 
 
 class AutomationRuleResponse(BaseModel):

@@ -90,7 +90,9 @@ class MessageResponse(MessageBase):
             text_val = (data.get("text") or "").strip()
             loc = data.get("updated_customer_location")
             s_user_id = data.get("sender_user_id")
-            s_name = data.get("sender_name")
+            s_name = data.get("sender_name") or metadata.get("sender_name") or metadata.get("bot_sender_name")
+            if not s_name and data.get("sender_external_id") == "automation_bot":
+                s_name = "المساعد الآلي (Bot)"
         else:
             metadata = getattr(data, "metadata_", {}) or {}
             atts = metadata.get("attachments") or []
@@ -111,6 +113,10 @@ class MessageResponse(MessageBase):
                         s_name = s_name or sender_user.full_name
             except Exception:
                 pass
+            if not s_name and isinstance(metadata, dict):
+                s_name = metadata.get("sender_name") or metadata.get("bot_sender_name")
+            if not s_name and getattr(data, "sender_external_id", None) == "automation_bot":
+                s_name = "المساعد الآلي (Bot)"
 
         if atts and isinstance(atts, list) and len(atts) > 0 and isinstance(atts[0], dict):
             first = atts[0]

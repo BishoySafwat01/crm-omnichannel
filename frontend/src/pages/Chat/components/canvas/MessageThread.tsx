@@ -80,17 +80,21 @@ export const MemoizedMessageBubble = React.memo<{
   if (!hasContent) return null;
 
   const sType = (msg.sender_type || '').toLowerCase();
-  const isAgent = sType === 'agent' || sType === 'bot';
   const isAutomated = Boolean(
     msg.metadata?.is_automated ||
     msg.metadata_?.is_automated ||
+    msg.metadata?.is_bot ||
+    msg.metadata_?.is_bot ||
+    msg.sender_external_id === 'automation_bot' ||
+    (msg.sender_name && msg.sender_name.includes('(Bot)')) ||
     sType === 'bot'
   );
+  const isAgent = sType === 'agent' || sType === 'bot' || isAutomated;
   const botSenderName =
     msg.metadata?.bot_sender_name ||
     msg.metadata_?.bot_sender_name ||
     (msg.sender_name && msg.sender_name.includes('(Bot)') ? msg.sender_name : null) ||
-    'Bot';
+    (msg.sender_name ? `${msg.sender_name} (Bot)` : 'المساعد الآلي (Bot)');
   const isPending = msg.delivery_status === 'pending';
   const isFailed = msg.delivery_status === 'failed';
   const isDeleted = Boolean(msg.is_deleted);

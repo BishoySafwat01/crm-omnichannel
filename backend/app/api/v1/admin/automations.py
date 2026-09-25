@@ -83,7 +83,7 @@ async def create_automation_rule(
         channels=payload.channels,
         trigger_type=payload.trigger_type,
         match_type=payload.match_type,
-        keywords=[k.strip() for k in payload.keywords if k.strip()],
+        keywords=list(dict.fromkeys([k.strip() for k in (payload.keywords or []) if isinstance(k, str) and k.strip()])),
         response_text=payload.response_text.strip(),
         response_media_url=payload.response_media_url,
         page_responses=payload.page_responses or {},
@@ -139,7 +139,7 @@ async def update_automation_rule(
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         if key == "keywords" and value is not None:
-            setattr(rule, key, [k.strip() for k in value if k.strip()])
+            setattr(rule, key, list(dict.fromkeys([k.strip() for k in value if isinstance(k, str) and k.strip()])))
         elif key == "name" and value is not None:
             setattr(rule, key, value.strip())
         elif key in ("brand_id", "page_id") and value is not None:

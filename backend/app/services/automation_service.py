@@ -188,7 +188,7 @@ class AutomationService:
 
             # Keyword trigger matching check with Arabic normalization
             matched = False
-            keywords = rule.keywords or []
+            keywords = list(dict.fromkeys([k.strip() for k in (rule.keywords or []) if isinstance(k, str) and k.strip()]))
             match_type = (rule.match_type or "contains").lower()
 
             for kw in keywords:
@@ -305,8 +305,13 @@ class AutomationService:
             bot_sender_name = f"{creator_name} (Bot)"
             auto_metadata = {
                 "is_automated": True,
+                "is_bot": True,
                 "automation_rule_id": str(rule.id),
+                "automation_rule_name": rule.name,
                 "bot_sender_name": bot_sender_name,
+                "sender_name": bot_sender_name,
+                "bot_creator_name": creator_name,
+                "bot_creator_id": str(rule.created_by) if rule.created_by else None,
             }
 
             outbound_msg = None

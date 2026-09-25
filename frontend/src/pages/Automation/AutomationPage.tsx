@@ -301,7 +301,10 @@ export const AutomationsManager: React.FC = () => {
     setChannels(rule.channels && rule.channels.length > 0 ? rule.channels : ['messenger']);
     setMatchType((rule.match_type as any) || 'contains');
     setKeywordInput('');
-    setKeywords(rule.keywords || []);
+    const initialKws = Array.from(
+      new Set((rule.keywords || []).map((k) => (typeof k === 'string' ? k.trim() : '')).filter(Boolean))
+    );
+    setKeywords(initialKws);
     setResponseText(rule.response_text || '');
     setCooldownMinutes(rule.cooldown_minutes);
     setIsActive(rule.is_active);
@@ -329,13 +332,32 @@ export const AutomationsManager: React.FC = () => {
 
   const handleAddKeyword = () => {
     const trimmed = keywordInput.trim();
-    if (trimmed && !keywords.includes(trimmed)) {
-      const nextKws = [...keywords, trimmed];
-      setKeywords(nextKws);
+    if (!trimmed) return;
+
+    // Handle comma or newline separated inputs while strictly preventing exact duplicates
+    const candidates = trimmed.includes(',') || trimmed.includes('\n')
+      ? trimmed.split(/[,\n]+/).map((k) => k.trim()).filter(Boolean)
+      : [trimmed];
+
+    const currentKws = [...keywords];
+    let hasAdded = false;
+
+    for (const cand of candidates) {
+      // STRICT EXACT-MATCH ONLY check: prevent adding if verbatim string already exists in local state
+      if (!currentKws.includes(cand)) {
+        currentKws.push(cand);
+        hasAdded = true;
+      }
+    }
+
+    if (hasAdded) {
+      setKeywords(currentKws);
       setKeywordInput('');
       if (!name.trim() || name.startsWith('قاعدة:') || name.startsWith('Rule_')) {
-        setName(suggestSemanticName(nextKws));
+        setName(suggestSemanticName(currentKws));
       }
+    } else {
+      setKeywordInput('');
     }
   };
 
@@ -437,7 +459,7 @@ export const AutomationsManager: React.FC = () => {
       page_id: targetPageId,
       channels: channels.length > 0 ? channels : ['messenger'],
       match_type: matchType,
-      keywords,
+      keywords: Array.from(new Set(keywords.map((k) => k.trim()).filter(Boolean))),
       response_text: finalResponseText,
       page_responses: finalPageResponses,
       cooldown_minutes: cooldownMinutes,
