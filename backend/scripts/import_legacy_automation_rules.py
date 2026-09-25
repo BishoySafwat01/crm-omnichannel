@@ -2,11 +2,16 @@
 """
 Import, name, and synchronize legacy automation rules into PostgreSQL `automation_rules`.
 1. Enforce strict 1:1 page-level isolation based on Facebook Page IDs extracted from inboxUrls.
-2. Filter out corrupted, inverted, and cross-pollinated cross-brand rules.
-3. Assign semantic, human-readable Arabic names to all rules based on their trigger keywords.
-4. Ingest rules for each respective page ID using deterministic UUIDs.
-5. Verify exact expected counts per page (Lotus Blue: 40, LOXX KING: 25, Lavva: 25, Hayat: 23, Liora: 3, Total: 116).
-6. Ensure connected_pages has `is_automation_enabled = true` for all target pages.
+2. Filter out corrupted, inverted, duplicate, and cross-pollinated cross-brand rules.
+3. Assign semantic, human-readable Arabic names to all rules based on trigger keywords.
+4. Truncate table and ingest rules for each respective page ID using deterministic UUIDs.
+5. Verify exact counts:
+   - 101509818947526 (Lotus Blue Cosmetic): 40 rules
+   - 100736899432829 (LOXX KING): 25 rules
+   - 103412619187974 (Lavva): 25 rules
+   - 104710089055383 (Hayat Cosmetics): 23 rules
+   - 801569813029844 (Liora): 3 rules
+   Total = 116 rules.
 """
 
 import asyncio
@@ -23,16 +28,13 @@ BACKEND_DIR = SCRIPT_DIR.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text, func
 from app.core.database import AsyncSessionLocal
 from app.models.automation import AutomationRule
 from app.models.connected_page import ConnectedPage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("LegacyRuleImporter")
-
-LOTUS_BLUE_PAGE_ID = "101509818947526"
-LOTUS_BLUE_BRAND = "Lotus blue cosmetic"
 
 CONFIG_SPECS = [
     {
@@ -70,18 +72,20 @@ CONFIG_SPECS = [
         "brand": "Hayat Cosmetics",
         "expected_count": 23,
     },
-    {
-        "filename": "page_flare_config_6.json",
-        "alt_names": ["config (6).json", "flare_config.json"],
-        "page_id": "flare_page",
-        "brand": "Flare",
-        "expected_count": 0,
-    },
 ]
 
-# Explicit exclusion sets for corrupted, inverted, duplicate, or cross-pollinated rules
+SEARCH_DIRS = [
+    SCRIPT_DIR / "data" / "legacy_rules",
+    Path("/app/scripts/data/legacy_rules"),
+    Path("/home/bishoy/Downloads/MetaInboxBot_Profiles"),
+    Path.home() / "Downloads" / "MetaInboxBot_Profiles",
+    Path("/home/bishoy/Downloads"),
+    Path.cwd(),
+]
+
+# Excluded cross-pollinated, inverted, duplicate, or corrupted rules
 EXCLUDED_RULE_IDS = {
-    # Lotus Blue: exclude 8 country price rules for mascara copied from Hayat + 3 cross-pollinated mascara/corset rules (51 -> 40)
+    # Lotus Blue: exclude 11 mascara price/cross-pollinated rules from foundation suite (51 -> 40)
     "101509818947526": {
         "rule_1789744202475",  # LY mascara price
         "rule_1789744401109",  # IQ mascara price
@@ -107,14 +111,6 @@ EXCLUDED_RULE_IDS = {
         "rule_1789754071577",  # Duplicate identical response text of rule_1789754065801
     },
 }
-
-SEARCH_DIRS = [
-    SCRIPT_DIR / "data" / "legacy_rules",
-    Path("/home/bishoy/Downloads/MetaInboxBot_Profiles"),
-    Path.home() / "Downloads" / "MetaInboxBot_Profiles",
-    Path("/home/bishoy/Downloads"),
-    Path.cwd(),
-]
 
 
 def resolve_file(spec: dict) -> Path | None:
@@ -341,6 +337,12 @@ async def run_import():
             raise RuntimeError(f"Verification FAILED: expected 116 total rules, got {total_rules}")
 
         logger.info("SUCCESS: All 116 rules ingested with strict 1:1 page-level isolation.")
+
+    logger.info(
+        "Overall ingestion complete: %d page-scoped created, %d skipped across all suites.",
+        total_created,
+        total_skipped,
+    )
 
 
 if __name__ == "__main__":
