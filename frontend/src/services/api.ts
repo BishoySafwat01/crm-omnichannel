@@ -391,6 +391,7 @@ export interface AutomationRule {
   keywords: string[];
   response_text: string;
   response_media_url?: string | null;
+  page_responses?: Record<string, string> | null;
   split_lines?: boolean;
   delay_seconds?: number;
   human_typing_simulation?: boolean;

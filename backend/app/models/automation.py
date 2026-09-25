@@ -27,6 +27,9 @@ class AutomationRule(Base):
     )  # e.g. ["خصم", "عروض"]
     response_text: Mapped[str] = mapped_column(Text, nullable=False)
     response_media_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_responses: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True, server_default="{}"
+    )  # e.g. {"page_id_1": "Reply text for page 1", "page_id_2": "Reply text for page 2"}
     split_lines: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     delay_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
     human_typing_simulation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

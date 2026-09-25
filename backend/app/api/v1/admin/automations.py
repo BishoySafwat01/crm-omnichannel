@@ -86,6 +86,7 @@ async def create_automation_rule(
         keywords=[k.strip() for k in payload.keywords if k.strip()],
         response_text=payload.response_text.strip(),
         response_media_url=payload.response_media_url,
+        page_responses=payload.page_responses or {},
         split_lines=payload.split_lines,
         delay_seconds=payload.delay_seconds,
         human_typing_simulation=payload.human_typing_simulation,

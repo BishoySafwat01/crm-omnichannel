@@ -20,6 +20,7 @@ import {
   MessageCircle,
   ShieldAlert,
   Filter,
+  Copy,
 } from 'lucide-react';
 import {
   automationApi,
@@ -86,7 +87,7 @@ export const AutomationsManager: React.FC = () => {
 
   const [name, setName] = useState('');
   const [brandId, setBrandId] = useState<string>('all');
-  const [channels, setChannels] = useState<string[]>(['messenger', 'instagram', 'whatsapp']);
+  const [channels, setChannels] = useState<string[]>(['messenger']);
   const [matchType, setMatchType] = useState<'contains' | 'exact' | 'regex'>('contains');
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
@@ -96,6 +97,32 @@ export const AutomationsManager: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [responseText, setResponseText] = useState('');
+  const [selectedModalPages, setSelectedModalPages] = useState<string[]>([]);
+  const [isCustomPerPage, setIsCustomPerPage] = useState<boolean>(false);
+  const [perPageReplies, setPerPageReplies] = useState<Record<string, string>>({});
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const handleCopyText = async (text: string, label: string) => {
+    if (!text) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopyFeedback(label);
+      setTimeout(() => {
+        setCopyFeedback((prev) => (prev === label ? null : prev));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard', err);
+    }
+  };
 
   const [commentRules, setCommentRules] = useState<CommentAutomationRule[]>([]);
   const [isLoadingCommentRules, setIsLoadingCommentRules] = useState(false);
@@ -214,7 +241,11 @@ export const AutomationsManager: React.FC = () => {
   // Filtered Rules by Account/Page and Channel
   const filteredRules = useMemo(() => {
     return rules.filter((rule) => {
-      const matchesPage = selectedPageId === 'all' || rule.page_id === selectedPageId;
+      let matchesPage = true;
+      if (selectedPageId !== 'all') {
+        const prKeys = rule.page_responses ? Object.keys(rule.page_responses) : [];
+        matchesPage = rule.page_id === selectedPageId || prKeys.includes(selectedPageId);
+      }
       let matchesChannel = true;
       if (selectedChannel !== 'all') {
         const ruleChans = rule.channels || [];
@@ -224,13 +255,36 @@ export const AutomationsManager: React.FC = () => {
     });
   }, [rules, selectedPageId, selectedChannel]);
 
+  const isAllPagesSelected = useMemo(() => {
+    return availablePages.length > 0 && availablePages.every((p) => selectedModalPages.includes(p.page_id));
+  }, [availablePages, selectedModalPages]);
+
+  const handleToggleSelectAllPages = () => {
+    if (isAllPagesSelected) {
+      setSelectedModalPages([]);
+    } else {
+      setSelectedModalPages(availablePages.map((p) => p.page_id));
+    }
+  };
+
+  const handleTogglePage = (pageId: string) => {
+    if (selectedModalPages.includes(pageId)) {
+      setSelectedModalPages((prev) => prev.filter((id) => id !== pageId));
+    } else {
+      setSelectedModalPages((prev) => [...prev, pageId]);
+    }
+  };
+
   const openCreateModal = () => {
     setEditingRule(null);
     const initialKws = ['خصم', 'عروض'];
     setKeywords(initialKws);
     setName(suggestSemanticName(initialKws));
     setBrandId('all');
-    setChannels(['messenger', 'instagram', 'whatsapp']);
+    setSelectedModalPages(availablePages.map((p) => p.page_id));
+    setIsCustomPerPage(false);
+    setPerPageReplies({});
+    setChannels(['messenger']); // Strictly default to messenger only
     setMatchType('contains');
     setKeywordInput('');
     setResponseText('');
@@ -244,7 +298,7 @@ export const AutomationsManager: React.FC = () => {
     setEditingRule(rule);
     setName(rule.name);
     setBrandId(rule.brand_id || 'all');
-    setChannels(rule.channels || ['messenger', 'instagram', 'whatsapp']);
+    setChannels(rule.channels && rule.channels.length > 0 ? rule.channels : ['messenger']);
     setMatchType((rule.match_type as any) || 'contains');
     setKeywordInput('');
     setKeywords(rule.keywords || []);
@@ -252,6 +306,24 @@ export const AutomationsManager: React.FC = () => {
     setCooldownMinutes(rule.cooldown_minutes);
     setIsActive(rule.is_active);
     setFormError(null);
+
+    // Initialize selected pages and per-page variations
+    const pr = rule.page_responses || {};
+    const prKeys = Object.keys(pr);
+    if (prKeys.length > 0) {
+      setSelectedModalPages(prKeys);
+      setIsCustomPerPage(true);
+      setPerPageReplies(pr);
+    } else if (rule.page_id && rule.page_id !== 'all') {
+      setSelectedModalPages([rule.page_id]);
+      setIsCustomPerPage(false);
+      setPerPageReplies({});
+    } else {
+      setSelectedModalPages(availablePages.map((p) => p.page_id));
+      setIsCustomPerPage(false);
+      setPerPageReplies({});
+    }
+
     setIsModalOpen(true);
   };
 
@@ -307,23 +379,71 @@ export const AutomationsManager: React.FC = () => {
       setFormError('يرجى إضافة كلمة مفتاحية واحدة على الأقل');
       return;
     }
-    const cleanText = responseText.trim();
-    if (!cleanText) {
-      setFormError('يرجى إدخال نص الرد التلقائي');
+    if (selectedModalPages.length === 0) {
+      setFormError('يرجى اختيار صفحة واحدة على الأقل من الصفحات المرتبطة');
       return;
     }
+
+    let finalResponseText = responseText.trim();
+    let finalPageResponses: Record<string, string> = {};
+
+    if (isCustomPerPage) {
+      const activeResponses: Record<string, string> = {};
+      for (const pid of selectedModalPages) {
+        const textForPage = (perPageReplies[pid] || '').trim();
+        if (textForPage) {
+          activeResponses[pid] = textForPage;
+        }
+      }
+      if (Object.keys(activeResponses).length === 0) {
+        setFormError('يرجى إدخال نص الرد لصفحة واحدة على الأقل عند تفعيل التخصيص لكل صفحة');
+        return;
+      }
+      finalPageResponses = activeResponses;
+      finalResponseText = Object.values(activeResponses)[0] || finalResponseText || 'مرحباً بك';
+    } else {
+      if (!finalResponseText) {
+        setFormError('يرجى إدخال نص الرد التلقائي');
+        return;
+      }
+      if (!isAllPagesSelected && selectedModalPages.length > 0) {
+        selectedModalPages.forEach((pid) => {
+          finalPageResponses[pid] = finalResponseText;
+        });
+      }
+    }
+
+    let targetPageId: string | null = null;
+    let targetBrandId: string | null = null;
+
+    if (selectedModalPages.length === 1) {
+      targetPageId = selectedModalPages[0];
+      const match = availablePages.find((p) => p.page_id === targetPageId);
+      targetBrandId = match?.name || null;
+    } else if (isAllPagesSelected) {
+      targetPageId = null;
+      targetBrandId = 'all';
+    } else {
+      targetPageId = null;
+      targetBrandId = null;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
-    const payload = {
+
+    const payload: Partial<AutomationRule> = {
       name: name.trim(),
-      brand_id: brandId === 'all' ? null : brandId,
-      channels,
+      brand_id: targetBrandId,
+      page_id: targetPageId,
+      channels: channels.length > 0 ? channels : ['messenger'],
       match_type: matchType,
       keywords,
-      response_text: cleanText,
+      response_text: finalResponseText,
+      page_responses: finalPageResponses,
       cooldown_minutes: cooldownMinutes,
       is_active: isActive,
     };
+
     try {
       if (editingRule) {
         const updated = await automationApi.updateRule(editingRule.id, payload);
@@ -695,9 +815,16 @@ export const AutomationsManager: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredRules.map((rule) => {
+                  const prKeys = rule.page_responses ? Object.keys(rule.page_responses) : [];
                   const brandObj = rule.brand_id && rule.brand_id !== 'all' ? getBrandObject(rule.brand_id, rule.brand_id) : null;
                   const pageMatch = availablePages.find((p) => p.page_id === rule.page_id);
-                  const pageDisplayName = pageMatch ? pageMatch.name : (rule.page_id ? `صفحة (${rule.page_id})` : null);
+                  let pageDisplayName = pageMatch ? pageMatch.name : (rule.page_id ? `صفحة (${rule.page_id})` : null);
+                  if (!pageDisplayName && prKeys.length > 0) {
+                    const matchedNames = prKeys.map((pid) => availablePages.find((p) => p.page_id === pid)?.name || pid);
+                    pageDisplayName = matchedNames.slice(0, 2).join('، ') + (matchedNames.length > 2 ? ` (+${matchedNames.length - 2})` : '');
+                  } else if (!pageDisplayName) {
+                    pageDisplayName = brandObj ? `البراند: ${brandObj.name}` : 'كافة الصفحات (Global)';
+                  }
                   const bubbles = (rule.response_text || '')
                     .split(/[\r\n]+/)
                     .map((p) => p.trim())
@@ -706,11 +833,16 @@ export const AutomationsManager: React.FC = () => {
                     <div key={rule.id} className={`bg-white rounded-2xl border p-5 shadow-xs transition duration-150 space-y-4 ${rule.is_active ? 'border-slate-200 hover:border-theme-primary/40' : 'border-slate-200/60 opacity-65 bg-slate-50/40'}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="text-sm font-bold text-slate-900">{rule.name}</h3>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rule.is_active ? 'bg-theme-primary-tint text-theme-primary border border-theme-primary/20' : 'bg-slate-100 text-slate-500'}`}>
                               {rule.is_active ? 'نشطة' : 'متوقفة'}
                             </span>
+                            {prKeys.length > 1 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                ردود مخصصة ({prKeys.length} صفحات)
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-slate-400 font-medium mt-0.5">
                             {pageDisplayName ? `الصفحة: ${pageDisplayName}` : (brandObj ? `البراند: ${brandObj.name}` : 'كل البراندات')} | التهدئة: {rule.cooldown_minutes} دقيقة
@@ -862,80 +994,353 @@ export const AutomationsManager: React.FC = () => {
                   className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">البراند:</label>
-                  <select value={brandId} onChange={(e) => setBrandId(e.target.value)} className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary cursor-pointer">
-                    <option value="all">كل البراندات (Global)</option>
-                    {brands.filter((b) => b.id !== 'all').map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
-                  </select>
+              {/* Connected Pages Checkboxes Grid */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">الصفحات المرتبطة المستهدفة:</label>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    تم تحديد {selectedModalPages.length} من أصل {availablePages.length} صفحة
+                  </span>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">نوع المطابقة:</label>
-                  <select value={matchType} onChange={(e) => setMatchType(e.target.value as any)} className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary cursor-pointer">
-                    <option value="contains">يحتوي على</option>
-                    <option value="exact">مطابقة تامة</option>
-                    <option value="regex">تعبير نمطي</option>
-                  </select>
+
+                <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80 space-y-2.5">
+                  {/* Select All Checkbox */}
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white border border-slate-200/60 cursor-pointer hover:bg-slate-50 transition font-bold text-xs text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={isAllPagesSelected}
+                      onChange={handleToggleSelectAllPages}
+                      className="rounded text-theme-primary focus:ring-theme-primary accent-theme-primary w-4 h-4 cursor-pointer"
+                    />
+                    <span>اختيار الكل (تطبيق على جميع الصفحات)</span>
+                    <span className="text-[10px] bg-theme-primary-tint text-theme-primary px-1.5 py-0.5 rounded-md font-bold mr-auto">
+                      Global
+                    </span>
+                  </label>
+
+                  {/* Individual Page Checkboxes */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {availablePages.map((page) => {
+                      const isSelected = selectedModalPages.includes(page.page_id);
+                      const cp = connectedPages.find((p) => p.page_id === page.page_id);
+                      return (
+                        <label
+                          key={page.page_id}
+                          className={`flex items-center gap-2.5 p-2 rounded-xl border transition cursor-pointer text-xs ${
+                            isSelected
+                              ? 'bg-theme-primary-tint/30 border-theme-primary/30 text-slate-900 font-bold'
+                              : 'bg-white border-slate-200/60 text-slate-700 hover:bg-slate-50 font-medium'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleTogglePage(page.page_id)}
+                            className="rounded text-theme-primary focus:ring-theme-primary accent-theme-primary w-3.5 h-3.5 cursor-pointer"
+                          />
+                          {cp?.avatar_url ? (
+                            <img
+                              src={cp.avatar_url}
+                              alt={page.name}
+                              className="w-5 h-5 rounded-full object-cover border border-slate-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                              {page.name.slice(0, 1)}
+                            </div>
+                          )}
+                          <span className="truncate flex-1">{page.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                            {page.page_id.slice(-4)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
+
+              {/* Match Type & Cooldown Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">نوع المطابقة:</label>
+                  <select
+                    value={matchType}
+                    onChange={(e) => setMatchType(e.target.value as any)}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary cursor-pointer"
+                  >
+                    <option value="contains">يحتوي على (Contains)</option>
+                    <option value="exact">مطابقة تامة (Exact)</option>
+                    <option value="regex">تعبير نمطي (Regex)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">فترة التهدئة (بالدقائق):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={cooldownMinutes}
+                    onChange={(e) => setCooldownMinutes(Number(e.target.value))}
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Channels (Default Messenger) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">القنوات المفعلة:</label>
                 <div className="flex items-center gap-3">
                   {['messenger', 'instagram', 'whatsapp'].map((ch) => (
                     <label key={ch} className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
-                      <input type="checkbox" checked={channels.includes(ch)} onChange={() => { if(channels.includes(ch) && channels.length > 1) setChannels(channels.filter(c => c !== ch)); else if(!channels.includes(ch)) setChannels([...channels, ch]); }} className="rounded text-theme-primary focus:ring-theme-primary accent-theme-primary" />
-                      <span className="capitalize">{ch}</span>
+                      <input
+                        type="checkbox"
+                        checked={channels.includes(ch)}
+                        onChange={() => {
+                          if (channels.includes(ch) && channels.length > 1) {
+                            setChannels(channels.filter((c) => c !== ch));
+                          } else if (!channels.includes(ch)) {
+                            setChannels([...channels, ch]);
+                          }
+                        }}
+                        className="rounded text-theme-primary focus:ring-theme-primary accent-theme-primary"
+                      />
+                      <span className="capitalize">{ch === 'messenger' ? 'Messenger (افتراضي)' : ch}</span>
                     </label>
                   ))}
                 </div>
               </div>
+
+              {/* Keywords Section with Copy Button */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">الكلمات المفتاحية:</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">الكلمات المفتاحية:</label>
+                  {keywords.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(keywords.join(', '), 'keywords')}
+                      className="text-[11px] text-slate-600 hover:text-theme-primary font-bold flex items-center gap-1 cursor-pointer transition bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg border border-slate-200/60"
+                      title="نسخ جميع الكلمات المفتاحية للحافظة"
+                    >
+                      {copyFeedback === 'keywords' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span className="text-emerald-600 font-bold">تم نسخ الكلمات ✓</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-slate-500" />
+                          <span>نسخ الكلمات 📋</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
-                  <input type="text" value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); handleAddKeyword(); } }} placeholder="اكتب ثم اضغط إضافة..." className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary" />
-                  <button type="button" onClick={handleAddKeyword} className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer">إضافة</button>
+                  <input
+                    type="text"
+                    value={keywordInput}
+                    onChange={(e) => setKeywordInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddKeyword();
+                      }
+                    }}
+                    placeholder="اكتب ثم اضغط إضافة..."
+                    className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddKeyword}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    إضافة
+                  </button>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {keywords.map((kw, idx) => (
-                    <span key={idx} className="px-2.5 py-1 bg-theme-primary-tint text-theme-primary text-xs font-bold rounded-lg border border-theme-primary/20 flex items-center gap-1.5">
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 bg-theme-primary-tint text-theme-primary text-xs font-bold rounded-lg border border-theme-primary/20 flex items-center gap-1.5"
+                    >
                       <span>{kw}</span>
-                      <button type="button" onClick={() => handleRemoveKeyword(kw)} className="text-theme-primary/70 hover:text-theme-primary cursor-pointer">✕</button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveKeyword(kw)}
+                        className="text-theme-primary/70 hover:text-theme-primary cursor-pointer"
+                      >
+                        ✕
+                      </button>
                     </span>
                   ))}
                 </div>
               </div>
 
-              {/* Single Consolidated Response Textarea with Sequential Message Note */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700">نص الرد التلقائي:</label>
-                  <span className="text-[11px] text-theme-primary font-bold flex items-center gap-1 bg-theme-primary-tint px-2.5 py-0.5 rounded-lg border border-theme-primary/20">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>إرسال تسلسلي ذكي</span>
-                  </span>
+              {/* Per-Page Response Customization Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-900">تخصيص رد مختلف لكل صفحة</span>
+                    <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                      ميزة ديناميكية
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    إمكانية إرسال رد مخصص حسب الصفحة المستلمة لنفس الكلمات المفتاحية
+                  </p>
                 </div>
-                <textarea
-                  rows={5}
-                  required
-                  value={responseText}
-                  onChange={(e) => setResponseText(e.target.value)}
-                  placeholder="اكتب رسالة الرد التلقائي هنا...
-يمكنك كتابة عدة فقرات أو أسطر مفصولة، وسيقوم النظام بإرسال كل فقرة كرسالة منفصلة بشكل متتالي للعميل."
-                  className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary leading-relaxed shadow-2xs"
-                />
-                <div className="p-2.5 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-900 flex items-center gap-2">
-                  <span className="text-sm shrink-0">💡</span>
-                  <span className="font-semibold text-[11px]">
-                    ملاحظة: كل سطر جديد أو فقرة مفصولة ستصل للعميل كرسالة منفصلة تلقائياً.
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isCustomPerPage;
+                    setIsCustomPerPage(next);
+                    if (next && Object.keys(perPageReplies).length === 0 && responseText.trim()) {
+                      const initReplies: Record<string, string> = {};
+                      selectedModalPages.forEach((pid) => {
+                        initReplies[pid] = responseText;
+                      });
+                      setPerPageReplies(initReplies);
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isCustomPerPage ? 'bg-theme-primary' : 'bg-slate-300'
+                  }`}
+                  role="switch"
+                  aria-checked={isCustomPerPage}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      isCustomPerPage ? '-translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">فترة التهدئة (بالدقائق):</label>
-                <input type="number" min={0} value={cooldownMinutes} onChange={(e) => setCooldownMinutes(Number(e.target.value))} className="w-full bg-slate-50 text-xs font-medium p-2.5 rounded-xl border border-slate-200" />
-              </div>
+              {/* Response Section: Single Textarea or Per-Page Textareas */}
+              {!isCustomPerPage ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700">
+                      نص الرد التلقائي (يطبق على الصفحات المحددة):
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {responseText.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(responseText, 'response')}
+                          className="text-[11px] text-slate-600 hover:text-theme-primary font-bold flex items-center gap-1 cursor-pointer transition bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg border border-slate-200/60"
+                          title="نسخ نص الرد للحافظة"
+                        >
+                          {copyFeedback === 'response' ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span className="text-emerald-600 font-bold">تم نسخ الرد ✓</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-500" />
+                              <span>نسخ الرد 📋</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <span className="text-[11px] text-theme-primary font-bold flex items-center gap-1 bg-theme-primary-tint px-2.5 py-0.5 rounded-lg border border-theme-primary/20">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>إرسال تسلسلي ذكي</span>
+                      </span>
+                    </div>
+                  </div>
+                  <textarea
+                    rows={5}
+                    required
+                    value={responseText}
+                    onChange={(e) => setResponseText(e.target.value)}
+                    placeholder="اكتب رسالة الرد التلقائي هنا...
+يمكنك كتابة عدة فقرات أو أسطر مفصولة، وسيقوم النظام بإرسال كل فقرة كرسالة منفصلة بشكل متتالي للعميل."
+                    className="w-full bg-slate-50 text-xs font-medium text-slate-900 p-3.5 rounded-2xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary leading-relaxed shadow-2xs"
+                  />
+                  <div className="p-2.5 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-900 flex items-center gap-2">
+                    <span className="text-sm shrink-0">💡</span>
+                    <span className="font-semibold text-[11px]">
+                      ملاحظة: كل سطر جديد أو فقرة مفصولة ستصل للعميل كرسالة منفصلة تلقائياً بفارق 1.2 ثانية.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      ردود مخصصة لكل صفحة ({selectedModalPages.length} صفحة محددة):
+                    </label>
+                    <span className="text-[11px] text-theme-primary font-bold flex items-center gap-1 bg-theme-primary-tint px-2.5 py-0.5 rounded-lg border border-theme-primary/20">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>رد ديناميكي حسب الصفحة</span>
+                    </span>
+                  </div>
+
+                  {selectedModalPages.length === 0 ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold text-center">
+                      يرجى اختيار صفحة واحدة على الأقل من قائمة الصفحات بالأعلى لتخصيص رد لها.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                      {selectedModalPages.map((pid) => {
+                        const page = availablePages.find((p) => p.page_id === pid);
+                        const cp = connectedPages.find((p) => p.page_id === pid);
+                        const pageTitle = page ? page.name : `صفحة (${pid})`;
+                        const pageReply = perPageReplies[pid] || '';
+                        const copyKey = `reply_${pid}`;
+
+                        return (
+                          <div key={pid} className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {cp?.avatar_url ? (
+                                  <img src={cp.avatar_url} alt={pageTitle} className="w-5 h-5 rounded-full object-cover" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-theme-primary-tint text-theme-primary text-[10px] font-bold flex items-center justify-center">
+                                    {pageTitle.slice(0, 1)}
+                                  </div>
+                                )}
+                                <span className="text-xs font-bold text-slate-800">
+                                  نص الرد لصفحة: <span className="text-theme-primary">{pageTitle}</span>
+                                </span>
+                              </div>
+                              {pageReply.trim() && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(pageReply, copyKey)}
+                                  className="text-[11px] text-slate-600 hover:text-theme-primary font-bold flex items-center gap-1 cursor-pointer transition bg-white hover:bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200/60 shadow-2xs"
+                                  title={`نسخ رد صفحة ${pageTitle}`}
+                                >
+                                  {copyFeedback === copyKey ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-600" />
+                                      <span className="text-emerald-600 font-bold">تم النسخ ✓</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3 text-slate-500" />
+                                      <span>نسخ الرد 📋</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              rows={3}
+                              value={pageReply}
+                              onChange={(e) => setPerPageReplies((prev) => ({ ...prev, [pid]: e.target.value }))}
+                              placeholder={`اكتب نص الرد المخصص لصفحة ${pageTitle}... (الأسطر الجديدة سترسل كرسائل متتالية)`}
+                              className="w-full bg-white text-xs font-medium text-slate-900 p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary leading-relaxed"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center justify-end gap-2 pt-3 border-t">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 cursor-pointer hover:bg-slate-100">إلغاء</button>
                 <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer">{isSubmitting ? 'جاري الحفظ...' : 'حفظ القاعدة'}</button>

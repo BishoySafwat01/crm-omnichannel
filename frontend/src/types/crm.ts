@@ -289,6 +289,7 @@ export interface ConnectedPage {
   page_id: string;
   name: string;
   category?: string | null;
+  avatar_url?: string | null;
   instagram_business_account_id?: string | null;
   status: string;
   is_active?: boolean;

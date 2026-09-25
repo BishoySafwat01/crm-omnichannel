@@ -137,15 +137,22 @@ class AutomationService:
                 return None
 
         # 2. Strict Page-Level Isolation:
-        # Match keywords ONLY against active rules where rule.page_id == conv.page_id.
-        # Under no circumstance should a rule from one page trigger on another page.
+        # Match keywords against active rules where rule.page_id == conv.page_id,
+        # or rule applies globally (page_id is null/'all'), or page_responses contains conv_page_id.
         if not conv_page_id:
             logger.info("[Automation Engine] Conversation %s has no resolved page_id. Skipping auto-reply to enforce page isolation.", conversation.id)
             return None
 
+        from sqlalchemy import or_
         stmt = select(AutomationRule).where(
             AutomationRule.is_active == True,
-            AutomationRule.page_id == conv_page_id,
+            or_(
+                AutomationRule.page_id == conv_page_id,
+                AutomationRule.page_id.is_(None),
+                AutomationRule.page_id == "all",
+                AutomationRule.page_id == "",
+                AutomationRule.page_responses.has_key(conv_page_id),
+            ),
         )
         res = await session.execute(stmt)
         rules = list(res.scalars().all())
@@ -159,10 +166,22 @@ class AutomationService:
         norm_inbound = normalize_arabic(clean_text)
 
         for rule in rules:
-            # Channel matching check
-            if rule.channels and len(rule.channels) > 0:
-                rule_channels_lower = [c.lower() for c in rule.channels]
-                if "all" not in rule_channels_lower and conv_channel not in rule_channels_lower:
+            # Channel matching check: rule only fires if incoming channel matches
+            rule_channels = [c.lower().strip() for c in (rule.channels or []) if c]
+            if not rule_channels:
+                rule_channels = ["messenger"]
+            if "all" not in rule_channels and conv_channel not in rule_channels:
+                continue
+
+            # Page applicability check: enforce strict isolation
+            r_page_id = (rule.page_id or "").strip()
+            r_responses = rule.page_responses if isinstance(rule.page_responses, dict) else {}
+            if r_page_id and r_page_id.lower() != "all":
+                if r_page_id != conv_page_id and conv_page_id not in r_responses:
+                    continue
+            else:
+                # Rule was created for multi-page selection: if page_responses specified, conv_page_id must be in it
+                if r_responses and len(r_responses) > 0 and conv_page_id not in r_responses:
                     continue
 
             # Keyword trigger matching check with Arabic normalization
@@ -245,8 +264,10 @@ class AutomationService:
             session.add(execution_log)
             await session.commit()
 
-            # 5. Multi-Message Sequential Dispatch on Newlines
-            raw_text = (rule.response_text or "").strip()
+            # 5. Response Text Resolution (Per-page override if present, else fallback)
+            page_responses = rule.page_responses if isinstance(rule.page_responses, dict) else {}
+            custom_reply = (page_responses.get(conv_page_id) or "").strip()
+            raw_text = custom_reply if custom_reply else (rule.response_text or "").strip()
             if not raw_text:
                 return None
 
