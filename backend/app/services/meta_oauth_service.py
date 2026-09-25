@@ -20,19 +20,25 @@ from app.services.connected_page_service import ConnectedPageService
 logger = logging.getLogger("app.services.meta_oauth")
 
 VALID_SCOPES = [
-    "public_profile",
     "pages_show_list",
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
+    "instagram_basic",
+    "instagram_manage_messages",
+    "instagram_manage_comments",
+    "public_profile",
 ]
 
 DEFAULT_SCOPES = [
-    "public_profile",
     "pages_show_list",
     "pages_messaging",
     "pages_read_engagement",
     "pages_manage_metadata",
+    "instagram_basic",
+    "instagram_manage_messages",
+    "instagram_manage_comments",
+    "public_profile",
 ]
 
 DEFAULT_SUBSCRIBED_WEBHOOK_FIELDS = [
@@ -245,7 +251,7 @@ class MetaOAuthService:
         app_secret = settings.META_APP_SECRET
         url = f"https://graph.facebook.com/{version}/me/accounts"
         params = {
-            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,profile_picture_url}",
+            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,name,profile_picture_url}",
             "access_token": long_lived_user_token,
             "limit": 100,
         }
@@ -304,7 +310,7 @@ class MetaOAuthService:
                     try:
                         p_url = f"https://graph.facebook.com/{version}/{c_pid}"
                         p_params = {
-                            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,profile_picture_url}",
+                            "fields": "id,name,access_token,category,tasks,picture,instagram_business_account{id,username,name,profile_picture_url}",
                             "access_token": long_lived_user_token,
                         }
                         p_resp = await client.get(p_url, params=p_params)
@@ -406,6 +412,64 @@ class MetaOAuthService:
             return False
 
     @classmethod
+    async def subscribe_instagram_to_webhooks(
+        cls,
+        ig_id: str,
+        page_token: str,
+        subscribed_fields: Optional[list[str] | str] = None,
+    ) -> bool:
+        """
+        Autonomous Instagram Webhook App Subscription:
+        Sends POST https://graph.facebook.com/v23.0/{ig_id}/subscribed_apps
+        with subscribed_fields=messages,messaging_postbacks,messaging_seen,comments
+        using the specific Page access_token.
+        Returns True on {"success": true}.
+        """
+        if not ig_id or not page_token:
+            return False
+
+        version = settings.META_GRAPH_API_VERSION or "v23.0"
+        url = f"https://graph.facebook.com/{version}/{ig_id}/subscribed_apps"
+
+        if subscribed_fields is None:
+            fields_str = "messages,messaging_postbacks,messaging_seen,comments"
+        elif isinstance(subscribed_fields, list):
+            fields_str = ",".join(subscribed_fields)
+        else:
+            fields_str = str(subscribed_fields)
+
+        params = {
+            "subscribed_fields": fields_str,
+            "access_token": page_token,
+        }
+        headers = {
+            "Authorization": f"Bearer {page_token}",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    success = bool(data.get("success", False)) if isinstance(data, dict) else False
+                    if success:
+                        logger.info("Successfully subscribed Instagram account %s to webhooks with fields: %s", ig_id, fields_str)
+                    else:
+                        logger.warning("Instagram account %s webhook subscription returned non-true response: %s", ig_id, data)
+                    return success
+                else:
+                    logger.warning(
+                        "Failed to subscribe Instagram account %s to webhooks (HTTP %d): %s",
+                        ig_id,
+                        resp.status_code,
+                        resp.text,
+                    )
+                    return False
+        except Exception as exc:
+            logger.error("Exception subscribing Instagram account %s to webhooks: %s", ig_id, exc)
+            return False
+
+    @classmethod
     async def save_or_update_pages(
         cls,
         pages: list[dict[str, Any]],
@@ -443,7 +507,7 @@ class MetaOAuthService:
                 else:
                     ig_id = str(ig_account).strip() or None
 
-            # Autonomous Webhook App Subscription
+            # Autonomous Webhook App Subscription for Facebook Page
             is_subscribed = False
             if raw_token:
                 try:
@@ -455,6 +519,16 @@ class MetaOAuthService:
                 except Exception as sub_exc:
                     logger.warning("Autonomous webhook subscription for page %s failed: %s", page_id, sub_exc)
                     is_subscribed = False
+
+            # Autonomous Webhook App Subscription for linked Instagram Account
+            if ig_id and raw_token:
+                try:
+                    await cls.subscribe_instagram_to_webhooks(
+                        ig_id=ig_id,
+                        page_token=raw_token,
+                    )
+                except Exception as ig_sub_exc:
+                    logger.warning("Autonomous webhook subscription for Instagram account %s failed: %s", ig_id, ig_sub_exc)
 
             stmt = select(ConnectedPage).where(ConnectedPage.page_id == page_id)
             result = await db.execute(stmt)

@@ -203,6 +203,80 @@ async def test_meta_webhook_signature_validation():
 
 
 @pytest.mark.asyncio
+async def test_meta_webhook_dual_app_signatures():
+    import uuid
+    mid1 = f"mid_dual_sig_{uuid.uuid4().hex[:8]}"
+    mid2 = f"mid_dual_sig_{uuid.uuid4().hex[:8]}"
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841405938201948",
+                "messaging": [
+                    {
+                        "sender": {"id": "ig_user_123"},
+                        "recipient": {"id": "17841405938201948"},
+                        "timestamp": 1712345678902,
+                        "message": {"mid": mid1, "text": "Instagram message test"},
+                    }
+                ],
+            }
+        ],
+    }
+    main_secret = "main_app_secret_111"
+    insta_secret = "insta_app_secret_222"
+    fallback_secret = "fallback_app_secret_333"
+
+    import json
+    raw_body = json.dumps(payload).encode("utf-8")
+    insta_sig = "sha256=" + hmac.new(insta_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    # 2. Fallback secret signature passes with distinct message ID
+    payload_fb = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841405938201948",
+                "messaging": [
+                    {
+                        "sender": {"id": "ig_user_123"},
+                        "recipient": {"id": "17841405938201948"},
+                        "timestamp": 1712345678903,
+                        "message": {"mid": mid2, "text": "Instagram message fallback test"},
+                    }
+                ],
+            }
+        ],
+    }
+    raw_body_fb = json.dumps(payload_fb).encode("utf-8")
+    fallback_sig = "sha256=" + hmac.new(fallback_secret.encode("utf-8"), raw_body_fb, hashlib.sha256).hexdigest()
+
+    with patch.object(settings, "META_APP_SECRET", main_secret), \
+         patch.object(settings, "INSTA_APP_SECRET", insta_secret), \
+         patch.object(settings, "META_APP_SECRET_FALLBACKS", fallback_secret):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            # 1. Instagram app signature passes
+            res_insta = await client.post(
+                "/api/v1/meta/webhook",
+                headers={"x-hub-signature-256": insta_sig},
+                content=raw_body,
+            )
+            assert res_insta.status_code == 200
+            assert res_insta.json()["status"] == "success"
+
+            # 2. Fallback secret signature passes
+            res_fb = await client.post(
+                "/api/v1/meta/webhook",
+                headers={"x-hub-signature-256": fallback_sig},
+                content=raw_body_fb,
+            )
+            assert res_fb.status_code == 200
+            assert res_fb.json()["status"] == "success"
+
+
+@pytest.mark.asyncio
 async def test_meta_inbound_webhook_valid_event():
     page_id = settings.META_PAGE_ID or "1302055352987458"
     payload = {

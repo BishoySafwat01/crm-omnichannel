@@ -410,8 +410,27 @@ async def receive_meta_webhook(
             detail="Invalid X-Hub-Signature-256 header.",
         )
 
-    # Candidates for HMAC validation: current production secret + legacy app secret
+    # Candidates for HMAC validation: current production secret + Instagram app secret + fallbacks + legacy secret
     candidate_secrets = [app_secret.strip()]
+    insta_secret = getattr(settings, "INSTA_APP_SECRET", None)
+    if insta_secret and str(insta_secret).strip() and str(insta_secret).strip() not in candidate_secrets:
+        candidate_secrets.append(str(insta_secret).strip())
+
+    fallbacks = getattr(settings, "META_APP_SECRET_FALLBACKS", None)
+    if fallbacks:
+        fb_str = str(fallbacks).strip()
+        try:
+            parsed = json.loads(fb_str) if fb_str.startswith("[") else fb_str.split(",")
+            for sec in parsed:
+                s_clean = str(sec).strip()
+                if s_clean and s_clean not in candidate_secrets:
+                    candidate_secrets.append(s_clean)
+        except Exception:
+            for s in fb_str.split(","):
+                s_clean = s.strip()
+                if s_clean and s_clean not in candidate_secrets:
+                    candidate_secrets.append(s_clean)
+
     legacy_secret = getattr(settings, "META_PREVIOUS_APP_SECRET", "35bdb9cdc96c0eab51a72c0d9b07f307")
     if legacy_secret and legacy_secret.strip() not in candidate_secrets:
         candidate_secrets.append(legacy_secret.strip())

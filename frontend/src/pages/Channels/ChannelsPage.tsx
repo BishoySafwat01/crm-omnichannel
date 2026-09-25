@@ -186,7 +186,7 @@ export const ChannelsPage: React.FC = () => {
                 ) : (
                   <>
                     <Plug className="w-4 h-4" />
-                    <span>ربط صفحة فيسبوك جديدة (Facebook Pages)</span>
+                    <span>ربط قنوات Meta (Facebook & Instagram)</span>
                   </>
                 )}
               </button>

@@ -442,6 +442,15 @@ async def subscribe_connected_page(
         page_id=page.page_id,
         page_token=token,
     )
+    if page.instagram_business_account_id and token:
+        try:
+            await MetaOAuthService.subscribe_instagram_to_webhooks(
+                ig_id=page.instagram_business_account_id,
+                page_token=token,
+            )
+        except Exception as ig_sub_exc:
+            logger.warning("Failed to subscribe Instagram account %s to webhooks: %s", page.instagram_business_account_id, ig_sub_exc)
+
     page.is_webhook_subscribed = subscribed
     await db.commit()
     await db.refresh(page)

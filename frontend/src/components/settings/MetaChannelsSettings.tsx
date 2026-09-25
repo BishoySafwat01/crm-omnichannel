@@ -169,7 +169,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
                   ) : (
                     <>
                       <Plug className="w-4 h-4" />
-                      <span>ربط صفحات فيسبوك (Connect Pages)</span>
+                      <span>ربط قنوات فيسبوك و إنستغرام (Connect Meta Channels)</span>
                     </>
                   )}
                 </button>
@@ -309,7 +309,7 @@ export const MetaChannelsSettings: React.FC<MetaChannelsSettingsProps> = ({
               <p className="text-xs text-slate-500 leading-relaxed">
                 {searchQuery
                   ? 'جرب البحث بمعرف أو اسم مختلف.'
-                  : 'اضغط على زر "ربط صفحات فيسبوك" لإتمام مصادقة OAuth واختيار الصفحات التابعة لعلاماتك التجارية.'}
+                  : 'اضغط على زر "ربط قنوات فيسبوك و إنستغرام" لإتمام مصادقة OAuth واختيار الصفحات وحسابات إنستغرام التابعة لعلاماتك التجارية.'}
               </p>
             </div>
             {!searchQuery && (

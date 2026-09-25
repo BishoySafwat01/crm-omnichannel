@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     META_APP_ID: str | None = "2591862777899310"
     META_WEBHOOK_VERIFY_TOKEN: str | None = "LUXIRA_META_WEBHOOK_VERIFY_TOKEN"
     META_APP_SECRET: str | None = None
+    INSTA_APP_ID: str | None = None
+    INSTA_APP_SECRET: str | None = None
+    META_APP_SECRET_FALLBACKS: str | None = None
     WHATSAPP_PHONE_NUMBER_ID: str | None = None
     WHATSAPP_WABA_ID: str | None = None
     INSTAGRAM_ACCOUNT_ID: str | None = None

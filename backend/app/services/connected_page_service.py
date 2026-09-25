@@ -97,6 +97,17 @@ class ConnectedPageService:
                             p_row.is_webhook_subscribed = True
                             p_row.status = "ACTIVE"
                             await session.commit()
+
+                            if p_row.instagram_business_account_id:
+                                try:
+                                    from app.services.meta_oauth_service import MetaOAuthService
+                                    await MetaOAuthService.subscribe_instagram_to_webhooks(
+                                        ig_id=p_row.instagram_business_account_id,
+                                        page_token=token,
+                                    )
+                                except Exception as ig_sub_err:
+                                    logger.warning("[ConnectedPageService] Linked IG %s webhook subscription failed: %s", p_row.instagram_business_account_id, ig_sub_err)
+
                         logger.info("[ConnectedPageService] Successfully subscribed page %s to webhooks", pid)
                         return True
                     else:

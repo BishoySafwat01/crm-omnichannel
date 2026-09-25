@@ -33,7 +33,7 @@ interface ChannelsState {
 }
 
 export const FACEBOOK_PAGE_SCOPES =
-  'public_profile,pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
+  'pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata,instagram_basic,instagram_manage_messages,instagram_manage_comments,public_profile';
 
 let activeMetaPopup: Window | null = null;
 
