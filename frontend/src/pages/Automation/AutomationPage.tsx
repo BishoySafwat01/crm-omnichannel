@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   Filter,
   Copy,
+  Search,
 } from 'lucide-react';
 import {
   automationApi,
@@ -147,6 +148,7 @@ export const AutomationsManager: React.FC = () => {
   const [connectedPages, setConnectedPages] = useState<ConnectedPage[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>('all');
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchRulesAndLogs = async () => {
     setIsLoading(true);
@@ -238,8 +240,14 @@ export const AutomationsManager: React.FC = () => {
     return Array.from(map.entries()).map(([page_id, name]) => ({ page_id, name }));
   }, [connectedPages, rules]);
 
-  // Filtered Rules by Account/Page and Channel
+  const connectedPageNames = useMemo(() => {
+    return new Map(connectedPages.map((page) => [page.page_id, page.name || page.page_id]));
+  }, [connectedPages]);
+
+  // Unified filtering by account/page, channel, and all searchable rule fields.
   const filteredRules = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+
     return rules.filter((rule) => {
       let matchesPage = true;
       if (selectedPageId !== 'all') {
@@ -251,9 +259,40 @@ export const AutomationsManager: React.FC = () => {
         const ruleChans = rule.channels || [];
         matchesChannel = ruleChans.includes(selectedChannel);
       }
-      return matchesPage && matchesChannel;
+
+      let matchesSearch = true;
+      if (normalizedQuery) {
+        const pageResponseIds = rule.page_responses ? Object.keys(rule.page_responses) : [];
+        const pageIds = [rule.page_id, ...pageResponseIds].filter((pageId): pageId is string => Boolean(pageId));
+        const pageNames = pageIds.map((pageId) => connectedPageNames.get(pageId) || '');
+        const channelTerms = (rule.channels || []).flatMap((channel) => {
+          const normalizedChannel = channel.toLocaleLowerCase();
+          if (normalizedChannel.includes('whatsapp')) return [channel, 'whatsapp', 'واتس', 'واتساب'];
+          if (normalizedChannel.includes('messenger') || normalizedChannel.includes('facebook')) {
+            return [channel, 'messenger', 'facebook', 'ماسنجر', 'فيس', 'فيسبوك'];
+          }
+          if (normalizedChannel.includes('instagram')) {
+            return [channel, 'instagram', 'انستا', 'انستغرام', 'إنستغرام'];
+          }
+          return [channel];
+        });
+        const searchableValues = [
+          rule.name,
+          ...(rule.keywords || []),
+          rule.response_text,
+          ...Object.values(rule.page_responses || {}),
+          ...pageNames,
+          ...channelTerms,
+        ];
+
+        matchesSearch = searchableValues.some((value) =>
+          String(value || '').trim().toLocaleLowerCase().includes(normalizedQuery)
+        );
+      }
+
+      return matchesPage && matchesChannel && matchesSearch;
     });
-  }, [rules, selectedPageId, selectedChannel]);
+  }, [rules, selectedPageId, selectedChannel, searchQuery, connectedPageNames]);
 
   const isAllPagesSelected = useMemo(() => {
     return availablePages.length > 0 && availablePages.every((p) => selectedModalPages.includes(p.page_id));
@@ -718,6 +757,30 @@ export const AutomationsManager: React.FC = () => {
             {/* Advanced Multi-Filter Bar (by Account/Page and Independent Channels) */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 flex-1 flex-wrap">
+                {/* Comprehensive real-time search */}
+                <div className="relative flex-1 min-w-full xl:min-w-[420px]">
+                  <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="بحث شامل (اسم القاعدة، كلمة مفتاحية، نص الرد، اسم الصفحة، القناة...)"
+                    aria-label="بحث شامل في قواعد الأتمتة"
+                    className="w-full bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl py-2.5 pr-10 pl-10 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary transition"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                      title="مسح البحث"
+                      aria-label="مسح البحث"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 {/* Account / Page Dropdown Filter */}
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 shrink-0">
@@ -818,20 +881,30 @@ export const AutomationsManager: React.FC = () => {
             ) : filteredRules.length === 0 ? (
               <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-                  <Filter className="w-6 h-6" />
+                  {searchQuery.trim() ? <Search className="w-6 h-6" /> : <Filter className="w-6 h-6" />}
                 </div>
-                <h3 className="text-sm font-bold text-slate-800">لا توجد قواعد أتمتة تطابق الفلاتر المحددة</h3>
-                <p className="text-xs text-slate-500">جرب تغيير الحساب/الصفحة أو القناة لعرض القواعد المرتبطة</p>
+                <h3 className="text-sm font-bold text-slate-800">
+                  {searchQuery.trim() ? 'لا توجد قواعد أتمتة تطابق البحث' : 'لا توجد قواعد أتمتة تطابق الفلاتر المحددة'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {searchQuery.trim()
+                    ? `لم نعثر على نتائج لعبارة «${searchQuery.trim()}». جرب عبارة أخرى أو امسح البحث.`
+                    : 'جرب تغيير الحساب/الصفحة أو القناة لعرض القواعد المرتبطة'}
+                </p>
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedPageId('all');
-                    setSelectedChannel('all');
+                    if (searchQuery.trim()) {
+                      setSearchQuery('');
+                    } else {
+                      setSelectedPageId('all');
+                      setSelectedChannel('all');
+                    }
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>إعادة ضبط الفلاتر</span>
+                  <span>{searchQuery.trim() ? 'مسح البحث' : 'إعادة ضبط الفلاتر'}</span>
                 </button>
               </div>
             ) : (
