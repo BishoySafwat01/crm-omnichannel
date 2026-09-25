@@ -22,7 +22,15 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Cairo', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: [
+          'Tajawal',
+          'Plus Jakarta Sans',
+          'Twemoji',
+          'Noto Color Emoji',
+          'Segoe UI Emoji',
+          'Segoe UI Symbol',
+          'sans-serif',
+        ],
       },
     },
   },

@@ -174,13 +174,14 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   }[] = [
     { id: 'chat', label: 'الشات المباشر', icon: <MessageSquare className="w-3.5 h-3.5" /> },
     { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
-    { id: 'channels', label: 'القنوات', icon: <Radio className="w-3.5 h-3.5" /> },
+    { id: 'channels', label: 'القنوات (كل القنوات)', icon: <Radio className="w-3.5 h-3.5" /> },
     { id: 'automations', label: 'الأتمتة', icon: <Bot className="w-3.5 h-3.5" /> },
     { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
     { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
+  const activeNavItem = navItems.find((item) => item.id === activeMainView) || navItems[0];
 
   return (
     <header className="sticky top-0 z-30 w-full min-h-[56px] h-14 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip">
@@ -207,20 +208,25 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           </div>
         </div>
 
-        {/* Desktop Primary Navigation Strip (Screens >= 1200px / xl) */}
+        {/* Desktop Primary Navigation Strip (wide screens) */}
         {isUserAdmin && setActiveMainView && (
-          <nav className="hidden xl:flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60 backdrop-blur-md shrink-0">
+          <nav
+            className="hidden 2xl:flex items-center gap-0.5 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60 backdrop-blur-md shrink-0"
+            aria-label="التنقل الرئيسي"
+          >
             {navItems.map((item) => {
               const isActive = activeMainView === item.id;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => setActiveMainView(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
                   style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
-                  className={`text-xs flex items-center gap-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
+                  className={`text-[11px] flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
                     isActive
-                      ? 'text-white shadow-xs font-semibold rounded-xl px-3 py-1.5'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium rounded-xl px-3 py-1.5 transition-colors'
+                      ? 'text-white border-transparent shadow-xs font-bold'
+                      : 'text-slate-600 border-transparent hover:text-slate-900 hover:bg-white hover:border-slate-200/70 font-medium'
                   }`}
                 >
                   <span className={isActive ? 'text-white' : 'text-slate-500'}>
@@ -233,9 +239,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           </nav>
         )}
 
-        {/* Mobile / Tablet Collapsible Menu Drawer Trigger (< 1200px / xl) */}
+        {/* Responsive Collapsible Menu Drawer Trigger */}
         {isUserAdmin && setActiveMainView && (
-          <div className="relative xl:hidden" ref={mobileMenuRef}>
+          <div className="relative 2xl:hidden" ref={mobileMenuRef}>
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -243,7 +249,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               title="القائمة الرئيسية والتنقل"
             >
               {isMobileMenuOpen ? <X className="w-4 h-4 text-slate-600" /> : <Menu className="w-4 h-4 text-slate-600" />}
-              <span className="hidden sm:inline text-xs">الأقسام</span>
+              <span className="hidden sm:inline text-xs max-w-[150px] truncate">{activeNavItem.label}</span>
             </button>
 
             {/* Mobile / Tablet Nav Dropdown Menu */}
@@ -264,6 +270,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                           setActiveMainView(item.id);
                           setIsMobileMenuOpen(false);
                         }}
+                        aria-current={isActive ? 'page' : undefined}
                         style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
                         className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer ${
                           isActive

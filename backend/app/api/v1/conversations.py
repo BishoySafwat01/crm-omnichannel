@@ -171,7 +171,10 @@ async def list_conversations(
     status_filter: Optional[ConversationStatusEnum] = Query(
         None, alias="status", description="Filter by status"
     ),
-    search: Optional[str] = Query(None, description="Search by subject"),
+    search: Optional[str] = Query(
+        None,
+        description="Search by customer name, phone, external ID, subject, brand, or message contents",
+    ),
     brand: Optional[str] = Query(None, description="Filter by brand"),
     include_archived: bool = Query(False, description="Filter archived conversations"),
     location: Optional[str] = Query(None, description="Filter by customer location"),

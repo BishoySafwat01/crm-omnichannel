@@ -5,6 +5,7 @@
 @layer base {
   html {
     font-size: 13px;
+    font-family: 'Tajawal', 'Plus Jakarta Sans', 'Twemoji', 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -34,8 +35,16 @@
   body {
     background-color: #F8FAFC;
     color: #0F172A;
-    font-family: 'Tajawal', 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Tajawal', 'Plus Jakarta Sans', 'Twemoji', 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   }
+}
+
+/* Keep color emoji and country flags intact on Windows when the text font has no glyph. */
+.emoji,
+[data-emoji],
+[role='img'] {
+  font-family: 'Twemoji', 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  font-variant-emoji: emoji;
 }
 
 /* Custom Scrollbars */

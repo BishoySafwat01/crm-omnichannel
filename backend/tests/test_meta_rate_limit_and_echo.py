@@ -185,6 +185,7 @@ async def test_webhook_echo_does_not_create_customer_for_page():
             external_conversation_id=f"conv_echo_{rand_suffix}",
             channel=ChannelEnum.MESSENGER,
             provider=ProviderEnum.META,
+            unread_count=4,
         )
         session.add(conv)
         await session.flush()
@@ -214,6 +215,9 @@ async def test_webhook_echo_does_not_create_customer_for_page():
         # Verify agent message was linked to echo MID
         refreshed_msg = await session.get(Message, agent_msg.id)
         assert refreshed_msg.external_message_id == echo_mid
+        await session.refresh(conv)
+        assert conv.unread_count == 0
+        assert conv.is_unread is False
 
 
 # ==========================================
@@ -448,5 +452,3 @@ async def test_webhook_instagram_native_echo_with_connected_page():
             assert call_args["payload"]["brand"] == "Demo Business CRM"
             assert call_args["payload"]["message"]["sender_type"] == "agent"
             assert call_args["payload"]["message"]["direction"] == "OUTBOUND"
-
-

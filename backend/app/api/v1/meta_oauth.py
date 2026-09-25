@@ -40,6 +40,7 @@ class ConnectedPageResponse(BaseModel):
     page_id: str
     name: str
     category: Optional[str] = None
+    avatar_url: Optional[str] = None
     instagram_business_account_id: Optional[str] = None
     status: str
     is_active: bool = True
@@ -491,4 +492,3 @@ async def refresh_connected_pages(
         message=result.get("message", ""),
         pages=serialized_pages,
     )
-

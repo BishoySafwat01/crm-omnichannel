@@ -103,6 +103,14 @@ async def lifespan(app: FastAPI):
                 logger.exception("[MetaSync] Unhandled exception in Meta sync loop")
             await asyncio.sleep(poll_interval)
 
+    async def backfill_meta_page_avatars():
+        try:
+            async with AsyncSessionLocal() as session:
+                updated = await meta_import_service.backfill_connected_page_avatars(session)
+                logger.info("[Page Avatar] Backfilled %d connected Page avatars.", updated)
+        except Exception:
+            logger.exception("[Page Avatar] Startup backfill failed")
+
     async def sla_eval_loop():
         from app.services.sla_service import SlaService
         await asyncio.sleep(10)
@@ -128,10 +136,11 @@ async def lifespan(app: FastAPI):
             return
         logger.info("👑 [LeaderElection] Worker %s starting singleton background tasks...", worker_id)
         auto_sub_task = asyncio.create_task(auto_subscribe_meta_page())
+        avatar_backfill_task = asyncio.create_task(backfill_meta_page_avatars())
         meta_task = asyncio.create_task(meta_sync_loop())
         sla_task = asyncio.create_task(sla_eval_loop())
         # BeOn background worker is disabled in pure Meta Direct mode
-        leader_tasks = [auto_sub_task, meta_task, sla_task]
+        leader_tasks = [auto_sub_task, avatar_backfill_task, meta_task, sla_task]
 
     def stop_leader_tasks():
         nonlocal leader_tasks

@@ -190,7 +190,37 @@ class MetaClient:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
         return await self._request("GET", f"/{target_page_id}", params={"fields": "id,name,category,picture.type(large)"}, page_id=target_page_id, db=db)
 
-    async def get_page_metadata(self, page_id: Optional[str] = None) -> dict[str, Any]:
+    async def get_page_picture(
+        self,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[str]:
+        """Return the non-redirecting Graph URL for a Page's large profile picture."""
+        target_page_id = page_id or self.page_id
+        if not target_page_id:
+            raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
+
+        data = await self._request(
+            "GET",
+            f"/{target_page_id}/picture",
+            params={"redirect": 0, "type": "large"},
+            page_id=target_page_id,
+            access_token=access_token,
+            db=db,
+        )
+        picture_data = data.get("data", data) if isinstance(data, dict) else {}
+        if not isinstance(picture_data, dict) or picture_data.get("is_silhouette"):
+            return None
+        picture_url = picture_data.get("url")
+        return str(picture_url).strip() if picture_url else None
+
+    async def get_page_metadata(
+        self,
+        page_id: Optional[str] = None,
+        access_token: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, Any]:
         target_page_id = page_id or self.page_id
         if not target_page_id:
             raise MetaAPIError("META_PAGE_ID is missing or unconfigured.", status_code=400)
@@ -199,12 +229,27 @@ class MetaClient:
             f"/{target_page_id}",
             params={"fields": "id,name,category,picture.type(large)"},
             page_id=target_page_id,
+            access_token=access_token,
+            db=db,
         )
-        picture_url = None
+        embedded_picture_url = None
         if isinstance(data, dict):
             pic_obj = data.get("picture", {})
             if isinstance(pic_obj, dict):
-                picture_url = pic_obj.get("data", {}).get("url")
+                embedded_picture_url = pic_obj.get("data", {}).get("url")
+        try:
+            picture_url = await self.get_page_picture(
+                page_id=target_page_id,
+                access_token=access_token,
+                db=db,
+            )
+        except MetaAPIError as exc:
+            logger.warning(
+                "Failed to resolve explicit Page picture endpoint for %s: %s",
+                target_page_id,
+                exc,
+            )
+            picture_url = embedded_picture_url
         return {
             "id": str(data.get("id", target_page_id)),
             "name": data.get("name", f"Page {target_page_id}"),
@@ -1009,6 +1054,4 @@ class MetaClient:
         except Exception as exc:
             logger.warning("Failed to unblock user %s on page %s via Meta Graph API: %s", psid, page_id, exc)
             return {"success": False, "error": str(exc)}
-
-
 

@@ -25,6 +25,45 @@ logger = logging.getLogger("MessageService")
 
 class MessageService:
     @staticmethod
+    def _is_automated_reply(
+        metadata: Optional[dict[str, Any]], sender_external_id: Optional[str]
+    ) -> bool:
+        metadata = metadata or {}
+        return bool(
+            metadata.get("is_automated")
+            or metadata.get("is_bot")
+            or sender_external_id == "automation_bot"
+        )
+
+    @staticmethod
+    async def _broadcast_automation_visibility_sync(
+        conversation: Conversation,
+    ) -> None:
+        """Refresh chat lists after a bot reply clears the unread state."""
+        try:
+            await ws_broadcaster.broadcast_event(
+                target="conversation",
+                conversation_id=str(conversation.id),
+                payload={
+                    "type": "CONVERSATION_UPDATED",
+                    "conversation_id": str(conversation.id),
+                    "unread_count": 0,
+                    "is_unread": False,
+                    "last_message_at": (
+                        conversation.last_message_at.isoformat()
+                        if conversation.last_message_at
+                        else None
+                    ),
+                    "last_sender_type": SenderTypeEnum.AGENT.value,
+                },
+            )
+        except Exception as ws_err:
+            logger.warning(
+                "[Automation] Failed to broadcast conversation visibility sync: %s",
+                ws_err,
+            )
+
+    @staticmethod
     async def create_message(
         session: AsyncSession,
         conversation_id: uuid.UUID,
@@ -224,6 +263,10 @@ class MessageService:
             raise ValueError("Message text cannot be empty or whitespace only.")
         if len(clean_text) > 2000:
             raise ValueError("Message text exceeds maximum length of 2000 characters.")
+
+        is_automated_reply = MessageService._is_automated_reply(
+            metadata_, sender_external_id
+        )
 
         # Load Conversation with eager-loaded customer
         stmt = (
@@ -476,7 +519,16 @@ class MessageService:
                 if diff_sec < 2.0:
                     logger.warning("[Idempotency] Duplicate outbound message detected within 2s for conversation %s. Skipping duplicate dispatch.", conv.id)
                     await ConversationService.sync_unread_state_with_latest_message(session, conv)
+                    if is_automated_reply:
+                        conv.unread_count = 0
+                        conv.is_unread = False
+                        if not conv.last_message_at:
+                            conv.last_message_at = msg_time
+                        if not conv.last_activity_at:
+                            conv.last_activity_at = msg_time
                     await session.commit()
+                    if is_automated_reply:
+                        await MessageService._broadcast_automation_visibility_sync(conv)
                     return recent_agent_msg
 
         # Send message through adapter (Check binary file attachment upload for Meta)
@@ -686,7 +738,17 @@ class MessageService:
             existing_msg = existing_res.scalar_one_or_none()
             if existing_msg:
                 await ConversationService.sync_unread_state_with_latest_message(session, conv)
+                if is_automated_reply:
+                    conv.unread_count = 0
+                    conv.is_unread = False
+                    if existing_msg.created_at:
+                        if not conv.last_message_at:
+                            conv.last_message_at = existing_msg.created_at
+                        if not conv.last_activity_at:
+                            conv.last_activity_at = existing_msg.created_at
                 await session.commit()
+                if is_automated_reply:
+                    await MessageService._broadcast_automation_visibility_sync(conv)
                 return existing_msg
 
         # Determine Message Type
@@ -748,6 +810,9 @@ class MessageService:
         conv.last_activity_at = now_utc
         await session.flush()
         await ConversationService.sync_unread_state_with_latest_message(session, conv)
+        if is_automated_reply:
+            conv.unread_count = 0
+            conv.is_unread = False
 
         # Auto-detect location from outbound text and update customer record
         if clean_text:
@@ -894,6 +959,8 @@ class MessageService:
 
         await session.commit()
         await session.refresh(new_message)
+        if is_automated_reply:
+            await MessageService._broadcast_automation_visibility_sync(conv)
 
         msg_resp = MessageResponse.model_validate(new_message)
         if sender_user_id:

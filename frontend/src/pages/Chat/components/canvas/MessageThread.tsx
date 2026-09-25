@@ -113,23 +113,23 @@ export const MemoizedMessageBubble = React.memo<{
       <div
         id={`msg-${msg.id}`}
         className={`group/msg relative flex items-center gap-1.5 my-1 transition-all ${
-          isAgent ? 'flex-row' : 'flex-row-reverse'
+          isAgent ? 'flex-row-reverse' : 'flex-row'
         }`}
       >
         <div
           className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs transition-all relative ${
             isFailed
-              ? 'bg-rose-50 text-rose-800 border border-rose-200 rounded-br-none font-medium'
+              ? `bg-rose-50 text-rose-800 border border-rose-200 font-medium ${isAgent ? 'rounded-tl-none' : 'rounded-tr-none'}`
               : isDeleted
               ? 'bg-slate-100/90 text-slate-400 border border-slate-200/80 rounded-2xl italic'
               : isAgent
-              ? 'bg-[#E6F4EA] text-[#137333] border border-emerald-100/60 rounded-2xl rounded-tl-none font-normal'
-              : 'bg-white text-[#1E293B] border border-slate-100 rounded-2xl rounded-tr-none font-normal'
+              ? 'bg-theme-primary-tint text-slate-800 border border-theme-primary/25 rounded-2xl rounded-tl-none font-normal'
+              : 'bg-white text-slate-800 border border-slate-200/60 rounded-2xl rounded-tr-none font-normal'
           }`}
         >
           {/* Sender Tag for Agent / Bot Messages */}
           {isAgent && !isDeleted && (
-            <span className="text-[10px] text-[#137333] font-bold block mb-1">
+            <span className="text-[10px] text-theme-primary font-bold block mb-1">
               {isAutomated ? (
                 <span className="inline-flex items-center gap-1">
                   <span className="text-[11px] leading-none" role="img" aria-label="Bot">🤖</span>
@@ -357,7 +357,7 @@ export const MemoizedMessageBubble = React.memo<{
           {/* Timestamp, Pin, Edited & Delivery Status */}
           <div
             className={`flex items-center gap-1.5 mt-1 text-[10px] ${
-              isAgent ? 'text-[#137333]/80 justify-start' : 'text-slate-400 justify-end'
+              isAgent ? 'text-theme-primary justify-start' : 'text-slate-400 justify-end'
             }`}
           >
             <span>{formatMessageTime(msg.created_at)}</span>
@@ -366,7 +366,7 @@ export const MemoizedMessageBubble = React.memo<{
                 msg.sender_name ||
                 (msg.sender_user_id &&
                   teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
-                <span className="text-[10px] text-[#137333] font-semibold flex items-center gap-0.5">
+                <span className="text-[10px] text-theme-primary font-semibold flex items-center gap-0.5">
                   <span>•</span>
                   <span>
                     {isAutomated
@@ -387,7 +387,7 @@ export const MemoizedMessageBubble = React.memo<{
             {isPending && <Clock className="w-3 h-3 text-amber-500 animate-spin" />}
             {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
             {isAgent && !isPending && !isFailed && !isDeleted && (
-              <span className="text-[#137333] font-bold text-[11px]" title="تم التوصيل">
+              <span className="text-theme-primary font-bold text-[11px]" title="تم التوصيل">
                 ✓✓
               </span>
             )}
@@ -568,7 +568,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
     <div
       ref={scrollContainerRef as any}
       onScroll={onInternalScroll}
-      className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-slate-50/40 scrollbar-none"
+      className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-gradient-to-b from-theme-primary-subtle via-white/90 to-slate-50/70 scrollbar-none"
     >
       {isFetchingMore && (
         <div className="text-center py-1 text-xs text-[#1A73E8] animate-pulse font-semibold">

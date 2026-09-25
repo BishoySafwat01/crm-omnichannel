@@ -175,6 +175,7 @@ async def test_successful_outbound_message_persisted_and_last_message_at_updated
             provider=ProviderEnum.META,
             channel=ChannelEnum.MESSENGER,
             external_conversation_id=f"t_outbound_{uuid.uuid4().hex[:8]}",
+            unread_count=3,
         )
         session.add(conv)
         await session.commit()
@@ -214,6 +215,8 @@ async def test_successful_outbound_message_persisted_and_last_message_at_updated
             )
         ).scalar_one()
         assert conv_db.last_message_at > old_last_message_at
+        assert conv_db.unread_count == 0
+        assert conv_db.is_unread is False
 
 
 @pytest.mark.asyncio
@@ -424,4 +427,3 @@ async def test_meta_client_messaging_type_response_and_unapproved_tag_fallback()
         assert first_payload["tag"] == "HUMAN_AGENT"
         assert second_payload["messaging_type"] == "RESPONSE"
         assert "tag" not in second_payload
-

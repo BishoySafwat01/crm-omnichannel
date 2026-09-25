@@ -84,6 +84,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
   const brandObj = getBrandObject(activeConv.brand_id, activeConv.brand || activeConv.brand_name);
+  const pageName = brandObj.isDirect ? 'محادثة خاصة' : brandObj.name;
   const currentNormalizedStatus =
     (activeConv.status?.toLowerCase() === 'closed' || activeConv.status?.toLowerCase() === 'completed')
       ? 'completed'
@@ -117,6 +118,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         <ConversationAvatar
           customerName={customerName}
           customerAvatarUrl={avatarUrl}
+          brandAvatarUrl={activeConv.page_avatar_url}
           brandId={activeConv.brand_id}
           brandName={activeConv.brand || activeConv.brand_name}
           channel={activeConv.channel}
@@ -127,22 +129,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         />
 
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <h2 className="text-xs font-bold text-slate-900 truncate max-w-[90px] sm:max-w-[150px] md:max-w-none">{customerName}</h2>
-            {brandObj.isDirect ? (
-              <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 sm:px-2 py-0.5 rounded-full font-bold truncate">
-                محادثة خاصة
-              </span>
-            ) : (
-              <span className="text-[10px] bg-theme-primary-tint text-theme-primary border border-theme-primary/20 px-1.5 sm:px-2 py-0.5 rounded-full font-bold truncate">
-                {brandObj.name}
-              </span>
-            )}
-          </div>
+          <h2 className="text-xs font-bold text-slate-900 truncate max-w-[90px] sm:max-w-[150px] md:max-w-none">
+            {customerName}
+          </h2>
           <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5 truncate">
+            <span className="text-theme-primary font-semibold truncate">{pageName}</span>
+            <span className="text-slate-300">&bull;</span>
             <span className={presence.colorClass}>{presence.statusText}</span>
-            <span>•</span>
-            <span className="capitalize">{activeConv.channel || 'messenger'}</span>
           </p>
         </div>
       </div>

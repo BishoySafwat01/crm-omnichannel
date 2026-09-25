@@ -128,6 +128,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const selectedChannel = get().selectedChannel;
       const selectedCountry = get().selectedCountry;
       const selectedProvider = get().selectedProvider;
+      const searchQuery = get().searchQuery;
       const isCompletedTab = get().activeFilterTab === 'completed';
       const isBlockedTab = get().activeFilterTab === 'blocked';
       const showArchived = isCompletedTab || isBlockedTab || Boolean(get().showArchived);
@@ -139,7 +140,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         1,
         50,
         selectedProvider,
-        showArchived
+        showArchived,
+        searchQuery
       );
 
       let items: Conversation[] = [];
@@ -227,6 +229,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       selectedProvider,
       showArchived,
       conversations,
+      searchQuery,
     } = get();
 
     if (!hasMoreConversations || isLoadingMoreConversations) return;
@@ -245,7 +248,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         nextPage,
         50,
         selectedProvider,
-        effectiveShowArchived
+        effectiveShowArchived,
+        searchQuery
       );
 
       let newItems: Conversation[] = [];

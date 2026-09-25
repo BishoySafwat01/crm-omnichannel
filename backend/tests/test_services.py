@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from app.core.database import AsyncSessionLocal
 from app.models import (
     ChannelEnum,
     ConversationStatusEnum,
     MessageTypeEnum,
+    Message,
     MigrationStatusEnum,
     ProviderEnum,
     SenderTypeEnum,
@@ -80,6 +83,166 @@ async def test_conversation_and_message_services():
         )
         assert len(messages) == 1
         assert messages[0].text == "Hello over WhatsApp"
+
+
+@pytest.mark.asyncio
+async def test_create_non_customer_message_clears_unread_count():
+    async with AsyncSessionLocal() as session:
+        customer = await CustomerService.create_customer(
+            session=session, display_name="__TEST__ unread bot customer"
+        )
+        conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer.id,
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.WHATSAPP,
+            external_conversation_id=f"__TEST__unread_bot_{customer.id}",
+        )
+        conv.unread_count = 5
+        await session.commit()
+
+        await MessageService.create_message(
+            session=session,
+            conversation_id=conv.id,
+            sender_type=SenderTypeEnum.SYSTEM,
+            text="Automated reply",
+        )
+
+        await session.refresh(conv)
+        assert conv.unread_count == 0
+        assert conv.is_unread is False
+
+
+@pytest.mark.asyncio
+async def test_delayed_outbound_message_does_not_clear_newer_customer_unread():
+    async with AsyncSessionLocal() as session:
+        customer = await CustomerService.create_customer(
+            session=session, display_name="__TEST__ delayed outbound customer"
+        )
+        conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer.id,
+            provider=ProviderEnum.META,
+            channel=ChannelEnum.MESSENGER,
+            external_conversation_id=f"__TEST__delayed_outbound_{customer.id}",
+        )
+        now = datetime.now(timezone.utc)
+        session.add_all(
+            [
+                Message(
+                    conversation_id=conv.id,
+                    sender_type=SenderTypeEnum.CUSTOMER,
+                    message_type=MessageTypeEnum.TEXT,
+                    text="Newest customer message",
+                    created_at=now,
+                ),
+                Message(
+                    conversation_id=conv.id,
+                    sender_type=SenderTypeEnum.AGENT,
+                    message_type=MessageTypeEnum.TEXT,
+                    text="Delayed outbound echo",
+                    created_at=now - timedelta(minutes=1),
+                ),
+            ]
+        )
+        conv.unread_count = 2
+        await session.flush()
+
+        await ConversationService.sync_unread_state_with_latest_message(session, conv)
+        await session.commit()
+
+        await session.refresh(conv)
+        assert conv.unread_count == 2
+        assert conv.is_unread is True
+
+
+@pytest.mark.asyncio
+async def test_list_conversations_masks_stale_unread_for_latest_outbound_message():
+    async with AsyncSessionLocal() as session:
+        customer = await CustomerService.create_customer(
+            session=session, display_name="__TEST__ unread list customer"
+        )
+        conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer.id,
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.WHATSAPP,
+            external_conversation_id=f"__TEST__unread_list_{customer.id}",
+        )
+        await MessageService.create_message(
+            session=session,
+            conversation_id=conv.id,
+            sender_type=SenderTypeEnum.AGENT,
+            text="Agent replied",
+        )
+        conv.unread_count = 6
+        await session.commit()
+
+        conversations, _ = await ConversationService.list_conversations(
+            session=session, customer_id=customer.id
+        )
+
+        item = next(item for item in conversations if item["id"] == conv.id)
+        assert item["last_sender_type"] == "agent"
+        assert item["unread_count"] == 0
+        assert item["is_unread"] is False
+
+
+@pytest.mark.asyncio
+async def test_unread_summary_excludes_stale_unread_for_latest_outbound_message():
+    async with AsyncSessionLocal() as session:
+        brand = f"__TEST__ unread summary brand"
+        customer = await CustomerService.create_customer(
+            session=session, display_name="__TEST__ unread summary customer"
+        )
+        conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer.id,
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.WHATSAPP,
+            external_conversation_id=f"__TEST__unread_summary_{customer.id}",
+            brand=brand,
+        )
+        await MessageService.create_message(
+            session=session,
+            conversation_id=conv.id,
+            sender_type=SenderTypeEnum.AGENT,
+            text="Agent replied",
+        )
+        conv.unread_count = 7
+        await session.commit()
+
+        customer_latest = await CustomerService.create_customer(
+            session=session, display_name="__TEST__ unread summary positive customer"
+        )
+        customer_conv = await ConversationService.create_conversation(
+            session=session,
+            customer_id=customer_latest.id,
+            provider=ProviderEnum.BEON,
+            channel=ChannelEnum.WHATSAPP,
+            external_conversation_id=f"__TEST__unread_summary_positive_{customer_latest.id}",
+            brand=brand,
+        )
+        await MessageService.create_message(
+            session=session,
+            conversation_id=customer_conv.id,
+            sender_type=SenderTypeEnum.CUSTOMER,
+            text="Customer message",
+        )
+
+        outbound_detail = await ConversationService.get_conversation_detail(session, conv.id)
+        customer_detail = await ConversationService.get_conversation_detail(session, customer_conv.id)
+        assert outbound_detail["unread_count"] == 0
+        assert outbound_detail["is_unread"] is False
+        assert customer_detail["unread_count"] == 1
+        assert customer_detail["is_unread"] is True
+
+        summary = await ConversationService.get_unread_summary(
+            session=session, brand=brand
+        )
+
+        assert summary["total_unread"] == 1
+        assert summary["channels"]["whatsapp"] == 1
 
 
 @pytest.mark.asyncio
@@ -197,5 +360,3 @@ async def test_soft_delete_page_cascades_to_conversations_and_messages(monkeypat
         # Verify messages are filtered out
         active_msgs = await MessageService.list_messages_for_conversation(session, conv.id)
         assert len(active_msgs) == 0
-
-

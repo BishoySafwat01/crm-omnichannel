@@ -27,6 +27,7 @@ class ConnectedPage(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     encrypted_access_token: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     instagram_business_account_id: Mapped[Optional[str]] = mapped_column(
         String(64), nullable=True
     )
@@ -80,4 +81,3 @@ class ConnectedPage(Base):
     @is_active.setter
     def is_active(self, value: bool) -> None:
         self.status = "ACTIVE" if value else "INACTIVE"
-

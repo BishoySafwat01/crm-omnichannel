@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Any, Dict, Optional
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -301,11 +301,31 @@ class ConversationService:
             if not (target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]):
                 stmt = stmt.outerjoin(Conversation.customer)
                 count_stmt = count_stmt.outerjoin(Conversation.customer)
+            matching_customer_identity = (
+                select(CustomerIdentity.id)
+                .where(
+                    CustomerIdentity.customer_id == Conversation.customer_id,
+                    CustomerIdentity.external_user_id.ilike(term),
+                )
+                .exists()
+            )
+            matching_message = (
+                select(Message.id)
+                .where(
+                    Message.conversation_id == Conversation.id,
+                    Message.deleted_at.is_(None),
+                    Message.text.ilike(term),
+                )
+                .exists()
+            )
             search_filter = (
                 Conversation.subject.ilike(term) |
                 Conversation.brand.ilike(term) |
+                Conversation.external_conversation_id.ilike(term) |
                 Customer.display_name.ilike(term) |
-                Customer.phone.ilike(term)
+                Customer.phone.ilike(term) |
+                matching_customer_identity |
+                matching_message
             )
             stmt = stmt.where(search_filter)
             count_stmt = count_stmt.where(search_filter)
@@ -354,6 +374,35 @@ class ConversationService:
             for m in msg_res.scalars().all():
                 latest_msg_map[m.conversation_id] = m
 
+        # Resolve connected Page avatars in one query so list serialization
+        # always carries a stable store/brand logo URL.
+        connected_page_map: dict[uuid.UUID, ConnectedPage] = {}
+        page_id_map: dict[str, ConnectedPage] = {}
+        connected_page_ids = {
+            conv.connected_page_id for conv in conversations if conv.connected_page_id
+        }
+        conversation_page_ids = {
+            str(conv.page_id).strip()
+            for conv in conversations
+            if getattr(conv, "page_id", None)
+        }
+        page_conditions = []
+        if connected_page_ids:
+            page_conditions.append(ConnectedPage.id.in_(connected_page_ids))
+        if conversation_page_ids:
+            page_conditions.append(ConnectedPage.page_id.in_(conversation_page_ids))
+        if page_conditions:
+            page_rows = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        or_(*page_conditions),
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            connected_page_map = {page.id: page for page in page_rows}
+            page_id_map = {str(page.page_id): page for page in page_rows if page.page_id}
+
         items = []
         for conv in conversations:
             cust = conv.customer
@@ -367,6 +416,10 @@ class ConversationService:
                 else:
                     cust_name = "عميل Messenger"
             cust_avatar = cust.avatar_url if cust and cust.avatar_url else None
+            connected_page = connected_page_map.get(conv.connected_page_id)
+            if not connected_page and getattr(conv, "page_id", None):
+                connected_page = page_id_map.get(str(conv.page_id).strip())
+            page_avatar_url = connected_page.avatar_url if connected_page else None
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
             prio = getattr(conv, 'priority', "normal") or "normal"
@@ -411,6 +464,7 @@ class ConversationService:
                 "customer_id": conv.customer_id,
                 "customer_display_name": cust_name,
                 "customer_avatar_url": cust_avatar,
+                "page_avatar_url": page_avatar_url,
                 "last_message_text": last_text,
                 "last_message_at": conv.last_message_at or (latest_msg.created_at if latest_msg else conv.created_at),
                 "last_customer_message_at": cust_msg_at,
@@ -501,11 +555,24 @@ class ConversationService:
                 else str(latest_message.sender_type)
             )
         unread_count = conv.unread_count if last_sender_type == SenderTypeEnum.CUSTOMER.value else 0
+        connected_page = None
+        if conv.connected_page_id:
+            connected_page = await session.get(ConnectedPage, conv.connected_page_id)
+        if not connected_page and getattr(conv, "page_id", None):
+            connected_page = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        ConnectedPage.page_id == str(conv.page_id).strip(),
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
 
         return {
             "id": conv.id,
             "customer_id": conv.customer_id,
             "customer_display_name": customer_obj.display_name if customer_obj else None,
+            "page_avatar_url": connected_page.avatar_url if connected_page else None,
             "provider": conv.provider,
             "channel": conv.channel,
             "external_conversation_id": conv.external_conversation_id,

@@ -6,6 +6,7 @@ import { Facebook, Instagram, MessageCircle, MessageSquare, Lock, User } from 'l
 export interface ConversationAvatarProps {
   customerName: string;
   customerAvatarUrl?: string | null;
+  brandAvatarUrl?: string | null;
   brandId?: string | null;
   brandName?: string | null;
   channel?: string;
@@ -141,6 +142,7 @@ export const getBrandObject = (brandId?: string | null, brandName?: string | nul
 export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
   customerName,
   customerAvatarUrl,
+  brandAvatarUrl,
   brandId,
   brandName,
   channel = 'messenger',
@@ -241,9 +243,9 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
             <Lock className="w-3 h-3" />
             <span>DM</span>
           </span>
-        ) : brand.logo_url && !logoError ? (
+        ) : (brandAvatarUrl || brand.logo_url) && !logoError ? (
           <img
-            src={brand.logo_url}
+            src={brandAvatarUrl || brand.logo_url}
             alt={brand.name}
             className="w-full h-full object-cover rounded-2xl"
             onError={() => setLogoError(true)}

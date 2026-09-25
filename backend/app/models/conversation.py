@@ -99,6 +99,16 @@ class Conversation(Base):
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
 
+    @property
+    def is_unread(self) -> bool:
+        """Derived unread flag kept consistent with the persisted unread count."""
+        return (self.unread_count or 0) > 0
+
+    @is_unread.setter
+    def is_unread(self, value: bool) -> None:
+        if not value:
+            self.unread_count = 0
+
     __table_args__ = (
         UniqueConstraint(
             "provider",

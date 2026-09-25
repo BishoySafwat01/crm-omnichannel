@@ -123,6 +123,7 @@ export interface Conversation {
   customer_id: string;
   customer_display_name?: string;
   customer_avatar_url?: string;
+  page_avatar_url?: string;
   provider: ProviderType;
   channel: ChannelType;
   external_conversation_id: string;
@@ -161,7 +162,7 @@ export interface PaginatedResponse<T> {
   next_cursor?: string;
 }
 
-export type FilterTab = 'all' | 'unread' | 'completed' | 'tagged' | 'sla_breached' | 'blocked';
+export type FilterTab = 'all' | 'unread' | 'completed' | 'incomplete' | 'offer_sent' | 'sla_breached' | 'blocked';
 
 export interface TagGroup {
   id: string;
@@ -301,4 +302,3 @@ export interface ConnectedPage {
   created_at: string;
   updated_at: string;
 }
-

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import {
-  User, Phone, Mail, MapPin, Edit2, Check, X,
+  User, Phone, Globe, Edit2, Check, X,
   Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert, Store
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../../../constants/salesScripts';
@@ -44,8 +44,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
     id: activeConversation.customer_id || '',
     display_name: activeConversation.customer_display_name || 'عميل',
     phone: '',
-    email: '',
-    location: '',
+    country: '',
     tier: 'درجة أولى',
     skin_type: 'عادية',
     stage: 'جديد',
@@ -66,8 +65,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
   const [formData, setFormData] = useState({
     display_name: '',
     phone: '',
-    email: '',
-    location: '',
+    country: '',
     brand: 'LAVVA',
   });
   const [copiedScriptId, setCopiedScriptId] = useState<string | null>(null);
@@ -87,8 +85,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
       setFormData({
         display_name: customer.display_name || '',
         phone: customer.phone || '',
-        email: customer.email || '',
-        location: customer.location || '',
+        country: customer.country || '',
         brand: activeConversation?.brand || activeConversation?.brand_name || 'LAVVA',
       });
       setIsEditing(false);
@@ -98,7 +95,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
         loadTimeline(customer.id);
       }
     }
-  }, [customer?.id, customer?.display_name, customer?.phone, customer?.email, customer?.location, activeConversation?.brand, activeConversation?.brand_name]);
+  }, [customer?.id, customer?.display_name, customer?.phone, customer?.country, activeConversation?.brand, activeConversation?.brand_name]);
 
   const loadNotes = async (custId: string) => {
     try {
@@ -151,24 +148,22 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
 
   const handleSaveContact = async () => {
     if (customer?.id) {
-      const locVal = formData.location.trim() || undefined;
+      const countryValue = formData.country.trim() || undefined;
       await updateCustomerProfile(customer.id, {
         display_name: formData.display_name.trim() || customer.display_name,
         phone: formData.phone.trim() || undefined,
-        email: formData.email.trim() || undefined,
-        location: locVal,
-        country: locVal,
+        country: countryValue,
       });
 
       if (formData.brand && activeConversation?.id && formData.brand !== activeConversation.brand) {
         await updateConversationBrand(activeConversation.id, formData.brand);
       }
 
-      const prevLocation = (customer.location || customer.country || '').trim();
-      if (locVal && locVal !== prevLocation) {
+      const previousCountry = (customer.country || '').trim();
+      if (countryValue && countryValue !== previousCountry) {
         addLocationAlert({
           type: 'detected',
-          location: locVal,
+          location: countryValue,
           customerName: formData.display_name.trim() || customer.display_name,
         });
       }
@@ -254,9 +249,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
     }
   };
 
-  const formattedLocation = customer?.country
-    ? (customer?.city ? `${customer.city} - ${customer.country}` : customer.country)
-    : (customer?.location || 'غير محدد');
+  const formattedCountry = customer?.country?.trim() || 'غير محددة';
 
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
@@ -396,36 +389,26 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
               )}
             </div>
 
-            {/* Email */}
-            <div className="flex items-center gap-2.5 text-slate-700">
-              <Mail className="w-3.5 h-3.5 text-theme-primary shrink-0" />
-              {isEditing ? (
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="البريد الإلكتروني"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
-                />
-              ) : (
-                <span className="font-medium text-slate-700 truncate">{customer.email || 'غير مسجل'}</span>
-              )}
-            </div>
-
-            {/* Location */}
-            <div className="flex items-center gap-2.5 text-slate-700">
-              <MapPin className="w-3.5 h-3.5 text-theme-primary shrink-0" />
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="الموقع"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
-                />
-              ) : (
-                <span className="font-semibold text-slate-800">{formattedLocation}</span>
-              )}
+            {/* Country */}
+            <div className="flex items-start gap-2.5 text-slate-700">
+              <Globe className="w-3.5 h-3.5 text-theme-primary shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <span className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                  الدولة
+                </span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    aria-label="الدولة"
+                    value={formData.country}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    placeholder="الدولة"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
+                  />
+                ) : (
+                  <span className="block font-semibold text-slate-800 truncate">{formattedCountry}</span>
+                )}
+              </div>
             </div>
 
             {/* Store / Brand Selection */}

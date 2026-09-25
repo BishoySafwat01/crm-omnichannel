@@ -3,7 +3,7 @@ import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertT
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
-import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
+import { ChannelSocialIcon, ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { formatCustomerPresence } from '../../../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
@@ -173,7 +173,23 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     isLoadingMoreConversations,
     hasMoreConversations,
     loadMoreConversations,
+    fetchConversations,
   } = useCrmStore();
+
+  const isInitialSearchRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (isInitialSearchRenderRef.current) {
+      isInitialSearchRenderRef.current = false;
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      fetchConversations();
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchQuery, fetchConversations]);
 
   const lastScrollTimeRef = useRef<number>(0);
 
@@ -258,17 +274,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     if (!conversations || !Array.isArray(conversations)) return [];
 
     return conversations.filter((conv) => {
-      // 1. Search Query Filter
-      if (searchQuery && searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const storeName = (conv.brand || conv.brand_name || '').toLowerCase();
-        const custName = (conv.customer_display_name || conv.customer?.display_name || '').toLowerCase();
-        const lastMsg = (conv.last_message_text || '').toLowerCase();
-        const extId = (conv.external_conversation_id || '').toLowerCase();
-        if (!storeName.includes(q) && !custName.includes(q) && !lastMsg.includes(q) && !extId.includes(q)) {
-          return false;
-        }
-      }
+      // 1. Search is performed by the backend so it can cover the complete dataset and message history.
 
       // 2. Channel Filter
       if (selectedChannel && selectedChannel !== 'all') {
@@ -290,6 +296,20 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       }
       if (activeFilterTab === 'unread' && (conv.unread_count || 0) === 0) return false;
       if (activeFilterTab === 'sla_breached' && !isConversationLate(conv, messages[conv.id])) return false;
+      if (activeFilterTab === 'offer_sent') {
+        const workflowValues = [
+          conv.customer?.stage,
+          ...(conv.customer?.tags || []),
+          conv.metadata?.sales_stage,
+          conv.metadata?.order_status,
+          conv.metadata_?.sales_stage,
+          conv.metadata_?.order_status,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase());
+        const offerMarkers = ['offer_sent', 'offer sent', 'تم إرسال عرض', 'تم ارسال عرض'];
+        if (!workflowValues.some((value) => offerMarkers.some((marker) => value.includes(marker)))) return false;
+      }
 
       // 4. Country / Location Filter
       if (selectedCountry && selectedCountry !== 'all' && selectedCountry !== 'الكل') {
@@ -351,7 +371,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
 
       return true;
     });
-  }, [conversations, searchQuery, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, selectedEmployeeObj, messages]);
+  }, [conversations, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, selectedEmployeeObj, messages]);
 
   const lateCount = useMemo(() => {
     if (!conversations || !Array.isArray(conversations)) return 0;
@@ -367,20 +387,22 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     {
       id: 'unread',
-      label: 'غير مقروءة',
+      label: 'غير مقروء',
       icon: <Clock className="w-3.5 h-3.5" />,
       badgeCount: unreadSummary?.total_unread > 0 ? unreadSummary.total_unread : undefined,
     },
-    { id: 'completed', label: 'المغلقة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
+    { id: 'completed', label: 'طلبات مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
+    { id: 'incomplete', label: 'طلبات غير مكتملة', icon: <Clock className="w-3.5 h-3.5" /> },
+    { id: 'offer_sent', label: 'تم إرسال عرض', icon: <Check className="w-3.5 h-3.5" /> },
     {
       id: 'sla_breached',
-      label: 'متأخرة (+10د)',
+      label: 'متأخرة',
       icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />,
       badgeCount: lateCount > 0 ? lateCount : undefined,
     },
     {
       id: 'blocked',
-      label: 'المحظورين',
+      label: 'محظورة',
       icon: <Ban className="w-3.5 h-3.5 text-rose-500" />,
       badgeCount: blockedCount > 0 ? blockedCount : undefined,
     },
@@ -536,7 +558,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
         })()}
 
         {/* Filter Tabs (Clean Adaptive Unread Badge & Tab Layout) */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-full border border-slate-200/60 backdrop-blur-md">
+        <div className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-xl border border-slate-200/60 backdrop-blur-md overflow-x-auto scrollbar-none">
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
             const hasBadge = tab.badgeCount !== undefined && tab.badgeCount > 0;
@@ -547,10 +569,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveFilterTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] rounded-full transition-all duration-150 cursor-pointer select-none whitespace-nowrap overflow-hidden ${
+                className={`shrink-0 flex items-center justify-center gap-1 py-1.5 px-2.5 text-[11px] rounded-lg border transition-all duration-150 cursor-pointer select-none whitespace-nowrap ${
                   isActive
-                    ? 'bg-theme-primary-tint text-theme-primary font-bold shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
+                    ? 'bg-theme-primary-tint text-theme-primary border-theme-primary/35 font-bold shadow-2xs'
+                    : 'text-slate-600 border-transparent hover:text-slate-900 hover:bg-white/70 font-medium'
                 }`}
                 title={tab.label}
               >
@@ -576,7 +598,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       {/* Clean Minimalist Glass Conversation Cards with Continuous Messenger Stream */}
       <div
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 space-y-1 scrollbar-none"
+        className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-none"
       >
         {isLoadingConversations ? (
           <div className="p-8 text-center text-xs text-slate-400 animate-pulse font-medium">
@@ -601,29 +623,41 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
               );
 
               return (
-                <div
+                <button
+                  type="button"
                   key={conv.id}
                   onClick={() => setActiveConversationId(conv.id)}
-                  className={`px-3.5 py-3 cursor-pointer transition-all duration-150 rounded-2xl ${
+                  className={`w-full px-3.5 py-3 cursor-pointer text-right border transition-colors duration-150 ${
                     isActive
-                      ? 'bg-theme-primary-subtle/50 border-r-4 border-r-theme-primary shadow-2xs font-medium'
-                      : 'bg-transparent hover:bg-white/90'
+                      ? 'bg-theme-primary-tint/80 border-theme-primary/30 border-r-4 border-r-theme-primary shadow-2xs font-medium'
+                      : 'bg-transparent border-transparent border-b-slate-200/70 hover:bg-slate-100/80'
                   }`}
                 >
                   {/* 1. Top Row: Conversation Avatar (Store gradient + Customer sub-avatar + Channel badge) + Customer Name + Time */}
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <ConversationAvatar
-                        customerName={customerName}
-                        customerAvatarUrl={avatarUrl}
-                        brandId={conv.brand_id}
-                        brandName={conv.brand || conv.brand_name}
-                        channel={conv.channel}
-                        size="md"
-                        showPresenceDot={true}
-                        presenceDotColor={presence.dotColor}
-                        presenceStatusText={presence.statusText}
-                      />
+                      {avatarUrl ? (
+                        <ConversationAvatar
+                          customerName={customerName}
+                          customerAvatarUrl={avatarUrl}
+                          brandAvatarUrl={conv.page_avatar_url}
+                          brandId={conv.brand_id}
+                          brandName={conv.brand || conv.brand_name}
+                          channel={conv.channel}
+                          size="md"
+                          showPresenceDot={true}
+                          presenceDotColor={presence.dotColor}
+                          presenceStatusText={presence.statusText}
+                        />
+                      ) : (
+                        <div className="relative w-12 h-12 shrink-0 flex items-center justify-center" title={`القناة: ${conv.channel}`}>
+                          <ChannelSocialIcon channel={conv.channel} sizeClass="w-11 h-11" className="shadow-sm" />
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${presence.dotColor}`}
+                            title={presence.statusText}
+                          />
+                        </div>
+                      )}
 
                       <div className="min-w-0">
                         {/* Customer Name is the only prominent text */}
@@ -669,7 +703,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                       </span>
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
 

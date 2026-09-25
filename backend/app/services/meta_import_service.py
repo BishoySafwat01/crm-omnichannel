@@ -331,6 +331,28 @@ class MetaImportService:
 
         target_page_id = page_info.get("page_id") or target_page_id
 
+        # Backfill the persistent Page avatar during imports for pages connected
+        # before avatar ingestion was introduced.
+        try:
+            connected_page = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        ConnectedPage.page_id == str(target_page_id),
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+            if connected_page and not connected_page.avatar_url:
+                await MetaImportService.sync_connected_page_avatar(session, connected_page)
+                await session.commit()
+        except Exception as avatar_exc:
+            await session.rollback()
+            logger.warning(
+                "[Page Avatar] Import-time avatar sync failed for Page %s: %s",
+                target_page_id,
+                avatar_exc,
+            )
+
         # 2. Create MigrationJob
         job = await MigrationService.create_migration_job(
             session=session,
@@ -515,16 +537,25 @@ class MetaImportService:
         return job
 
     @classmethod
-    async def discover_and_cache_page_profile(cls, page_id: str) -> dict[str, Any]:
+    async def discover_and_cache_page_profile(
+        cls,
+        page_id: str,
+        access_token: Optional[str] = None,
+        db: Optional[AsyncSession] = None,
+    ) -> dict[str, Any]:
         """Queries Meta Graph API for page name, category, and picture, caching the avatar locally."""
         from app.integrations.meta.client import MetaClient
 
-        client = MetaClient(page_id=page_id)
-        metadata = await client.get_page_metadata(page_id=page_id)
+        client = MetaClient(page_id=page_id, access_token=access_token, db=db)
+        metadata = await client.get_page_metadata(
+            page_id=page_id,
+            access_token=access_token,
+            db=db,
+        )
         avatar_url = metadata.get("picture_url")
         local_avatar = None
         if avatar_url:
-            local_avatar = await cls.download_and_cache_media(avatar_url, media_type="image")
+            local_avatar = await cls._download_page_avatar(page_id, avatar_url)
 
         return {
             "page_id": metadata.get("id", page_id),
@@ -533,6 +564,105 @@ class MetaImportService:
             "avatar_url": local_avatar or avatar_url,
             "raw": metadata.get("raw"),
         }
+
+    @staticmethod
+    async def _download_page_avatar(page_id: str, url: str) -> Optional[str]:
+        """Persist a Page avatar at a stable local URL so Meta CDN expiry cannot break it."""
+        safe_page_id = "".join(
+            char for char in str(page_id) if char.isascii() and (char.isalnum() or char in {"-", "_"})
+        )
+        if not safe_page_id or not url:
+            return None
+
+        relative_path = f"avatars/page_{safe_page_id}.jpg"
+        disk_path = os.path.join(settings.UPLOAD_DIR, relative_path)
+        temp_path = f"{disk_path}.{uuid.uuid4().hex}.tmp"
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").lower()
+                if content_type and not content_type.startswith("image/"):
+                    logger.warning(
+                        "[Page Avatar] Ignoring non-image response for Page %s: %s",
+                        page_id,
+                        content_type,
+                    )
+                    return None
+                image_bytes = response.content
+                if not image_bytes:
+                    return None
+
+            def persist_image() -> None:
+                os.makedirs(os.path.dirname(disk_path), exist_ok=True)
+                with open(temp_path, "wb") as avatar_file:
+                    avatar_file.write(image_bytes)
+                os.replace(temp_path, disk_path)
+
+            await asyncio.to_thread(persist_image)
+            return f"/uploads/{relative_path}"
+        except Exception as exc:
+            logger.warning("[Page Avatar] Failed to cache Page %s avatar: %s", page_id, exc)
+            try:
+                if os.path.exists(temp_path):
+                    await asyncio.to_thread(os.remove, temp_path)
+            except OSError:
+                pass
+            return None
+
+    @classmethod
+    async def sync_connected_page_avatar(
+        cls,
+        session: AsyncSession,
+        connected_page: ConnectedPage,
+        *,
+        force: bool = False,
+    ) -> Optional[str]:
+        """Fetch and store a persistent avatar URL for one connected Page."""
+        if connected_page.avatar_url and not force:
+            return connected_page.avatar_url
+
+        profile = await cls.discover_and_cache_page_profile(
+            page_id=connected_page.page_id,
+            access_token=connected_page.decrypted_access_token,
+            db=session,
+        )
+        avatar_url = profile.get("avatar_url")
+        if avatar_url:
+            connected_page.avatar_url = avatar_url
+        if profile.get("name"):
+            connected_page.name = profile["name"]
+        if profile.get("category"):
+            connected_page.category = profile["category"]
+        await session.flush()
+        return connected_page.avatar_url
+
+    @classmethod
+    async def backfill_connected_page_avatars(cls, session: AsyncSession) -> int:
+        """Populate missing persistent avatars for all active connected Pages."""
+        pages = (
+            await session.execute(
+                select(ConnectedPage).where(
+                    ConnectedPage.status == "ACTIVE",
+                    ConnectedPage.deleted_at.is_(None),
+                    ConnectedPage.avatar_url.is_(None),
+                )
+            )
+        ).scalars().all()
+        updated = 0
+        for page in pages:
+            try:
+                if await cls.sync_connected_page_avatar(session, page):
+                    updated += 1
+            except Exception as exc:
+                logger.warning(
+                    "[Page Avatar] Backfill failed for Page %s: %s",
+                    page.page_id,
+                    exc,
+                )
+        await session.commit()
+        return updated
 
     @classmethod
     async def subscribe_all_configured_pages(cls) -> list[dict[str, Any]]:
@@ -1370,6 +1500,15 @@ class MetaImportService:
                 token = cp.decrypted_access_token or settings.META_PAGE_ACCESS_TOKEN
                 if not token:
                     continue
+                if not cp.avatar_url:
+                    try:
+                        await MetaImportService.sync_connected_page_avatar(session, cp)
+                    except Exception as avatar_exc:
+                        logger.warning(
+                            "[Page Avatar] Live-sync backfill failed for Page %s: %s",
+                            cp.page_id,
+                            avatar_exc,
+                        )
                 if cp.page_id:
                     pid = str(cp.page_id).strip()
                     known_account_ids.add(pid)
@@ -1384,6 +1523,7 @@ class MetaImportService:
                         "page_id": pid,
                         "connected_page_id": cp.id,
                     })
+
                     platforms.append({
                         "name": f"instagram_{pid}",
                         "channel": ChannelEnum.INSTAGRAM,
@@ -1409,6 +1549,8 @@ class MetaImportService:
                         "page_id": cp.page_id or ig_id,
                         "connected_page_id": cp.id,
                     })
+
+            await session.commit()
 
         # Safe fallback if no ConnectedPage in DB but settings exist
         if not platforms and settings.META_PAGE_ACCESS_TOKEN and settings.META_PAGE_ID:

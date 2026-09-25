@@ -42,9 +42,11 @@ class ConversationResponse(BaseModel):
     priority: str = "normal"
     assigned_agent_id: Optional[uuid.UUID] = None
     unread_count: int = 0
+    is_unread: bool = False
     customer_id: Optional[uuid.UUID] = None
     customer_display_name: Optional[str] = None
     customer_avatar_url: Optional[str] = None
+    page_avatar_url: Optional[str] = None
     last_message_text: Optional[str] = ""
     last_message_at: Optional[datetime] = None
     last_customer_message_at: Optional[datetime] = None

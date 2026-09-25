@@ -546,6 +546,7 @@ class MetaOAuthService:
                 existing.connected_by_user_id = user_id
                 existing.updated_at = func.now()
                 target_cp_id = existing.id
+                target_page = existing
                 saved_records.append(existing)
             else:
                 new_cp_id = uuid.uuid4()
@@ -563,7 +564,26 @@ class MetaOAuthService:
                 )
                 db.add(new_page)
                 target_cp_id = new_cp_id
+                target_page = new_page
                 saved_records.append(new_page)
+
+            # Fetch via /{page_id}/picture?redirect=0 and cache under a stable
+            # local URL for both newly connected and re-authorized pages.
+            try:
+                from app.services.meta_import_service import MetaImportService
+
+                await db.flush()
+                await MetaImportService.sync_connected_page_avatar(
+                    db,
+                    target_page,
+                    force=True,
+                )
+            except Exception as avatar_exc:
+                logger.warning(
+                    "[Meta OAuth] Page avatar ingestion failed for %s: %s",
+                    page_id,
+                    avatar_exc,
+                )
 
             # Enforce brand = page.name across conversations for this page
             try:
@@ -625,4 +645,3 @@ class MetaOAuthService:
                 )
         except Exception as exc:
             logger.error("[AutoOnboarding] Error in background sync for page %s: %s", page_id, exc)
-
