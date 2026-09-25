@@ -3,7 +3,7 @@ import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertT
 import { useCrmStore } from '../../../store/useCrmStore';
 import { FilterTab } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
-import { ChannelSocialIcon, ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
+import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { formatCustomerPresence } from '../../../utils/presence';
 
 const PRIORITY_BADGES: Record<string, { label: string; color: string }> = {
@@ -44,9 +44,9 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
     );
   }
   return (
-    <span className={`${className} bg-[#1877F2] text-white rounded-full flex items-center justify-center shadow-2xs border border-white shrink-0`} title="فيسبوك ماسنجر (Messenger)">
+    <span className={`${className} bg-[#1877F2] text-white rounded-full flex items-center justify-center shadow-2xs border border-white shrink-0`} title="فيسبوك (Facebook)">
       <svg className="w-2.5 h-2.5 fill-current" viewBox="0 0 24 24">
-        <path d="M12 2C6.477 2 2 6.145 2 11.258C2 14.17 3.447 16.745 5.717 18.39V22L9.18 20.096C10.082 20.354 11.026 20.516 12 20.516C17.523 20.516 22 16.371 22 11.258C22 6.145 17.523 2 12 2M13.208 14.475L10.74 11.838L5.923 14.475L11.22 8.847L13.722 11.484L18.498 8.847L13.208 14.475Z" />
+        <path d="M13.6 22v-9h3l.45-3.5H13.6V7.27c0-1.01.28-1.7 1.73-1.7h1.85V2.44a24.8 24.8 0 0 0-2.7-.14c-2.67 0-4.5 1.63-4.5 4.62V9.5H7v3.5h2.98v9h3.62Z" />
       </svg>
     </span>
   );
@@ -633,31 +633,21 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                       : 'bg-transparent border-transparent border-b-slate-200/70 hover:bg-slate-100/80'
                   }`}
                 >
-                  {/* 1. Top Row: Conversation Avatar (Store gradient + Customer sub-avatar + Channel badge) + Customer Name + Time */}
+                  {/* 1. Top Row: Store/Page avatar + bottom-left channel badge + Customer Name + Time */}
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      {avatarUrl ? (
-                        <ConversationAvatar
-                          customerName={customerName}
-                          customerAvatarUrl={avatarUrl}
-                          brandAvatarUrl={conv.page_avatar_url}
-                          brandId={conv.brand_id}
-                          brandName={conv.brand || conv.brand_name}
-                          channel={conv.channel}
-                          size="md"
-                          showPresenceDot={true}
-                          presenceDotColor={presence.dotColor}
-                          presenceStatusText={presence.statusText}
-                        />
-                      ) : (
-                        <div className="relative w-12 h-12 shrink-0 flex items-center justify-center" title={`القناة: ${conv.channel}`}>
-                          <ChannelSocialIcon channel={conv.channel} sizeClass="w-11 h-11" className="shadow-sm" />
-                          <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-white rounded-full ${presence.dotColor}`}
-                            title={presence.statusText}
-                          />
-                        </div>
-                      )}
+                      <ConversationAvatar
+                        customerName={customerName}
+                        customerAvatarUrl={avatarUrl}
+                        brandAvatarUrl={conv.page_avatar_url}
+                        brandId={conv.brand_id}
+                        brandName={conv.brand || conv.brand_name}
+                        channel={conv.channel}
+                        size="md"
+                        showPresenceDot={true}
+                        presenceDotColor={presence.dotColor}
+                        presenceStatusText={presence.statusText}
+                      />
 
                       <div className="min-w-0">
                         {/* Customer Name is the only prominent text */}
