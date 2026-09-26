@@ -381,6 +381,7 @@ class MessageService:
         page: int = 1,
         page_size: int = 20,
         order: str = "asc",
+        paginate: bool = True,
     ) -> tuple[list[Message], int]:
         conv_stmt = select(Conversation).where(
             Conversation.id == conversation_id,
@@ -422,10 +423,56 @@ class MessageService:
         p = max(1, p)
         ps = max(1, min(ps, 500))
 
-        stmt = stmt.offset((p - 1) * ps).limit(ps)
+        if paginate:
+            stmt = stmt.offset((p - 1) * ps).limit(ps)
         res = await session.execute(stmt)
         messages = list(res.scalars().all())
         return messages, total
+
+    @staticmethod
+    async def agent_can_access_conversation_store(
+        session: AsyncSession,
+        conversation: Conversation,
+        agent_brands: list[Any],
+    ) -> bool:
+        normalized_agent_brands = {
+            str(brand).strip().lower()
+            for brand in (agent_brands or [])
+            if str(brand).strip()
+        }
+        if "all" in normalized_agent_brands or "الكل" in normalized_agent_brands:
+            return True
+
+        store_identifiers = {
+            str(value).strip().lower()
+            for value in (conversation.page_id, conversation.brand)
+            if value and str(value).strip()
+        }
+
+        page_stmt = select(
+            ConnectedPage.id,
+            ConnectedPage.page_id,
+            ConnectedPage.name,
+        ).where(ConnectedPage.deleted_at.is_(None))
+        if conversation.workspace_id:
+            page_stmt = page_stmt.where(
+                ConnectedPage.workspace_id == conversation.workspace_id
+            )
+
+        pages = (await session.execute(page_stmt)).all()
+        for connected_page_id, page_id, brand_name in pages:
+            page_identifiers = {
+                str(value).strip().lower()
+                for value in (page_id, brand_name)
+                if value and str(value).strip()
+            }
+            if (
+                connected_page_id == conversation.connected_page_id
+                or store_identifiers.intersection(page_identifiers)
+            ):
+                store_identifiers.update(page_identifiers)
+
+        return bool(store_identifiers.intersection(normalized_agent_brands))
 
     @staticmethod
     async def send_agent_reply(

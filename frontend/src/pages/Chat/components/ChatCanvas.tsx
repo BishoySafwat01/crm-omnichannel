@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback, useLayoutEffe
 import { Pin, Users } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { MetaMessageTag } from '../../../types/crm';
+import { Message, MetaMessageTag } from '../../../types/crm';
 import { aiApi } from '../../../services/api';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { ForwardMessageModal } from './ForwardMessageModal';
@@ -90,7 +90,14 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   const isUserScrolledUpRef = useRef<boolean>(false);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
-  const activeMessages = activeConversationId ? messages[activeConversationId] || [] : [];
+  const activeMessageData = activeConversationId ? messages[activeConversationId] : [];
+  const activeMessages: Message[] = Array.isArray(activeMessageData)
+    ? activeMessageData
+    : Array.isArray((activeMessageData as any)?.messages)
+      ? (activeMessageData as any).messages
+      : Array.isArray((activeMessageData as any)?.items)
+        ? (activeMessageData as any).items
+        : [];
   const latestPinned = useMemo(
     () => activeMessages.filter((m) => m.is_pinned && !m.is_deleted).slice(-1)[0] || null,
     [activeMessages]
@@ -382,6 +389,8 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   useEffect(() => {
     if (!activeConversationId) return;
 
+    setInChatEmployeeFilter(null);
+    setSelectedEmployeeId(null);
     fetchMessages(activeConversationId);
 
     const msgInterval = setInterval(() => {
@@ -389,7 +398,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
     }, 15000);
 
     return () => clearInterval(msgInterval);
-  }, [activeConversationId, fetchMessages]);
+  }, [activeConversationId, fetchMessages, setSelectedEmployeeId]);
 
   const handleMediaLoaded = useCallback(() => {
     if (!isUserScrolledUpRef.current) {
@@ -539,6 +548,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
 
       {/* Virtualized Message Timeline Stream */}
       <MessageThread
+        key={activeConv.id}
         messages={activeMessages}
         activeConv={activeConv}
         currentUser={currentUser}

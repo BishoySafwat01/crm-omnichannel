@@ -506,7 +506,7 @@ export const MemoizedMessageBubble = React.memo<{
 MemoizedMessageBubble.displayName = 'MemoizedMessageBubble';
 
 export interface MessageThreadProps {
-  messages: Message[];
+  messages: Message[] | { messages?: Message[]; items?: Message[] };
   activeConv: Conversation | null;
   currentUser: UserType | null;
   teamMembers: Array<{ id: string; full_name?: string }>;
@@ -556,10 +556,18 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
   formatMessageTime,
   renderHighlightedText,
 }) => {
+  const messageList = Array.isArray(messages)
+    ? messages
+    : Array.isArray(messages?.messages)
+      ? messages.messages
+      : Array.isArray(messages?.items)
+        ? messages.items
+        : [];
+
   // Deduplicate and sort messages chronologically
   const sortedMessages = useMemo(() => {
     const seenMsgIds = new Set<string>();
-    const rawSorted = [...messages]
+    const rawSorted = [...messageList]
       .filter((m) => {
         if (!m || !m.id) return false;
         if (seenMsgIds.has(m.id)) return false;
@@ -589,7 +597,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
           (sExt === filterTarget || (filterName && (sExt === filterName || sExt.includes(filterName)))))
       );
     });
-  }, [messages, activeEmpFilterId, activeEmpFilterObj]);
+  }, [messageList, activeEmpFilterId, activeEmpFilterObj]);
 
   // Virtual windowing state for long threads (> 60 messages)
   const [renderedWindowCount, setRenderedWindowCount] = useState(WINDOW_SIZE);
@@ -698,7 +706,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
               لا توجد ردود مسجلة للموظف ({activeEmpFilterObj?.name || activeEmpFilterId}) في هذه المحادثة
             </p>
             <p className="text-[11px] text-slate-500 mt-1">
-              إجمالي رسائل هذه المحادثة: {messages.length} رسالة
+              إجمالي رسائل هذه المحادثة: {messageList.length} رسالة
             </p>
           </div>
           <button

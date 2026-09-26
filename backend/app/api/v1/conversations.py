@@ -462,7 +462,33 @@ async def get_conversation_messages(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Conversation {conversation_id} not found.",
         )
-    require_conversation_access(conv, current_user)
+
+    live_permissions = (
+        await db.execute(
+            select(User.role, User.brand_access).where(User.id == current_user.id)
+        )
+    ).one_or_none()
+    if live_permissions is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found.",
+        )
+
+    live_role, agent_brands = live_permissions
+    role_value = live_role.value if hasattr(live_role, "value") else str(live_role)
+    is_admin = role_value in (
+        UserRole.ADMIN.value,
+        UserRole.SUPERADMIN.value,
+        "admin",
+        "superadmin",
+    )
+    has_permitted_store = not is_admin and await MessageService.agent_can_access_conversation_store(
+        session=db,
+        conversation=conv,
+        agent_brands=agent_brands or [],
+    )
+    if not is_admin and not has_permitted_store:
+        require_conversation_access(conv, current_user)
 
     try:
         messages, total = await MessageService.list_paginated_messages(
@@ -471,10 +497,14 @@ async def get_conversation_messages(
             page=page,
             page_size=page_size,
             order=order,
+            paginate=not has_permitted_store,
         )
         items = [MessageResponse.model_validate(m) for m in messages]
         return PaginatedResponse.create(
-            items=items, total=total, page=page, page_size=page_size
+            items=items,
+            total=total,
+            page=1 if has_permitted_store else page,
+            page_size=max(total, 1) if has_permitted_store else page_size,
         )
     except ValueError as exc:
         raise HTTPException(
