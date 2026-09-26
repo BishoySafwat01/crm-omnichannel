@@ -140,6 +140,7 @@ export interface ConversationListProps {
 export const ConversationList: React.FC<ConversationListProps> = ({ className = '' }) => {
   const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
+  const filterTabsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isEmployeeMenuOpen) return;
@@ -167,7 +168,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     setSearchQuery,
     activeFilterTab,
     setActiveFilterTab,
-    unreadSummary,
+    filteredUnreadConversationCount,
     isTyping,
     isLoadingConversations,
     isLoadingMoreConversations,
@@ -389,7 +390,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       id: 'unread',
       label: 'غير مقروء',
       icon: <Clock className="w-3.5 h-3.5" />,
-      badgeCount: unreadSummary?.total_unread > 0 ? unreadSummary.total_unread : undefined,
+      badgeCount: filteredUnreadConversationCount > 0 ? filteredUnreadConversationCount : undefined,
     },
     { id: 'completed', label: 'طلبات مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
     { id: 'incomplete', label: 'طلبات غير مكتملة', icon: <Clock className="w-3.5 h-3.5" /> },
@@ -558,7 +559,15 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
         })()}
 
         {/* Filter Tabs (Clean Adaptive Unread Badge & Tab Layout) */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-xl border border-slate-200/60 backdrop-blur-md overflow-x-auto scrollbar-none">
+        <div
+          ref={filterTabsRef}
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-xl border border-slate-200/60 backdrop-blur-md overflow-x-auto whitespace-nowrap no-scrollbar scrollbar-none scroll-smooth"
+        >
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
             const hasBadge = tab.badgeCount !== undefined && tab.badgeCount > 0;
@@ -568,7 +577,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveFilterTab(tab.id)}
+                onClick={(e) => {
+                  setActiveFilterTab(tab.id);
+                  e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }}
                 className={`shrink-0 flex items-center justify-center gap-1 py-1.5 px-2.5 text-[11px] rounded-lg border transition-all duration-150 cursor-pointer select-none whitespace-nowrap ${
                   isActive
                     ? 'bg-theme-primary-tint text-theme-primary border-theme-primary/35 font-bold shadow-2xs'

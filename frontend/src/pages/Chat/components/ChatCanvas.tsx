@@ -407,7 +407,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
 
   if (!activeConv) {
     return (
-      <main className="flex-1 bg-gradient-to-b from-theme-primary-subtle via-white to-slate-50/70 flex items-center justify-center p-6 dir-rtl text-right h-full min-h-0 rounded-2xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)]">
+      <main className="flex-1 bg-gradient-to-br from-theme-primary-subtle via-white to-theme-primary-tint dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 flex items-center justify-center p-6 dir-rtl text-right h-full min-h-0 rounded-2xl border border-white/60 dark:border-slate-800 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)]">
         <div className="bg-white/80 backdrop-blur-xl border border-white/80 shadow-xl rounded-3xl p-8 max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#1A73E8]/10 to-teal-500/10 text-[#1A73E8] flex items-center justify-center mx-auto shadow-inner border border-[#1A73E8]/20">
             <Sparkles className="w-8 h-8" />
@@ -427,7 +427,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   }
 
   return (
-    <main className="flex-1 bg-gradient-to-b from-theme-primary-subtle via-white to-slate-50/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col h-full min-h-0 relative z-10 overflow-hidden">
+    <main className="flex-1 bg-gradient-to-br from-theme-primary-subtle via-white to-theme-primary-tint dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 backdrop-blur-xl border border-white/60 dark:border-slate-800 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col h-full min-h-0 relative z-10 overflow-hidden select-text">
       {/* Sleek Google Glass Chat Header Bar */}
       <ChatHeader
         activeConv={activeConv}

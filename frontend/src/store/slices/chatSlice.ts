@@ -35,6 +35,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     channels: { all: 0, messenger: 0, instagram: 0, whatsapp: 0 },
     brands: {},
   },
+  filteredUnreadConversationCount: 0,
   adminSecurityAlerts: [],
 
   replyingToMessage: null,
@@ -69,8 +70,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
 
     set((state) => {
       const conv = state.conversations.find((c) => c.id === id);
-      const prevUnread = conv?.unread_count || 0;
-      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
+      const wasUnread = (conv?.unread_count || 0) > 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - (wasUnread ? 1 : 0));
       const updatedConvs = state.conversations.map((c) =>
         c.id === id ? { ...c, unread_count: 0 } : c
       );
@@ -81,6 +82,10 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
           ...state.unreadSummary,
           total_unread: updatedTotal,
         },
+        filteredUnreadConversationCount: Math.max(
+          0,
+          state.filteredUnreadConversationCount - (wasUnread ? 1 : 0)
+        ),
       };
     });
     get().fetchMessages(id);
@@ -102,8 +107,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     if (!id) return;
     set((state) => {
       const conv = state.conversations.find((c) => c.id === id);
-      const prevUnread = conv?.unread_count || 0;
-      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - prevUnread);
+      const wasUnread = (conv?.unread_count || 0) > 0;
+      const updatedTotal = Math.max(0, (state.unreadSummary?.total_unread || 0) - (wasUnread ? 1 : 0));
       return {
         conversations: state.conversations.map((c) =>
           c.id === id ? { ...c, unread_count: 0 } : c
@@ -112,6 +117,10 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
           ...state.unreadSummary,
           total_unread: updatedTotal,
         },
+        filteredUnreadConversationCount: Math.max(
+          0,
+          state.filteredUnreadConversationCount - (wasUnread ? 1 : 0)
+        ),
       };
     });
     try {
@@ -126,6 +135,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     const previousConversation = get().conversations.find((conversation) => conversation.id === id);
     if (!previousConversation) return;
     const previousUnreadCount = previousConversation.unread_count || 0;
+    const previousUnreadConversation = previousUnreadCount > 0 ? 1 : 0;
+    const nextUnreadConversation = unreadCount > 0 ? 1 : 0;
 
     set((state) => ({
       conversations: state.conversations.map((conversation) =>
@@ -135,9 +146,13 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         ...state.unreadSummary,
         total_unread: Math.max(
           0,
-          (state.unreadSummary?.total_unread || 0) - previousUnreadCount + unreadCount
+          (state.unreadSummary?.total_unread || 0) - previousUnreadConversation + nextUnreadConversation
         ),
       },
+      filteredUnreadConversationCount: Math.max(
+        0,
+        state.filteredUnreadConversationCount - previousUnreadConversation + nextUnreadConversation
+      ),
     }));
 
     const didUpdate = await apiService.updateConversationUnreadCount(id, unreadCount);
@@ -196,12 +211,14 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
 
       let items: Conversation[] = [];
       let total = 0;
+      let totalUnreadConversations = 0;
       if (Array.isArray(raw)) {
         items = raw;
         total = raw.length;
       } else if (raw && Array.isArray((raw as any).items)) {
         items = (raw as any).items;
         total = (raw as any).total || (raw as any).items.length;
+        totalUnreadConversations = (raw as any).total_unread_conversations || 0;
       } else if (raw && Array.isArray((raw as any).data)) {
         items = (raw as any).data;
         total = (raw as any).total || (raw as any).data.length;
@@ -242,6 +259,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         set({
           conversations: mergedItems,
           conversationsPage: 1,
+          filteredUnreadConversationCount: totalUnreadConversations,
           hasMoreConversations: hasMore,
           isLoadingConversations: false,
           activeConversationId: validActive,
@@ -255,6 +273,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         set({
           conversations: [],
           conversationsPage: 1,
+          filteredUnreadConversationCount: totalUnreadConversations,
           hasMoreConversations: false,
           activeConversationId: null,
           isLoadingConversations: false,
@@ -1099,13 +1118,24 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const conversationId = event.conversation_id;
       const unreadCount = Number((event as any).unread_count || 0);
       if (conversationId) {
-        set((state) => ({
-          conversations: state.conversations.map((conversation) =>
-            conversation.id === conversationId
-              ? { ...conversation, unread_count: unreadCount }
-              : conversation
-          ),
-        }));
+        set((state) => {
+          const previousUnreadCount =
+            state.conversations.find((conversation) => conversation.id === conversationId)
+              ?.unread_count || 0;
+          const unreadDelta =
+            (unreadCount > 0 ? 1 : 0) - (previousUnreadCount > 0 ? 1 : 0);
+          return {
+            conversations: state.conversations.map((conversation) =>
+              conversation.id === conversationId
+                ? { ...conversation, unread_count: unreadCount }
+                : conversation
+            ),
+            filteredUnreadConversationCount: Math.max(
+              0,
+              state.filteredUnreadConversationCount + unreadDelta
+            ),
+          };
+        });
       }
       get().fetchUnreadSummary();
       return;
@@ -1223,6 +1253,13 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         });
 
         const exists = state.conversations.some((c) => c.id === convId);
+        const previousConversation = state.conversations.find((c) => c.id === convId);
+        const becomesUnread = Boolean(
+          exists &&
+          convId !== state.activeConversationId &&
+          msg.sender_type === 'customer' &&
+          (previousConversation?.unread_count || 0) === 0
+        );
         let updatedConvs: Conversation[];
         if (exists) {
           updatedConvs = sortConversationsByLatest(
@@ -1258,6 +1295,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         return {
           messages: { ...state.messages, [convId]: updatedMsgs },
           conversations: updatedConvs,
+          filteredUnreadConversationCount:
+            state.filteredUnreadConversationCount + (becomesUnread ? 1 : 0),
           isTyping: { ...state.isTyping, [convId]: false },
         };
       });

@@ -54,6 +54,8 @@ export const MemoizedMessageBubble = React.memo<{
   formatMessageTime,
   renderHighlightedText,
 }) => {
+  const [isCustomerMessageCopied, setIsCustomerMessageCopied] = useState(false);
+  const copyFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const media = resolveMedia(msg);
   const isReelOrShare = Boolean(
     !media.isImage &&
@@ -76,8 +78,6 @@ export const MemoizedMessageBubble = React.memo<{
       msg.media_url ||
       msg.is_deleted
   );
-
-  if (!hasContent) return null;
 
   const sType = (msg.sender_type || '').toLowerCase();
   const isAutomated = Boolean(
@@ -104,6 +104,56 @@ export const MemoizedMessageBubble = React.memo<{
   const isFailed = msg.delivery_status === 'failed';
   const isDeleted = Boolean(msg.is_deleted);
   const showDateDivider = !prevMsg || isDifferentDay(msg.created_at, prevMsg.created_at);
+  const canQuickCopyCustomerMessage = !isAgent && !isDeleted && Boolean(msg.text?.trim());
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  const copyCustomerMessage = async () => {
+    if (!canQuickCopyCustomerMessage || !msg.text) return;
+
+    try {
+      await navigator.clipboard.writeText(msg.text);
+      setIsCustomerMessageCopied(true);
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+      copyFeedbackTimerRef.current = setTimeout(() => {
+        setIsCustomerMessageCopied(false);
+        copyFeedbackTimerRef.current = null;
+      }, 1600);
+    } catch (error) {
+      console.warn('Failed to copy customer message:', error);
+    }
+  };
+
+  const handleCustomerMessageClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canQuickCopyCustomerMessage) return;
+    if ((window.getSelection()?.toString().length ?? 0) !== 0) return;
+
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest('a, button, video, audio, img, [data-prevent-quick-copy]')
+    ) {
+      return;
+    }
+
+    void copyCustomerMessage();
+  };
+
+  const handleCustomerMessageKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!canQuickCopyCustomerMessage || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    void copyCustomerMessage();
+  };
+
+  if (!hasContent) return null;
 
   return (
     <React.Fragment key={msg.id}>
@@ -118,13 +168,23 @@ export const MemoizedMessageBubble = React.memo<{
       <div
         id={`msg-${msg.id}`}
         dir="ltr"
-        className={`group/msg relative flex items-center gap-1.5 my-1 transition-all ${
+        className={`group/msg relative flex items-center gap-1.5 my-1 transition-all select-text ${
           isAgent ? 'flex-row-reverse' : 'flex-row'
         }`}
       >
         <div
           dir="auto"
-          className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs transition-all relative ${
+          onClick={handleCustomerMessageClick}
+          onKeyDown={handleCustomerMessageKeyDown}
+          role={canQuickCopyCustomerMessage ? 'button' : undefined}
+          tabIndex={canQuickCopyCustomerMessage ? 0 : undefined}
+          title={canQuickCopyCustomerMessage ? 'انقر لنسخ الرسالة' : undefined}
+          aria-label={canQuickCopyCustomerMessage ? 'انقر لنسخ رسالة العميل' : undefined}
+          className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs transition-all relative select-text ${
+            canQuickCopyCustomerMessage
+              ? 'cursor-pointer active:scale-[0.99] transition-transform'
+              : ''
+          } ${
             isFailed
               ? `bg-rose-50 text-rose-800 border border-rose-200 font-medium ${isAgent ? 'rounded-tr-none' : 'rounded-tl-none'}`
               : isDeleted
@@ -134,6 +194,16 @@ export const MemoizedMessageBubble = React.memo<{
               : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl rounded-tl-none font-normal'
           }`}
         >
+          {isCustomerMessageCopied && (
+            <span
+              role="status"
+              aria-live="polite"
+              className="absolute -top-8 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap rounded-full bg-slate-900/90 px-2.5 py-1 text-[10px] font-semibold text-white shadow-lg pointer-events-none select-none animate-in fade-in zoom-in-95 duration-150"
+            >
+              تم نسخ نص رسالة العميل إلى الحافظة ✓
+            </span>
+          )}
+
           {/* Sender Tag for Agent / Bot Messages */}
           {isAgent && !isDeleted && (
             <span className="text-[10px] text-white/90 font-bold block mb-1">
@@ -166,7 +236,8 @@ export const MemoizedMessageBubble = React.memo<{
           {msg.reply_to && !isDeleted && (
             <div
               onClick={() => scrollToMessage(msg.reply_to?.message_id)}
-              className="mb-2 p-2 rounded-xl bg-black/5 hover:bg-black/10 border-r-3 border-[#1A73E8] cursor-pointer transition text-[11px] select-none text-right"
+              data-prevent-quick-copy
+              className="mb-2 p-2 rounded-xl bg-black/5 hover:bg-black/10 border-r-3 border-[#1A73E8] cursor-pointer transition text-[11px] select-text text-right"
             >
               <div className="flex items-center gap-1 text-[10px] font-bold text-[#1A73E8]">
                 <CornerUpLeft className="w-3 h-3" />
@@ -245,7 +316,7 @@ export const MemoizedMessageBubble = React.memo<{
               {/* Inline Image Preview */}
               {media.isImage && media.url && (
                 <div
-                  className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-xs my-1 shadow-xs border border-slate-200/80 bg-slate-50 select-none"
+                  className="relative group cursor-pointer overflow-hidden rounded-2xl max-w-xs my-1 shadow-xs border border-slate-200/80 bg-slate-50 select-text"
                   onClick={() => handleOpenImagePreview(media.url!)}
                   title="اضغط للتكبير وعرض الصورة بالحجم الكامل"
                 >
@@ -353,7 +424,7 @@ export const MemoizedMessageBubble = React.memo<{
                 if (!displayTxt) return null;
 
                 return (
-                  <p className="whitespace-pre-wrap break-words">
+                  <p className="whitespace-pre-wrap break-words select-text">
                     {renderHighlightedText(displayTxt, inChatSearchQuery)}
                   </p>
                 );
@@ -575,52 +646,91 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
     <div
       ref={scrollContainerRef as any}
       onScroll={onInternalScroll}
-      className="relative flex-1 overflow-y-auto px-6 py-4 bg-gradient-to-b from-theme-primary-subtle via-white/90 to-slate-50/70 dark:via-slate-950/90 dark:to-slate-900/80 scrollbar-none"
+      className="relative flex-1 overflow-y-auto px-6 py-4 bg-gradient-to-br from-theme-primary-subtle via-white/95 to-theme-primary-tint dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 scrollbar-none select-text"
     >
-      <div className="relative min-h-full">
+      <div className="relative min-h-full select-text">
         <svg
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 h-full w-full stroke-current text-theme-primary opacity-[0.04] dark:opacity-[0.07]"
+          className="pointer-events-none absolute inset-0 h-full w-full stroke-current text-theme-primary/20"
         >
           <defs>
-            <pattern id="luxira-makeup-doodles" width="180" height="180" patternUnits="userSpaceOnUse">
-              {/* Lipstick */}
-              <g transform="translate(14 18) rotate(-12 12 20)" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 13h9v24H8zM6 37h13v7H6zM9 13V7l4-5 4 5v6" />
+            <pattern id="luxira-makeup-doodles" width="160" height="160" patternUnits="userSpaceOnUse">
+              <g fill="none" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round">
+                {/* Lipstick */}
+                <g transform="translate(8 8) rotate(-12 10 17)">
+                  <path d="M7 11h8v19H7zM5 30h12v6H5zM8 11V6l3-4 4 4v5M8 24h7" />
+                </g>
+                {/* Perfume atomizer */}
+                <g transform="translate(49 5)">
+                  <path d="M7 11h19l4 6v22H3V17l4-6ZM11 5h11v6H11zM14 1h5v4M9 23c5-4 11-4 16 0" />
+                  <path d="m23 5 8-3m0 0 5 2m-5-2 4-2" />
+                </g>
+                {/* Mascara wand */}
+                <g transform="translate(104 7) rotate(9 11 20)">
+                  <rect x="7" y="21" width="9" height="24" rx="3" />
+                  <path d="M11.5 21V5M6 7l11-2M6 11l11-2M6 15l11-2" />
+                </g>
+                {/* Tiny sparkle and heart */}
+                <path d="m145 9 1.5 4.5L151 15l-4.5 1.5L145 21l-1.5-4.5L139 15l4.5-1.5L145 9ZM136 34c-5-5-11 3 0 10 11-7 5-15 0-10Z" />
+
+                {/* Lip gloss */}
+                <g transform="translate(15 54) rotate(12 8 18)">
+                  <rect x="4" y="14" width="9" height="27" rx="3" />
+                  <path d="M8.5 14V4m0 0 4 7M5 19h7" />
+                </g>
+                {/* Compact mirror */}
+                <g transform="translate(48 51)">
+                  <circle cx="15" cy="15" r="13" />
+                  <circle cx="15" cy="15" r="9" />
+                  <path d="m15 28 2 16h-4l2-16ZM8 12c3-4 7-5 11-3" />
+                </g>
+                {/* Nail polish */}
+                <g transform="translate(91 54) rotate(-8 11 18)">
+                  <path d="M5 15h17v25H5zM8 7h11v8H8zM10 3h7v4M8 25c4-3 8-3 12 0" />
+                </g>
+                {/* Eyelashes */}
+                <g transform="translate(126 61)">
+                  <path d="M1 13c8 7 19 7 27 0M5 16l-2 5m8-3-1 6m7-6 1 6m5-8 3 5" />
+                </g>
+
+                {/* Blush brush */}
+                <g transform="translate(5 108) rotate(16 18 15)">
+                  <path d="M5 7c5-6 14-6 19 0l-4 9H9L5 7ZM9 16h11l-3 35h-5L9 16Z" />
+                  <path d="m8 4 3 5m2-7 1 7m6-6-2 6" />
+                </g>
+                {/* Powder compact */}
+                <g transform="translate(51 112)">
+                  <ellipse cx="17" cy="22" rx="16" ry="8" />
+                  <path d="M1 22V12c0-6 32-6 32 0v10M7 15c6-4 14-4 20 0" />
+                </g>
+                {/* Cosmetic tube */}
+                <g transform="translate(96 108) rotate(-10 10 20)">
+                  <path d="M6 5h13l2 31-4 8H8l-4-8L6 5ZM6 12h13M8 35h11" />
+                </g>
+                {/* Small comb */}
+                <g transform="translate(128 114) rotate(8 12 15)">
+                  <path d="M2 5h25v7H2zM5 12v12m5-12v9m5-9v12m5-12v9m5-9v12" />
+                </g>
               </g>
-              {/* Mascara */}
-              <g transform="translate(69 12) rotate(10 15 22)" fill="none" strokeWidth="1.5" strokeLinecap="round">
-                <rect x="3" y="25" width="10" height="27" rx="3" />
-                <path d="M8 25V8m-5 3 10-2M3 15l10-2M3 19l10-2" />
+
+              <g className="fill-current text-theme-primary/10" stroke="none">
+                <circle cx="40" cy="43" r="2" />
+                <circle cx="91" cy="27" r="1.5" />
+                <circle cx="120" cy="96" r="2" />
+                <circle cx="43" cy="104" r="1.5" />
+                <path d="m151 91 2 4 4 2-4 2-2 4-2-4-4-2 4-2 2-4Z" />
               </g>
-              {/* Perfume bottle */}
-              <g transform="translate(124 20)" fill="none" strokeWidth="1.6" strokeLinejoin="round">
-                <path d="M10 13h22l4 8v23H6V21l4-8Z" />
-                <path d="M15 5h12v8H15zM18 1h6v4M12 27c6-5 12-5 18 0" />
+              <g className="fill-current text-theme-primary/10" stroke="none" fontFamily="sans-serif" fontWeight="700" letterSpacing="1.6">
+                <text x="119" y="54" fontSize="7">LUXIRA</text>
+                <text x="73" y="103" fontSize="6" transform="rotate(-8 73 103)">LUXIRA</text>
+                <text x="112" y="153" fontSize="6">LUXIRA</text>
               </g>
-              {/* Makeup brush */}
-              <g transform="translate(18 94) rotate(18 24 18)" fill="none" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 7c5-6 14-6 19 0l-4 10H13L9 7ZM13 17h11l-3 31h-5l-3-31Z" />
-              </g>
-              {/* Hand mirror */}
-              <g transform="translate(76 91) rotate(-8 20 27)" fill="none" strokeWidth="1.6">
-                <circle cx="19" cy="17" r="14" />
-                <circle cx="19" cy="17" r="10" />
-                <path d="m19 31 2 23h-4l2-23Z" strokeLinejoin="round" />
-              </g>
-              {/* Compact powder */}
-              <g transform="translate(127 105)" fill="none" strokeWidth="1.6">
-                <ellipse cx="20" cy="24" rx="18" ry="10" />
-                <path d="M2 24V13c0-6 36-6 36 0v11M8 17c7-4 17-4 24 0" />
-              </g>
-              <text x="116" y="86" fill="currentColor" stroke="none" fontSize="9" fontWeight="700" letterSpacing="2">LUXIRA</text>
-              <text x="9" y="166" fill="currentColor" stroke="none" fontSize="8" fontWeight="700" letterSpacing="1.5">LUXIRA</text>
             </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#luxira-makeup-doodles)" stroke="none" />
         </svg>
 
-        <div className="relative z-10 space-y-3">
+        <div className="relative z-10 space-y-3 select-text">
       {isFetchingMore && (
         <div className="text-center py-1 text-xs text-[#1A73E8] animate-pulse font-semibold">
           جاري تحميل الرسائل الأقدم...

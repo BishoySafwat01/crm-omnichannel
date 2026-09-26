@@ -284,7 +284,8 @@ class ConversationService:
         assigned_agent_id: Optional[str] = None,
         allowed_brands: Optional[list[str]] = None,
         allowed_channels: Optional[list[str]] = None,
-    ) -> tuple[list[dict], int]:
+        include_unread_total: bool = False,
+    ) -> tuple[list[dict], int] | tuple[list[dict], int, int]:
         stmt = (
             select(Conversation)
             .options(selectinload(Conversation.customer))
@@ -449,6 +450,29 @@ class ConversationService:
             )
             stmt = stmt.where(search_filter)
             count_stmt = count_stmt.where(search_filter)
+
+        total_unread_conversations = 0
+        if include_unread_total:
+            latest_sender_type = (
+                select(Message.sender_type)
+                .where(
+                    Message.conversation_id == Conversation.id,
+                    Message.deleted_at.is_(None),
+                )
+                .order_by(Message.created_at.desc(), Message.id.desc())
+                .limit(1)
+                .correlate(Conversation)
+                .scalar_subquery()
+            )
+            unread_count_stmt = count_stmt.where(
+                Conversation.unread_count > 0,
+                or_(
+                    latest_sender_type == SenderTypeEnum.CUSTOMER,
+                    Conversation.last_read_at >= Conversation.last_message_at,
+                ),
+            )
+            unread_total_res = await session.execute(unread_count_stmt)
+            total_unread_conversations = int(unread_total_res.scalar() or 0)
 
         total_res = await session.execute(count_stmt)
         total = total_res.scalar() or 0
@@ -656,6 +680,8 @@ class ConversationService:
             }
             items.append(item)
 
+        if include_unread_total:
+            return items, total, total_unread_conversations
         return items, total
 
     @staticmethod
@@ -867,7 +893,7 @@ class ConversationService:
         user: Optional[Any] = None,
         brand: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Aggregate total, per-channel, and per-brand unread message counts via optimized SQL aggregation."""
+        """Count unread conversations by total, channel, and brand."""
         latest_sender_type = (
             select(Message.sender_type)
             .where(
@@ -883,7 +909,7 @@ class ConversationService:
             select(
                 Conversation.brand,
                 Conversation.channel,
-                func.coalesce(func.sum(Conversation.unread_count), 0),
+                func.count(Conversation.id),
             )
             .where(
                 Conversation.unread_count > 0,

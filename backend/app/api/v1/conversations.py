@@ -52,6 +52,12 @@ class ConversationLabelsUpdate(BaseModel):
     labels: list[str] = Field(default_factory=list, max_length=20)
 
 
+class ConversationListResponse(PaginatedResponse[ConversationResponse]):
+    """Paginated conversations with the unread-conversation count for the same filters."""
+
+    total_unread_conversations: int
+
+
 @router.get(
     "/brands",
     summary="Get All Active Dynamic Brands from Connected Pages",
@@ -262,7 +268,7 @@ async def update_conversation_labels(
 
 @router.get(
     "",
-    response_model=PaginatedResponse[ConversationResponse],
+    response_model=ConversationListResponse,
     summary="List Normalized Conversations",
 )
 async def list_conversations(
@@ -322,7 +328,7 @@ async def list_conversations(
                 if "all" not in norm_c and "الكل" not in norm_c:
                     allowed_channels = user_c
 
-    items_raw, total = await ConversationService.list_conversations(
+    items_raw, total, total_unread_conversations = await ConversationService.list_conversations(
         session=db,
         page=page,
         page_size=page_size,
@@ -339,9 +345,14 @@ async def list_conversations(
         assigned_agent_id=assigned_agent_id,
         allowed_brands=allowed_brands,
         allowed_channels=allowed_channels,
+        include_unread_total=True,
     )
     items = [ConversationResponse.model_validate(c) for c in items_raw]
-    return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
+    paginated = PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
+    return ConversationListResponse(
+        **paginated.model_dump(),
+        total_unread_conversations=total_unread_conversations,
+    )
 
 
 @router.post(

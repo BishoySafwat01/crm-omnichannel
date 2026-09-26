@@ -72,6 +72,7 @@ export interface ChatSlice {
   draftText: string;
   error: string | null;
   unreadSummary: UnreadSummary;
+  filteredUnreadConversationCount: number;
   adminSecurityAlerts: AdminSecurityAlert[];
 
   replyingToMessage: Message | null;

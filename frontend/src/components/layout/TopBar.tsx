@@ -30,7 +30,6 @@ import { metaApi } from '../../services/api';
 import { getBrandObject } from '../ConversationAvatar';
 import luxiraLogo from '../../assets/luxira-logo.png';
 import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
-import { useChannelsStore } from '../../store/useChannelsStore';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings';
@@ -50,10 +49,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     unreadSummary,
     fetchUnreadSummary,
     conversations,
+    activeConversationId,
   } = useCrmStore();
   const { user, logout } = useAuthStore();
   const { branding } = usePortalBrandingStore();
-  const connectedPages = useChannelsStore((state) => state.connectedPages);
 
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postMessage, setPostMessage] = useState('');
@@ -254,32 +253,32 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [availableBrands, selectedBrandId]);
 
-  const assignedStore = useMemo(() => {
-    if (!isCallCenterUser) return null;
+  const activeConversation = conversations.find(
+    (conversation) => conversation.id === activeConversationId
+  );
 
-    const assignedName = permittedBrandNames[0] || selectedBrandObj?.name || 'المتجر غير محدد';
-    const brand = availableBrands.find(
-      (candidate) => candidate.id.toLowerCase() === assignedName.toLowerCase()
-        || candidate.name.toLowerCase() === assignedName.toLowerCase()
-    ) || selectedBrandObj;
-    const connectedPage = connectedPages.find((page) => {
-      const pageBrand = String(page.brand || page.name || '').toLowerCase();
-      return pageBrand === assignedName.toLowerCase()
-        || pageBrand === String(brand?.name || '').toLowerCase();
-    });
-    const conversationAvatar = conversations.find((conversation) => {
-      const conversationBrand = String(conversation.brand || conversation.brand_name || '').toLowerCase();
-      return conversationBrand === assignedName.toLowerCase()
-        || conversationBrand === String(brand?.name || '').toLowerCase();
-    })?.page_avatar_url;
+  const activeStore = useMemo(() => {
+    if (!activeConversation) return null;
+
+    const name = activeConversation.brand?.trim()
+      || activeConversation.brand_name?.trim()
+      || 'المتجر غير محدد';
+    const normalizedName = name.toLowerCase();
+    const normalizedBrandId = activeConversation.brand_id?.trim().toLowerCase();
+    const brand = availableBrands.find((candidate) =>
+      candidate.id.toLowerCase() === normalizedName
+      || candidate.name.toLowerCase() === normalizedName
+      || Boolean(normalizedBrandId && candidate.id.toLowerCase() === normalizedBrandId)
+    );
+    const resolvedBrand = getBrandObject(activeConversation.brand_id, name);
 
     return {
-      name: brand?.name || assignedName,
-      logoUrl: connectedPage?.avatar_url || conversationAvatar || brand?.logo_url,
-      avatar: brand?.avatar || assignedName.substring(0, 2).toUpperCase(),
-      color: brand?.color || 'from-teal-600 to-cyan-700',
+      name,
+      logoUrl: activeConversation.page_avatar_url || brand?.logo_url || resolvedBrand.logo_url,
+      avatar: brand?.avatar || resolvedBrand.avatar || name.substring(0, 2).toUpperCase(),
+      color: brand?.color || resolvedBrand.color || 'from-teal-600 to-cyan-700',
     };
-  }, [availableBrands, connectedPages, conversations, isCallCenterUser, permittedBrandNames, selectedBrandObj]);
+  }, [activeConversation, availableBrands]);
 
   // Main navigation tabs ordered by workflow priority
   const navItems: {
@@ -298,25 +297,25 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   ];
   return (
     <header className={`sticky top-0 z-30 w-full min-h-[56px] bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip ${isCallCenterUser ? 'h-auto flex-wrap gap-y-2' : 'h-14'}`}>
-      {isCallCenterUser && assignedStore && (
+      {isCallCenterUser && activeConversation && activeStore && (
         <section
-          aria-label="المتجر المعيّن لموظف خدمة العملاء"
-          className="order-first flex w-full basis-full items-center justify-center gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-l from-teal-950 via-teal-900 to-slate-950 px-4 py-2 text-white shadow-sm"
+          aria-label="متجر المحادثة النشطة"
+          className="order-first flex w-full basis-full items-center justify-center gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-l from-teal-950 via-teal-900 to-slate-950 px-4 py-2 text-white shadow-sm transition-all duration-200"
         >
-          {assignedStore.logoUrl ? (
+          {activeStore.logoUrl ? (
             <img
-              src={assignedStore.logoUrl}
-              alt={`شعار ${assignedStore.name}`}
+              src={activeStore.logoUrl}
+              alt={`شعار ${activeStore.name}`}
               className="h-10 w-10 rounded-xl border border-white/20 bg-white object-cover p-0.5 shadow-md"
             />
           ) : (
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr ${assignedStore.color} text-xs font-black shadow-md ring-1 ring-white/25`}>
-              {assignedStore.avatar}
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr ${activeStore.color} text-xs font-black shadow-md ring-1 ring-white/25`}>
+              {activeStore.avatar}
             </div>
           )}
           <div className="min-w-0 text-right">
-            <p className="text-[10px] font-bold text-teal-200">متجرك المعيّن</p>
-            <p className="max-w-[70vw] truncate text-sm font-black tracking-tight sm:text-base">{assignedStore.name}</p>
+            <p className="text-[10px] font-bold text-teal-200">متجر المحادثة</p>
+            <p className="max-w-[70vw] truncate text-sm font-black tracking-tight sm:text-base">{activeStore.name}</p>
           </div>
         </section>
       )}

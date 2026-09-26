@@ -229,6 +229,8 @@ async def test_unread_summary_excludes_stale_unread_for_latest_outbound_message(
             sender_type=SenderTypeEnum.CUSTOMER,
             text="Customer message",
         )
+        customer_conv.unread_count = 7
+        await session.commit()
 
         outbound_detail = await ConversationService.get_conversation_detail(session, conv.id)
         customer_detail = await ConversationService.get_conversation_detail(session, customer_conv.id)

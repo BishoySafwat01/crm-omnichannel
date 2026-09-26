@@ -157,6 +157,7 @@ export interface Conversation {
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
+  total_unread_conversations?: number;
   page: number;
   page_size: number;
   has_next?: boolean;
