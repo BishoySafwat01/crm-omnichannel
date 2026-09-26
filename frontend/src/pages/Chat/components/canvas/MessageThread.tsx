@@ -26,6 +26,16 @@ const ESTIMATED_ITEM_HEIGHT = 72; // Average message row height in pixels
 
 import { CustomAudioPlayer } from './AudioPlayerWidget';
 
+type MessagePayload =
+  | Message[]
+  | { messages?: MessagePayload; items?: MessagePayload; data?: MessagePayload };
+
+const unwrapMessages = (data: MessagePayload | null | undefined): Message[] => {
+  if (Array.isArray(data)) return data;
+  if (!data) return [];
+  return unwrapMessages(data.messages || data.items || data.data);
+};
+
 // Memoized Single Message Bubble for 60 FPS rendering
 export const MemoizedMessageBubble = React.memo<{
   msg: Message;
@@ -506,7 +516,7 @@ export const MemoizedMessageBubble = React.memo<{
 MemoizedMessageBubble.displayName = 'MemoizedMessageBubble';
 
 export interface MessageThreadProps {
-  messages: Message[] | { messages?: Message[]; items?: Message[] };
+  messages: MessagePayload;
   activeConv: Conversation | null;
   currentUser: UserType | null;
   teamMembers: Array<{ id: string; full_name?: string }>;
@@ -556,13 +566,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
   formatMessageTime,
   renderHighlightedText,
 }) => {
-  const messageList = Array.isArray(messages)
-    ? messages
-    : Array.isArray(messages?.messages)
-      ? messages.messages
-      : Array.isArray(messages?.items)
-        ? messages.items
-        : [];
+  const messageList = unwrapMessages(messages);
 
   // Deduplicate and sort messages chronologically
   const sortedMessages = useMemo(() => {
@@ -692,7 +696,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
         </div>
       )}
 
-      {isLoadingMessages ? (
+      {isLoadingMessages && sortedMessages.length === 0 ? (
         <div className="text-center text-xs text-slate-400 py-10 animate-pulse font-medium">
           جاري تحميل الرسائل...
         </div>

@@ -443,11 +443,15 @@ class MessageService:
         if "all" in normalized_agent_brands or "الكل" in normalized_agent_brands:
             return True
 
-        store_identifiers = {
-            str(value).strip().lower()
-            for value in (conversation.page_id, conversation.brand)
-            if value and str(value).strip()
-        }
+        store_page_ids = {
+            str(conversation.page_id).strip().lower()
+        } if conversation.page_id and str(conversation.page_id).strip() else set()
+        store_brand_names = {
+            str(conversation.brand).strip().lower()
+        } if conversation.brand and str(conversation.brand).strip() else set()
+
+        def brand_matches(left: str, right: str) -> bool:
+            return left == right or left in right or right in left
 
         page_stmt = select(
             ConnectedPage.id,
@@ -461,18 +465,29 @@ class MessageService:
 
         pages = (await session.execute(page_stmt)).all()
         for connected_page_id, page_id, brand_name in pages:
-            page_identifiers = {
-                str(value).strip().lower()
-                for value in (page_id, brand_name)
-                if value and str(value).strip()
-            }
+            normalized_page_id = str(page_id).strip().lower() if page_id else ""
+            normalized_brand_name = str(brand_name).strip().lower() if brand_name else ""
             if (
                 connected_page_id == conversation.connected_page_id
-                or store_identifiers.intersection(page_identifiers)
+                or (normalized_page_id and normalized_page_id in store_page_ids)
+                or (
+                    normalized_brand_name
+                    and any(
+                        brand_matches(store_brand, normalized_brand_name)
+                        for store_brand in store_brand_names
+                    )
+                )
             ):
-                store_identifiers.update(page_identifiers)
+                if normalized_page_id:
+                    store_page_ids.add(normalized_page_id)
+                if normalized_brand_name:
+                    store_brand_names.add(normalized_brand_name)
 
-        return bool(store_identifiers.intersection(normalized_agent_brands))
+        return bool(store_page_ids.intersection(normalized_agent_brands)) or any(
+            brand_matches(agent_brand, store_brand)
+            for agent_brand in normalized_agent_brands
+            for store_brand in store_brand_names
+        )
 
     @staticmethod
     async def send_agent_reply(

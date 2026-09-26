@@ -13,6 +13,16 @@ import { ChatComposer } from './canvas/ChatComposer';
 import { MediaLightboxModal } from './canvas/MediaLightboxModal';
 import { resolveMedia } from '../utils/mediaResolver';
 
+type MessagePayload =
+  | Message[]
+  | { messages?: MessagePayload; items?: MessagePayload; data?: MessagePayload };
+
+const unwrapMessages = (data: MessagePayload | null | undefined): Message[] => {
+  if (Array.isArray(data)) return data;
+  if (!data) return [];
+  return unwrapMessages(data.messages || data.items || data.data);
+};
+
 export interface ChatCanvasProps {
   onToggleProfile?: () => void;
   isProfileOpen?: boolean;
@@ -34,7 +44,6 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
     selectedEmployeeId,
     setSelectedEmployeeId,
     isTyping,
-    isLoadingMessages,
     isFetchingMore,
     fetchMessages,
     loadMoreMessages,
@@ -50,6 +59,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   } = useCrmStore();
 
   const [selectedMetaTag, setSelectedMetaTag] = useState<MetaMessageTag>('HUMAN_AGENT');
+  const [loadingConversationId, setLoadingConversationId] = useState<string | null>(null);
 
   // Lightbox Media Preview State
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -90,14 +100,10 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   const isUserScrolledUpRef = useRef<boolean>(false);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId);
-  const activeMessageData = activeConversationId ? messages[activeConversationId] : [];
-  const activeMessages: Message[] = Array.isArray(activeMessageData)
-    ? activeMessageData
-    : Array.isArray((activeMessageData as any)?.messages)
-      ? (activeMessageData as any).messages
-      : Array.isArray((activeMessageData as any)?.items)
-        ? (activeMessageData as any).items
-        : [];
+  const activeMessageData = activeConversationId
+    ? (messages[activeConversationId] as MessagePayload | undefined)
+    : [];
+  const activeMessages = unwrapMessages(activeMessageData);
   const latestPinned = useMemo(
     () => activeMessages.filter((m) => m.is_pinned && !m.is_deleted).slice(-1)[0] || null,
     [activeMessages]
@@ -389,15 +395,23 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
   useEffect(() => {
     if (!activeConversationId) return;
 
+    const conversationId = activeConversationId;
+    let disposed = false;
     setInChatEmployeeFilter(null);
     setSelectedEmployeeId(null);
-    fetchMessages(activeConversationId);
+    setLoadingConversationId(conversationId);
+    void fetchMessages(conversationId).finally(() => {
+      if (!disposed) setLoadingConversationId(null);
+    });
 
     const msgInterval = setInterval(() => {
-      fetchMessages(activeConversationId);
+      void fetchMessages(conversationId);
     }, 15000);
 
-    return () => clearInterval(msgInterval);
+    return () => {
+      disposed = true;
+      clearInterval(msgInterval);
+    };
   }, [activeConversationId, fetchMessages, setSelectedEmployeeId]);
 
   const handleMediaLoaded = useCallback(() => {
@@ -555,7 +569,9 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
         teamMembers={teamMembers}
         inChatSearchQuery={inChatSearchQuery}
         isCustomerTyping={isCustomerTyping}
-        isLoadingMessages={isLoadingMessages}
+        isLoadingMessages={
+          activeMessages.length === 0 && loadingConversationId === activeConversationId
+        }
         isFetchingMore={isFetchingMore}
         activeEmpFilterId={activeEmpFilterId}
         activeEmpFilterObj={activeEmpFilterObj}

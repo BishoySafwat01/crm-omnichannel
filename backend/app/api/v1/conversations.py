@@ -482,13 +482,20 @@ async def get_conversation_messages(
         "admin",
         "superadmin",
     )
-    has_permitted_store = not is_admin and await MessageService.agent_can_access_conversation_store(
-        session=db,
-        conversation=conv,
-        agent_brands=agent_brands or [],
-    )
-    if not is_admin and not has_permitted_store:
+    has_conversation_access = user_has_conversation_access(current_user, conv)
+    has_permitted_store = False
+    if not is_admin and not has_conversation_access:
+        has_permitted_store = await MessageService.agent_can_access_conversation_store(
+            session=db,
+            conversation=conv,
+            agent_brands=agent_brands or [],
+        )
+    if not is_admin and not has_conversation_access and not has_permitted_store:
         require_conversation_access(conv, current_user)
+
+    return_all_messages = not is_admin and (
+        has_conversation_access or has_permitted_store
+    )
 
     try:
         messages, total = await MessageService.list_paginated_messages(
@@ -497,14 +504,14 @@ async def get_conversation_messages(
             page=page,
             page_size=page_size,
             order=order,
-            paginate=not has_permitted_store,
+            paginate=not return_all_messages,
         )
         items = [MessageResponse.model_validate(m) for m in messages]
         return PaginatedResponse.create(
             items=items,
             total=total,
-            page=1 if has_permitted_store else page,
-            page_size=max(total, 1) if has_permitted_store else page_size,
+            page=1 if return_all_messages else page,
+            page_size=max(total, 1) if return_all_messages else page_size,
         )
     except ValueError as exc:
         raise HTTPException(
