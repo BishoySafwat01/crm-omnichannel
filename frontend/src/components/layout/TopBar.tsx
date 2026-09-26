@@ -51,18 +51,21 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   return (
     <header dir="ltr" className="sticky top-0 z-30 grid h-16 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-slate-200/70 bg-white/95 px-3 shadow-sm backdrop-blur-md sm:px-5">
-      <div className="flex justify-start">
+      <div aria-hidden="true" />
+
+      <div dir="rtl" className="flex min-w-0 flex-col items-center justify-center px-3 text-center leading-tight">
+        <p className="truncate">
+          <span className="text-xl font-black tracking-wider text-teal-600 dark:text-teal-400 md:text-2xl">LUXIRA</span>
+          <span className="ml-1 text-xl font-black tracking-wider text-slate-800 dark:text-slate-100 md:text-2xl">HOLDING</span>
+        </p>
+        <p className="mt-0.5 max-w-[46vw] truncate text-sm font-bold uppercase tracking-wide text-teal-600 dark:text-teal-400 md:text-base">{user?.full_name || 'مستخدم النظام'}</p>
+      </div>
+
+      <div className="flex justify-end">
         <button ref={navigationToggleRef} type="button" onClick={() => setIsNavigationDrawerOpen((isOpen) => !isOpen)} aria-haspopup="dialog" aria-expanded={isNavigationDrawerOpen} aria-controls="account-navigation-drawer" className="rounded-full border border-slate-200 bg-white p-2.5 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-theme-primary/20" title="فتح قائمة التنقل">
           <Menu className="h-5 w-5" />
         </button>
       </div>
-
-      <div dir="rtl" className="min-w-0 px-3 text-center leading-tight">
-        <p className="truncate text-sm font-bold tracking-wide text-slate-950 sm:text-base">LUXIRA HOLDING</p>
-        <p className="mt-0.5 max-w-[46vw] truncate text-xs text-muted-foreground">{user?.full_name || 'مستخدم النظام'}</p>
-      </div>
-
-      <div aria-hidden="true" />
 
       {user && typeof document !== 'undefined' && createPortal(
         <div className={`fixed inset-0 z-[9998] transition-[visibility] duration-300 ${isNavigationDrawerOpen ? 'visible' : 'invisible pointer-events-none'}`} aria-hidden={!isNavigationDrawerOpen}>
