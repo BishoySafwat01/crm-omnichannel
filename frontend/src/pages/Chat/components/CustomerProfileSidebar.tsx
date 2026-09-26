@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import {
   User, Phone, Globe, Edit2, Check, X,
-  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert, Store
+  Sparkles, Copy, Send, History, FileText, Trash2, ExternalLink, Ban, ShieldAlert
 } from 'lucide-react';
 import { SALES_SCRIPTS, SalesScript } from '../../../constants/salesScripts';
 import { customerApi, CustomerNote, CustomerTimelineEvent } from '../../../services/api';
-import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
@@ -227,8 +226,6 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
   };
 
   const formattedCountry = customer?.country?.trim() || 'غير محددة';
-  const formattedStore = activeConversation?.brand || activeConversation?.brand_name || 'LAVVA';
-
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
   return (
@@ -302,19 +299,18 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
 
           {/* Centered Avatar & Status */}
           <div className="flex flex-col items-center text-center py-1">
-            <div className="relative mb-2">
-              <UserAvatar
-                name={customer.display_name || 'عميل'}
-                avatarUrl={customer.avatar_url}
-                size="lg"
-                className="w-20 h-20 text-2xl font-bold rounded-full ring-4 ring-indigo-500/20"
-              />
-              {/* Presence Dot */}
-              <span
-                className={`absolute bottom-0 right-0 w-4 h-4 border-2 border-white rounded-full ${presence.dotColor}`}
-                title={presence.statusText}
-              />
-            </div>
+            <ConversationAvatar
+              customerName={customer.display_name || 'عميل'}
+              brandAvatarUrl={activeConversation.page_avatar_url}
+              brandId={activeConversation.brand_id}
+              brandName={activeConversation.brand || activeConversation.brand_name}
+              channel={activeConversation.channel}
+              size="xl"
+              className="mb-2"
+              showPresenceDot
+              presenceDotColor={presence.dotColor}
+              presenceStatusText={presence.statusText}
+            />
 
             {isEditing ? (
               <input
@@ -375,17 +371,6 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
               </span>
               <span className="max-w-[60%] truncate rounded-full border border-theme-primary/20 bg-white px-2.5 py-0.5 text-[11px] font-bold text-theme-primary shadow-2xs">
                 {formattedCountry}
-              </span>
-            </div>
-
-            {/* Store / Brand (read-only conversation assignment) */}
-            <div className="flex items-center justify-between gap-2.5 rounded-xl border border-theme-primary/15 bg-theme-primary-subtle px-2.5 py-2 text-slate-700">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
-                <Store className="w-3.5 h-3.5 text-theme-primary shrink-0" />
-                المتجر
-              </span>
-              <span className="max-w-[60%] truncate rounded-full border border-theme-primary/20 bg-white px-2.5 py-0.5 text-[11px] font-bold text-theme-primary shadow-2xs">
-                {formattedStore}
               </span>
             </div>
 

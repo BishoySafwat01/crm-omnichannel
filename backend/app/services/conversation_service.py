@@ -16,6 +16,43 @@ from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum, 
 class ConversationService:
     MAX_CONVERSATION_LABELS = 20
     MAX_CONVERSATION_LABEL_LENGTH = 80
+    COMPLETED_ORDER_LABEL = "طلبات مكتملة"
+
+    # Accept common local Arab mobile/landline numbers and international Arab
+    # calling codes, while allowing the separators customers commonly type.
+    _ARAB_PHONE_PATTERN = re.compile(
+        r"""
+        (?<!\d)
+        (?:
+            0[1-9](?:[\s().-]*\d){7,9}
+            |
+            (?:\+|00)(?:
+                20|212|213|216|218|222|249|252|253|269|961|962|963|964|
+                965|966|967|968|970|971|972|973|974
+            )(?:[\s().-]*\d){7,10}
+        )
+        (?!\d)
+        """,
+        re.VERBOSE,
+    )
+    _PURCHASE_CONFIRMATION_PATTERN = re.compile(
+        r"(?:"
+        r"اكد|تاكيد|مؤكد|موافق|تمام|خلاص|نعم|اوكي|نبي|ابي|ابغى|اريد|ارغب|"
+        r"احجز|اطلب|اشتري|نشتري|ناخذ|باخذ|"
+        r"(?<![\w\u0600-\u06ff])تم(?![\w\u0600-\u06ff])|"
+        r"\bconfirm(?:ed)?\b|\byes\b|\bplace\s+(?:the\s+)?order\b|"
+        r"\b(?:i\s+)?want\s+to\s+(?:buy|order)\b|\bi(?:'|’)ll\s+take\b"
+        r")",
+        re.IGNORECASE,
+    )
+    _PURCHASE_REJECTION_PATTERN = re.compile(
+        r"(?:"
+        r"لا\s+(?:اكد|اريد|ارغب|نبي|ابي|ابغى)|"
+        r"(?:ما|مش)\s+(?:نبي|ابي|ابغى|عايز|اريد)|"
+        r"الغاء|الغي|\bcancel\b|\bdo\s+not\b|\bdon(?:'|’)t\b"
+        r")",
+        re.IGNORECASE,
+    )
 
     _ARAB_COUNTRIES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("ليبيا", ("ليبيا", "ليبي", "ليبية")),
@@ -123,6 +160,41 @@ class ConversationService:
         return " ".join(
             text.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ى": "ي", "ة": "ه", "ـ": ""})).split()
         ).casefold()
+
+    @classmethod
+    def is_completed_order_message(cls, text: Optional[str]) -> bool:
+        """Return whether a message confirms a purchase and includes a phone."""
+        if not text or not text.strip():
+            return False
+
+        normalized = cls._normalize_location_text(text)
+        return bool(
+            cls._ARAB_PHONE_PATTERN.search(text)
+            and cls._PURCHASE_CONFIRMATION_PATTERN.search(normalized)
+            and not cls._PURCHASE_REJECTION_PATTERN.search(normalized)
+        )
+
+    @classmethod
+    async def apply_completed_order_label(
+        cls,
+        session: AsyncSession,
+        conversation: Conversation,
+        text: Optional[str],
+    ) -> bool:
+        """Add the completed-order label once when an inbound message qualifies."""
+        if not cls.is_completed_order_message(text):
+            return False
+
+        labels = list(conversation.labels or [])
+        if any(label.casefold() == cls.COMPLETED_ORDER_LABEL.casefold() for label in labels):
+            return False
+
+        await cls.update_labels(
+            session=session,
+            conversation=conversation,
+            labels=[*labels, cls.COMPLETED_ORDER_LABEL],
+        )
+        return True
 
     @classmethod
     def extract_arab_location(

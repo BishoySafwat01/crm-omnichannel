@@ -14,7 +14,7 @@ import {
   Users,
   ChevronDown,
   Radio,
-  Bell,
+  Menu,
   SlidersHorizontal,
   Globe,
   Settings as SettingsIcon,
@@ -74,11 +74,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const [isSecondaryOpen, setIsSecondaryOpen] = useState(false);
   const secondaryDropdownRef = useRef<HTMLDivElement>(null);
 
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const notifDropdownRef = useRef<HTMLDivElement>(null);
-
   const [isNavigationDrawerOpen, setIsNavigationDrawerOpen] = useState(false);
-  const brandButtonRef = useRef<HTMLButtonElement>(null);
+  const navigationToggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     fetchUnreadSummary();
@@ -98,17 +95,14 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
       if (secondaryDropdownRef.current && !secondaryDropdownRef.current.contains(e.target as Node)) {
         setIsSecondaryOpen(false);
       }
-      if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target as Node)) {
-        setIsNotifOpen(false);
-      }
     };
-    if (isBrandDropdownOpen || isChannelDropdownOpen || isCountryDropdownOpen || isSecondaryOpen || isNotifOpen) {
+    if (isBrandDropdownOpen || isChannelDropdownOpen || isCountryDropdownOpen || isSecondaryOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
     }
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
     };
-  }, [isBrandDropdownOpen, isChannelDropdownOpen, isCountryDropdownOpen, isSecondaryOpen, isNotifOpen]);
+  }, [isBrandDropdownOpen, isChannelDropdownOpen, isCountryDropdownOpen, isSecondaryOpen]);
 
   useEffect(() => {
     if (!isNavigationDrawerOpen) return;
@@ -119,7 +113,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsNavigationDrawerOpen(false);
-        brandButtonRef.current?.focus();
+        navigationToggleRef.current?.focus();
       }
     };
 
@@ -139,7 +133,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   const countryOptions = useMemo(
     () => [
-      { id: 'all', label: 'كل المواقع والدول' },
+      { id: 'all', label: 'الكل' },
       ...(availableCountries || []).filter((country) => country !== 'all' && country !== 'unspecified').map((country) => ({ id: country, label: country })),
       { id: 'unspecified', label: 'غير محدد' },
     ],
@@ -297,7 +291,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
   return (
-    <header className={`sticky top-0 z-30 w-full min-h-[56px] bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip ${isCallCenterUser ? 'h-auto flex-wrap gap-y-2' : 'h-14'}`}>
+    <header className={`sticky top-0 z-30 w-full min-h-[56px] bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip ${(isCallCenterUser || activeMainView === 'chat') ? 'h-auto flex-wrap gap-y-2' : 'h-14'}`}>
       {isCallCenterUser && activeConversation && activeStore && (
         <section
           aria-label="متجر المحادثة النشطة"
@@ -320,42 +314,32 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           </div>
         </section>
       )}
-      {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark */}
+      {/* Right Side (RTL Start): Corporate brand and signed-in user */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Corporate Brand Mark & Dynamic Typographic Branding */}
-        <button
-          ref={brandButtonRef}
-          type="button"
-          onClick={() => setIsNavigationDrawerOpen((isOpen) => !isOpen)}
-          aria-haspopup="dialog"
-          aria-expanded={isNavigationDrawerOpen}
-          aria-controls="account-navigation-drawer"
-          className="flex items-center gap-2 sm:gap-2.5 shrink-0 group hover:opacity-80 transition cursor-pointer"
-          title="فتح قائمة الحساب والتنقل"
-        >
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-slate-950 p-1 flex items-center justify-center shadow-xs border border-teal-500/30 transition-transform duration-200 ease-out group-hover:scale-105 overflow-hidden shrink-0">
             <img
               src={branding.brand_logo_url || luxiraLogo}
-              alt={branding.brand_display_name || "LUXIRA HOLDING"}
+              alt="LUXIRA HOLDING"
               className="h-6 w-6 sm:h-7 sm:w-7 object-contain drop-shadow-xs"
             />
           </div>
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1 leading-none">
               <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate max-w-[85px] sm:max-w-[130px] md:max-w-none">
-                {branding.brand_display_name || "LUXIRA HOLDING"}
+                LUXIRA HOLDING
               </span>
             </div>
-            <span className="text-[7px] sm:text-[8px] font-bold text-slate-400 tracking-widest uppercase mt-0.5 hidden sm:block truncate">
-              {branding.workspace_name && branding.workspace_name !== 'Default Organization' ? branding.workspace_name : 'OMNICHANNEL CRM'}
+            <span className="mt-0.5 max-w-[120px] truncate text-[9px] font-semibold text-slate-500 sm:max-w-[170px] sm:text-[10px]">
+              {user?.full_name || 'مستخدم النظام'}
             </span>
           </div>
-        </button>
+        </div>
 
       </div>
 
       {/* Middle Side: Compact, Sleek Contextual Filter Triggers */}
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-2 ${activeMainView === 'chat' ? 'order-last basis-full w-full overflow-x-auto overflow-y-visible whitespace-nowrap pb-0.5 scrollbar-none' : ''}`}>
         {activeMainView === 'chat' && (
           <>
             {/* 1. Store / Brand Switcher Pill Dropdown */}
@@ -372,8 +356,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 ) : (
                   <span className="w-2 h-2 rounded-full bg-teal-600" />
                 )}
-                <span className="hidden lg:inline text-slate-500">فلتر حسب المتجر:</span>
-                <span className="max-w-[65px] sm:max-w-[85px] md:max-w-[110px] truncate">{selectedBrandObj?.name || 'كل المتاجر'}</span>
+                <span className="max-w-[110px] sm:max-w-[150px] truncate">{selectedBrandObj?.name || selectedBrandId}</span>
                 {(!isCallCenterUser || availableBrands.length > 1) && <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
               </button>
 
@@ -473,9 +456,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 title="فلتر حسب الدولة"
               >
                 <Globe className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                <span className="hidden xl:inline text-slate-500">فلتر حسب الدولة:</span>
                 <span className="max-w-[72px] sm:max-w-[110px] md:max-w-[145px] truncate">
-                  {countryOptions.find((country) => country.id === selectedCountry)?.label || selectedCountry || 'كل المواقع والدول'}
+                  {countryOptions.find((country) => country.id === selectedCountry)?.label || selectedCountry}
                 </span>
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -561,73 +543,20 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         )}
       </div>
 
-      {/* Left Side (RTL End): Notification Bell, Agent Profile & Logout */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-
-        {/* Notification Bell Dropdown */}
-        <div className="relative" ref={notifDropdownRef}>
-          <button
-            onClick={() => setIsNotifOpen(!isNotifOpen)}
-            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100/80 border border-slate-200/70 bg-slate-50 shadow-2xs hover:ring-2 hover:ring-teal-500/20 transition duration-150 relative cursor-pointer"
-            title="التنبيهات والرسائل غير المقروءة"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadSummary && unreadSummary.total_unread > 0 && (
-              <span className="absolute -top-1 -left-1 bg-teal-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs animate-pulse">
-                {unreadSummary.total_unread > 99 ? '99+' : unreadSummary.total_unread}
-              </span>
-            )}
-          </button>
-
-          {isNotifOpen && (
-            <div className="absolute top-full left-0 mt-2 w-64 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-3 z-50 text-right animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-                <span className="text-xs font-black text-slate-900">ملخص الرسائل غير المقروءة</span>
-                <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full border border-teal-200/50">
-                  {unreadSummary?.total_unread || 0} رسالة
-                </span>
-              </div>
-
-              {unreadSummary && unreadSummary.brands && Object.keys(unreadSummary.brands).length > 0 ? (
-                <div className="space-y-1 text-xs">
-                  <span className="text-[10px] text-slate-400 font-bold block mb-1">حسب العلامة التجارية:</span>
-                  {Object.entries(unreadSummary.brands).map(([b, count]) => {
-                    if (b.toLowerCase() === 'all' || b === 'الكل' || count <= 0) return null;
-                    return (
-                      <div key={b} className="flex items-center justify-between hover:bg-slate-50 transition-colors duration-150 rounded-xl px-2.5 py-1.5 text-slate-700 text-xs font-medium">
-                        <span className="truncate">{b}</span>
-                        <span className="font-bold font-mono text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded-md border border-teal-200/50">
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-400 text-center py-2">لا توجد رسائل غير مقروءة حالياً</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* User Profile Chip */}
-        {user && (
-          <div className="flex items-center pr-1.5 sm:pr-2 border-r border-slate-200/60">
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 bg-slate-50/80 rounded-xl border border-slate-200/70 text-xs">
-              <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold shrink-0">
-                {user.full_name
-                  ? user.full_name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
-                  : 'BS'}
-              </div>
-              <div className="flex items-center gap-1.5 leading-none">
-                <span className="font-semibold text-slate-800 truncate max-w-[65px] sm:max-w-[95px] md:max-w-[120px]">{user.full_name || 'Bishoy Safwat'}</span>
-                <span className="hidden md:inline text-[10px] font-medium bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md border border-slate-200/50">
-                  {user.role === 'admin' || user.role === 'superadmin' ? 'Admin' : 'Agent'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Far-left navigation trigger */}
+      <div className="flex shrink-0 items-center">
+        <button
+          ref={navigationToggleRef}
+          type="button"
+          onClick={() => setIsNavigationDrawerOpen((isOpen) => !isOpen)}
+          aria-haspopup="dialog"
+          aria-expanded={isNavigationDrawerOpen}
+          aria-controls="account-navigation-drawer"
+          className="rounded-xl border border-slate-200/70 bg-slate-50 p-2 text-slate-600 shadow-2xs transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-theme-primary/20"
+          title="فتح قائمة الحساب والتنقل"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Account & Navigation Drawer */}

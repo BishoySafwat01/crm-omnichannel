@@ -14,6 +14,7 @@ export interface ConversationAvatarProps {
   showPresenceDot?: boolean;
   presenceDotColor?: string;
   presenceStatusText?: string;
+  showAvatarBorder?: boolean;
 }
 
 export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string; className?: string }> = ({
@@ -26,7 +27,7 @@ export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string;
   if (normChan === 'whatsapp') {
     return (
       <div
-        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-[#25D366] ${className}`}
+        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md bg-[#25D366] ${className}`}
         title="واتساب (WhatsApp)"
       >
         <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" fill="white">
@@ -39,7 +40,7 @@ export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string;
   if (normChan === 'instagram') {
     return (
       <div
-        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] ${className}`}
+        className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] ${className}`}
         title="إنستغرام (Instagram Direct)"
       >
         <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -54,11 +55,11 @@ export const ChannelSocialIcon: React.FC<{ channel?: string; sizeClass?: string;
   // Facebook conversations use the standard Facebook "f", not the Messenger glyph.
   return (
     <div
-      className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md border-2 border-white bg-[#1877F2] ${className}`}
+      className={`${sizeClass} rounded-full flex items-center justify-center shrink-0 shadow-md overflow-hidden ${className}`}
       title="فيسبوك (Facebook)"
     >
-      <svg viewBox="0 0 24 24" className="w-[62%] h-[62%]" fill="white" aria-hidden="true">
-        <path d="M13.6 22v-9h3l.45-3.5H13.6V7.27c0-1.01.28-1.7 1.73-1.7h1.85V2.44a24.8 24.8 0 0 0-2.7-.14c-2.67 0-4.5 1.63-4.5 4.62V9.5H7v3.5h2.98v9h3.62Z" />
+      <svg viewBox="0 0 24 24" className="w-full h-full" aria-hidden="true">
+        <path fill="#1877F2" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.385H7.078v-3.542h3.047V9.374c0-3.023 1.792-4.693 4.533-4.693 1.312 0 2.686.236 2.686.236v2.968h-1.513c-1.49 0-1.956.93-1.956 1.884v2.304h3.328l-.532 3.542h-2.796V24C19.612 23.094 24 18.1 24 12.073Z" />
       </svg>
     </div>
   );
@@ -150,6 +151,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
   showPresenceDot = false,
   presenceDotColor = 'bg-emerald-500',
   presenceStatusText = '',
+  showAvatarBorder = true,
 }) => {
   const brand = getBrandObject(brandId, brandName);
   const avatarSources = Array.from(
@@ -198,7 +200,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
     <div className={`relative shrink-0 flex items-center justify-center ${sizeDimensions.container} ${className}`}>
       {/* Main avatar hierarchy: Page logo -> bundled store logo -> customer photo. */}
       <div
-        className={`${sizeDimensions.brandBox} rounded-full bg-gradient-to-tr ${brand.color || 'from-slate-700 to-slate-900'} text-white font-black flex items-center justify-center shadow-xs border border-white/80 select-none tracking-wider overflow-hidden`}
+        className={`${sizeDimensions.brandBox} rounded-full bg-gradient-to-tr ${brand.color || 'from-slate-700 to-slate-900'} text-white font-black flex items-center justify-center shadow-xs ${showAvatarBorder ? 'border border-white/80' : ''} select-none tracking-wider overflow-hidden`}
         title={brand.isDirect ? 'محادثة خاصة مباشرة' : `متجر: ${brand.name}`}
       >
         {activeAvatarSource ? (
@@ -220,7 +222,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
 
       {/* Compact channel badge pinned to the main circle's bottom-left. */}
       <div className={`absolute ${sizeDimensions.channelBadge} z-20`}>
-        <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" className="p-1 ring-2 ring-white shadow-sm" />
+        <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" className="p-1 shadow-sm" />
       </div>
 
       {/* Presence / Activity Dot */}

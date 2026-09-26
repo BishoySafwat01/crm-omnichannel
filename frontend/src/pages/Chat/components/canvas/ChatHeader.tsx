@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Mail,
   MailOpen,
-  Star,
   Tag,
   User,
 } from 'lucide-react';
@@ -25,7 +24,6 @@ const CONVERSATION_LABELS = [
   'طلبات مكتملة',
   'طلبات غير مكتملة',
   'تم إرسال عرض',
-  'محظورة',
 ] as const;
 
 interface IconActionProps {
@@ -143,7 +141,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   const isAdmin = isAdminUser(currentUser);
   const setConversationUnreadCount = useCrmStore((state) => state.setConversationUnreadCount);
   const setConversationLabels = useCrmStore((state) => state.setConversationLabels);
-  const setConversationPriority = useCrmStore((state) => state.setConversationPriority);
   const [isLabelsOpen, setIsLabelsOpen] = useState(false);
   const [isUpdatingLabels, setIsUpdatingLabels] = useState(false);
   const labelsPopoverRef = useRef<HTMLDivElement>(null);
@@ -159,7 +156,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
       ? 'pending'
       : 'open';
   const isUnread = (activeConv.unread_count || 0) > 0;
-  const isStarred = activeConv.priority === 'urgent';
   const conversationLabels = activeConv.labels || [];
 
   useEffect(() => {
@@ -297,13 +293,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
         {/* Meta-style conversation actions */}
         <div className="flex items-center gap-0.5 rounded-full border border-slate-200/80 bg-white/90 p-0.5 shadow-2xs">
-          <IconAction
-            label={isUnread ? 'تحديد كمقروء' : 'تحديد كغير مقروء'}
+          <button
+            type="button"
             onClick={() => setConversationUnreadCount(activeConv.id, isUnread ? 0 : 1)}
-            active={isUnread}
+            aria-label={isUnread ? 'تحديد كمقروء' : 'تحديد كغير مقروء'}
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-theme-primary/40 ${
+              isUnread
+                ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+            }`}
           >
             {isUnread ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-          </IconAction>
+            <span className="hidden sm:inline">{isUnread ? 'غير مقروء' : 'مقروء'}</span>
+          </button>
 
           <div ref={labelsPopoverRef} className="group relative flex shrink-0">
             <button
@@ -367,14 +369,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               </div>
             )}
           </div>
-
-          <IconAction
-            label={isStarred ? 'إلغاء تمييز المحادثة' : 'تمييز المحادثة كأولوية'}
-            onClick={() => setConversationPriority(activeConv.id, isStarred ? 'normal' : 'urgent')}
-            active={isStarred}
-          >
-            <Star className={`h-4 w-4 ${isStarred ? 'fill-current' : ''}`} />
-          </IconAction>
 
           <IconAction
             label={

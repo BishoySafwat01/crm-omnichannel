@@ -15,11 +15,15 @@ import {
   Edit2,
   Check,
   Ban,
+  Smile,
+  Keyboard,
 } from 'lucide-react';
 import { useCrmStore } from '../../../../store/useCrmStore';
 import { Conversation, Message } from '../../../../types/crm';
 import { CANNED_RESPONSES } from '../../constants/chatConstants';
 import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
+
+const COMPOSER_EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '❤️', '🎉', '✨'];
 
 export interface StagedMediaItem {
   file: File;
@@ -57,6 +61,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
   const [showCannedPicker, setShowCannedPicker] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [editInputText, setEditInputText] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
@@ -276,6 +282,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       setLocalDraftText('');
       setDraftText('');
       setShowCannedPicker(false);
+      setShowEmojiPicker(false);
       setUploadError(null);
       setTimeout(() => scrollToBottom('auto'), 50);
 
@@ -295,6 +302,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     setLocalDraftText('');
     setDraftText('');
     setShowCannedPicker(false);
+    setShowEmojiPicker(false);
     sendMessage(textToSend);
     setTimeout(() => scrollToBottom('auto'), 50);
   };
@@ -303,6 +311,34 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? localDraftText.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const nextDraft = `${localDraftText.slice(0, selectionStart)}${emoji}${localDraftText.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + emoji.length;
+
+    setLocalDraftText(nextDraft);
+    setShowEmojiPicker(false);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
+  const toggleKeyboard = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    if (document.activeElement === textarea) {
+      textarea.blur();
+      setIsKeyboardActive(false);
+    } else {
+      textarea.focus();
+      setIsKeyboardActive(true);
     }
   };
 
@@ -626,6 +662,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               value={localDraftText}
               onChange={(e) => setLocalDraftText(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => setIsKeyboardActive(true)}
+              onBlur={() => setIsKeyboardActive(false)}
+              dir="auto"
               placeholder={
                 stagedMedia
                   ? 'اكتب تعليقاً على المرفق (اختياري) ثم اضغط إرسال...'
@@ -715,6 +754,59 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                   title="ردود جاهزة"
                 >
                   <Zap className="w-4 h-4" />
+                </button>
+
+                {/* Emoji Picker */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setShowEmojiPicker((isOpen) => !isOpen)}
+                    className={`p-1.5 rounded-full transition cursor-pointer ${
+                      showEmojiPicker
+                        ? 'bg-theme-primary-tint text-theme-primary'
+                        : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'
+                    }`}
+                    title="إضافة رمز تعبيري"
+                    aria-label="فتح منتقي الرموز التعبيرية"
+                    aria-expanded={showEmojiPicker}
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-full right-0 z-50 mb-2 grid grid-cols-4 gap-1 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
+                      {COMPOSER_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => insertEmoji(emoji)}
+                          className="emoji flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:scale-110 hover:bg-slate-100 active:scale-95"
+                          aria-label={`إضافة ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile keyboard focus toggle */}
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={toggleKeyboard}
+                  className={`p-1.5 rounded-full transition cursor-pointer ${
+                    isKeyboardActive
+                      ? 'bg-theme-primary-tint text-theme-primary'
+                      : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title={isKeyboardActive ? 'إخفاء لوحة المفاتيح' : 'إظهار لوحة المفاتيح'}
+                  aria-label={isKeyboardActive ? 'إخفاء لوحة المفاتيح' : 'إظهار لوحة المفاتيح'}
+                  aria-pressed={isKeyboardActive}
+                >
+                  <Keyboard className="w-4 h-4" />
                 </button>
               </div>
 

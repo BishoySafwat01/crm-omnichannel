@@ -25,7 +25,8 @@ logger = logging.getLogger("MessageService")
 
 
 class MessageService:
-    LOCATION_PROMPT = "أهلاً بك، من أي دولة ومدينتك الكريمة لتأكيد التوصيل؟"
+    LOCATION_GREETING = "يا هلا"
+    LOCATION_PROMPT = "حضرتك من اي دولة ؟"
 
     @staticmethod
     async def process_new_inbound_location(
@@ -34,8 +35,17 @@ class MessageService:
         text: Optional[str],
         customer: Optional[Customer] = None,
     ) -> None:
-        """Extract location, or ask once, during a conversation's opening exchange."""
-        if not text or not text.strip() or not conversation.customer_id:
+        """Apply inbound automations during a conversation's opening exchange."""
+        if not text or not text.strip():
+            return
+
+        await ConversationService.apply_completed_order_label(
+            session=session,
+            conversation=conversation,
+            text=text,
+        )
+
+        if not conversation.customer_id:
             return
 
         customer = customer or await session.get(Customer, conversation.customer_id)
@@ -124,18 +134,28 @@ class MessageService:
         if not is_first_customer_message:
             return
 
-        await MessageService.send_agent_reply(
-            session=session,
-            conversation_id=conversation.id,
-            text=MessageService.LOCATION_PROMPT,
-            sender_external_id="automation_bot",
-            metadata_={
-                "is_automated": True,
-                "is_bot": True,
-                "location_prompt": True,
-            },
-            sender_name="مساعد التوصيل",
-        )
+        for prompt_text, prompt_metadata in (
+            (
+                MessageService.LOCATION_GREETING,
+                {"location_greeting": True},
+            ),
+            (
+                MessageService.LOCATION_PROMPT,
+                {"location_prompt": True},
+            ),
+        ):
+            await MessageService.send_agent_reply(
+                session=session,
+                conversation_id=conversation.id,
+                text=prompt_text,
+                sender_external_id="automation_bot",
+                metadata_={
+                    "is_automated": True,
+                    "is_bot": True,
+                    **prompt_metadata,
+                },
+                sender_name="مساعد التوصيل",
+            )
 
     @staticmethod
     def _is_automated_reply(

@@ -424,7 +424,7 @@ export const MemoizedMessageBubble = React.memo<{
                 if (!displayTxt) return null;
 
                 return (
-                  <p className="whitespace-pre-wrap break-words select-text">
+                  <p dir="auto" className="whitespace-pre-wrap break-words select-text">
                     {renderHighlightedText(displayTxt, inChatSearchQuery)}
                   </p>
                 );
@@ -439,21 +439,6 @@ export const MemoizedMessageBubble = React.memo<{
             }`}
           >
             <span>{formatMessageTime(msg.created_at)}</span>
-            {isAgent &&
-              (isAutomated ||
-                msg.sender_name ||
-                (msg.sender_user_id &&
-                  teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
-                <span className="text-[10px] text-white/80 font-semibold flex items-center gap-0.5">
-                  <span>•</span>
-                  <span>
-                    {isAutomated
-                      ? botSenderName
-                      : (msg.sender_name ||
-                        teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)}
-                  </span>
-                </span>
-              )}
             {msg.is_edited && !isDeleted && (
               <span className="text-[10px] opacity-75 font-medium">(معدلة)</span>
             )}
@@ -646,7 +631,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
     <div
       ref={scrollContainerRef as any}
       onScroll={onInternalScroll}
-      className="relative flex-1 overflow-y-auto px-6 py-4 bg-gradient-to-b from-[#F2F1EC] via-[#EAE7DF] to-[#E3DFD5] scrollbar-none select-text"
+      className="relative flex-1 overflow-y-auto px-6 py-4 bg-[#ECE5DD] scrollbar-none select-text"
     >
       <div className="relative min-h-full select-text">
         <svg
@@ -654,7 +639,7 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
           className="pointer-events-none absolute inset-0 h-full w-full stroke-slate-500/25 dark:stroke-slate-400/20"
         >
           <defs>
-            <pattern id="luxira-makeup-doodles" width="128" height="128" patternUnits="userSpaceOnUse">
+            <pattern id="chat-makeup-doodles" width="128" height="128" patternUnits="userSpaceOnUse">
               <g fill="none" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round">
                 {/* Lipstick */}
                 <g transform="translate(5 5) rotate(-10 8 14)">
@@ -742,20 +727,9 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
                 <circle cx="28" cy="113" r="1.5" />
                 <path d="m77 69 1.3 3.2 3.2 1.3-3.2 1.3-1.3 3.2-1.3-3.2-3.2-1.3 3.2-1.3 1.3-3.2Z" />
               </g>
-              <g
-                className="fill-current text-theme-primary/20"
-                stroke="none"
-                fontFamily="Plus Jakarta Sans, Arial, sans-serif"
-                fontWeight="800"
-                letterSpacing="1.4"
-              >
-                <text x="76" y="35" fontSize="10">LUXIRA</text>
-                <text x="2" y="72" fontSize="9" transform="rotate(-5 2 72)">LUXIRA</text>
-                <text x="48" y="117" fontSize="10">LUXIRA</text>
-              </g>
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#luxira-makeup-doodles)" stroke="none" />
+          <rect width="100%" height="100%" fill="url(#chat-makeup-doodles)" stroke="none" />
         </svg>
 
         <div className="relative z-10 space-y-3 select-text">

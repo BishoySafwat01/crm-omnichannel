@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store, Ban } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { FilterTab } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
@@ -27,7 +28,7 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
   const ch = (channel || 'messenger').toLowerCase();
   if (ch === 'whatsapp') {
     return (
-      <span className={`${className} bg-[#25D366] text-white rounded-full flex items-center justify-center p-1 ring-2 ring-white shadow-sm shrink-0`} title="واتساب (WhatsApp)">
+      <span className={`${className} bg-[#25D366] text-white rounded-full flex items-center justify-center p-1 shadow-sm shrink-0`} title="واتساب (WhatsApp)">
         <svg className="w-full h-full fill-current" viewBox="0 0 24 24">
           <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z" />
         </svg>
@@ -36,7 +37,7 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
   }
   if (ch === 'instagram') {
     return (
-      <span className={`${className} bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white rounded-full flex items-center justify-center p-1 ring-2 ring-white shadow-sm shrink-0`} title="إنستغرام (Instagram)">
+      <span className={`${className} bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white rounded-full flex items-center justify-center p-1 shadow-sm shrink-0`} title="إنستغرام (Instagram)">
         <svg className="w-full h-full fill-current" viewBox="0 0 24 24">
           <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
         </svg>
@@ -44,9 +45,9 @@ export const ChannelBadgeIcon: React.FC<{ channel?: string; className?: string }
     );
   }
   return (
-    <span className={`${className} bg-[#1877F2] text-white rounded-full flex items-center justify-center p-1 ring-2 ring-white shadow-sm shrink-0`} title="فيسبوك (Facebook)">
-      <svg className="w-full h-full fill-current" viewBox="0 0 24 24">
-        <path d="M13.6 22v-9h3l.45-3.5H13.6V7.27c0-1.01.28-1.7 1.73-1.7h1.85V2.44a24.8 24.8 0 0 0-2.7-.14c-2.67 0-4.5 1.63-4.5 4.62V9.5H7v3.5h2.98v9h3.62Z" />
+    <span className={`${className} rounded-full flex items-center justify-center shadow-sm shrink-0 overflow-hidden`} title="فيسبوك (Facebook)">
+      <svg className="w-full h-full" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="#1877F2" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.385H7.078v-3.542h3.047V9.374c0-3.023 1.792-4.693 4.533-4.693 1.312 0 2.686.236 2.686.236v2.968h-1.513c-1.49 0-1.956.93-1.956 1.884v2.304h3.328l-.532 3.542h-2.796V24C19.612 23.094 24 18.1 24 12.073Z" />
       </svg>
     </span>
   );
@@ -138,6 +139,9 @@ export interface ConversationListProps {
 }
 
 export const ConversationList: React.FC<ConversationListProps> = ({ className = '' }) => {
+  const currentUser = useAuthStore((state) => state.user);
+  const normalizedRole = String(currentUser?.role || '').toLowerCase();
+  const canFilterByEmployee = normalizedRole !== 'agent' && normalizedRole !== 'call_center';
   const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
   const filterTabsRef = useRef<HTMLDivElement>(null);
@@ -176,6 +180,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     loadMoreConversations,
     fetchConversations,
   } = useCrmStore();
+
+  useEffect(() => {
+    if (!canFilterByEmployee && selectedEmployeeId) {
+      setSelectedEmployeeId(null);
+    }
+  }, [canFilterByEmployee, selectedEmployeeId, setSelectedEmployeeId]);
 
   const isInitialSearchRenderRef = useRef(true);
 
@@ -436,8 +446,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
             )}
           </div>
 
-          {/* Employee Filter Trigger (Task 2) */}
-          <div className="relative">
+          {/* Employee filtering is available only to roles allowed to inspect other agents. */}
+          {canFilterByEmployee && <div className="relative">
             <button
               type="button"
               onClick={() => setIsEmployeeMenuOpen(!isEmployeeMenuOpen)}
@@ -527,11 +537,11 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Active Employee Filter Pill Indicator with Store Logo */}
-        {selectedEmployeeObj && (() => {
+        {canFilterByEmployee && selectedEmployeeObj && (() => {
           const brandObj = getBrandObject(selectedEmployeeObj.brand, selectedEmployeeObj.brand);
           const brandName = selectedEmployeeObj.brand || brandObj?.name || 'LUXIRA';
           const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
@@ -568,7 +578,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
               e.currentTarget.scrollLeft += e.deltaY;
             }
           }}
-          className="flex items-center gap-1 p-1 bg-slate-100/70 rounded-xl border border-slate-200/60 backdrop-blur-md overflow-x-auto whitespace-nowrap no-scrollbar scrollbar-none scroll-smooth"
+          className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap no-scrollbar scrollbar-none scroll-smooth py-0.5"
         >
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
@@ -586,10 +596,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                   setActiveFilterTab(tab.id);
                   e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
                 }}
-                className={`shrink-0 flex items-center justify-center gap-1 py-1.5 px-2.5 text-[11px] rounded-lg border transition-all duration-150 cursor-pointer select-none whitespace-nowrap ${
+                className={`shrink-0 flex items-center justify-center gap-1 py-1.5 px-3 text-[11px] rounded-full border transition-all duration-150 cursor-pointer select-none whitespace-nowrap ${
                   isActive
-                    ? 'bg-theme-primary-tint text-theme-primary border-theme-primary/35 font-bold shadow-2xs'
-                    : 'text-slate-600 border-transparent hover:text-slate-900 hover:bg-white/70 font-medium'
+                    ? 'bg-[#25D366] text-white border-[#25D366] font-bold shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 hover:border-[#25D366]/50 hover:bg-emerald-50 font-medium'
                 }`}
                 title={tab.label}
               >
@@ -599,8 +609,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                   <span
                     className={`inline-flex items-center justify-center h-4 min-w-[18px] px-1 text-[9px] font-extrabold rounded-full transition-colors leading-none shrink-0 ${
                       isActive
-                        ? 'bg-theme-primary text-white shadow-2xs'
-                        : 'bg-theme-primary-tint text-theme-primary'
+                        ? 'bg-white text-[#128C7E] shadow-2xs'
+                        : 'bg-emerald-50 text-[#128C7E]'
                     }`}
                   >
                     {formattedBadge}
@@ -664,6 +674,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                         showPresenceDot={true}
                         presenceDotColor={presence.dotColor}
                         presenceStatusText={presence.statusText}
+                        showAvatarBorder={false}
                       />
 
                       <div className="min-w-0">
