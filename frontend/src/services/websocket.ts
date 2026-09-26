@@ -8,6 +8,7 @@ export class RealtimeWebSocketService {
   private socket: WebSocket | null = null;
   private listeners: Set<MessageHandler> = new Set();
   private onOpenCallbacks: Set<() => void> = new Set();
+  private connectionStatusCallbacks: Set<(isConnected: boolean) => void> = new Set();
   private reconnectInterval = 3000;
   private maxReconnectInterval = 15000;
   private currentReconnectDelay = 3000;
@@ -49,6 +50,7 @@ export class RealtimeWebSocketService {
       this.socket.onopen = () => {
         console.log('Real-time WebSocket Connected:', wsUrl.split('?')[0]);
         this.currentReconnectDelay = this.reconnectInterval;
+        this.connectionStatusCallbacks.forEach((cb) => cb(true));
         this.onOpenCallbacks.forEach((cb) => {
           try {
             cb();
@@ -68,6 +70,7 @@ export class RealtimeWebSocketService {
       };
 
       this.socket.onclose = (closeEvent) => {
+        this.connectionStatusCallbacks.forEach((cb) => cb(false));
         if (closeEvent.code === WS_CLOSE_AUTH_FAILURE) {
           // Server rejected the token — don't retry; the user needs to log in again.
           console.warn('WebSocket authentication rejected (4001). Please log in again.');
@@ -87,6 +90,7 @@ export class RealtimeWebSocketService {
       };
 
       this.socket.onerror = (err) => {
+        this.connectionStatusCallbacks.forEach((cb) => cb(false));
         console.warn('WebSocket error observed:', err);
       };
     } catch (e) {
@@ -108,6 +112,13 @@ export class RealtimeWebSocketService {
     };
   }
 
+  public onConnectionStatusChange(cb: (isConnected: boolean) => void) {
+    this.connectionStatusCallbacks.add(cb);
+    return () => {
+      this.connectionStatusCallbacks.delete(cb);
+    };
+  }
+
   public send(data: any) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(data));
@@ -116,6 +127,7 @@ export class RealtimeWebSocketService {
 
   public close() {
     this.isExplicitlyClosed = true;
+    this.connectionStatusCallbacks.forEach((cb) => cb(false));
     if (this.socket) {
       this.socket.close();
     }

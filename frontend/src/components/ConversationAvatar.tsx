@@ -169,25 +169,25 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
     sm: {
       container: 'w-10 h-10',
       brandBox: 'w-9 h-9 text-[10px]',
-      channelBadge: 'w-4 h-4 -bottom-0.5 -left-0.5',
+      channelBadge: 'w-6 h-6 -bottom-1 -left-1',
       presence: 'w-2.5 h-2.5 -bottom-0.5 -right-0.5',
     },
     md: {
       container: 'w-12 h-12',
       brandBox: 'w-10 h-10 text-xs',
-      channelBadge: 'w-4 h-4 -bottom-0.5 -left-0.5',
+      channelBadge: 'w-6 h-6 -bottom-1 -left-1',
       presence: 'w-3 h-3 -bottom-0.5 -right-0.5',
     },
     lg: {
       container: 'w-14 h-14',
       brandBox: 'w-12 h-12 text-sm',
-      channelBadge: 'w-[18px] h-[18px] -bottom-0.5 -left-0.5',
+      channelBadge: 'w-7 h-7 -bottom-1 -left-1',
       presence: 'w-3.5 h-3.5 -bottom-0.5 -right-0.5',
     },
     xl: {
       container: 'w-16 h-16',
       brandBox: 'w-14 h-14 text-base',
-      channelBadge: 'w-5 h-5 -bottom-0.5 -left-0.5',
+      channelBadge: 'w-8 h-8 -bottom-1 -left-1',
       presence: 'w-4 h-4 -bottom-1 -right-1',
     },
   }[size];
@@ -220,7 +220,7 @@ export const ConversationAvatar: React.FC<ConversationAvatarProps> = ({
 
       {/* Compact channel badge pinned to the main circle's bottom-left. */}
       <div className={`absolute ${sizeDimensions.channelBadge} z-20`}>
-        <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" />
+        <ChannelSocialIcon channel={channel} sizeClass="w-full h-full" className="p-1 ring-2 ring-white shadow-sm" />
       </div>
 
       {/* Presence / Activity Dot */}

@@ -18,7 +18,11 @@ import {
   SlidersHorizontal,
   Globe,
   Settings as SettingsIcon,
-  Menu,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Activity,
+  ChevronLeft,
 } from 'lucide-react';
 import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
@@ -31,9 +35,10 @@ import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings';
   setActiveMainView?: (view: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings') => void;
+  isRealtimeConnected?: boolean;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
+export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView, isRealtimeConnected = false }) => {
   const {
     selectedBrandId,
     setSelectedBrandId,
@@ -69,8 +74,8 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifDropdownRef = useRef<HTMLDivElement>(null);
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const [isNavigationDrawerOpen, setIsNavigationDrawerOpen] = useState(false);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     fetchUnreadSummary();
@@ -90,17 +95,34 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
       if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target as Node)) {
         setIsNotifOpen(false);
       }
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
-        setIsMobileMenuOpen(false);
-      }
     };
-    if (isBrandDropdownOpen || isChannelDropdownOpen || isSecondaryOpen || isNotifOpen || isMobileMenuOpen) {
+    if (isBrandDropdownOpen || isChannelDropdownOpen || isSecondaryOpen || isNotifOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
     }
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
     };
-  }, [isBrandDropdownOpen, isChannelDropdownOpen, isSecondaryOpen, isNotifOpen, isMobileMenuOpen]);
+  }, [isBrandDropdownOpen, isChannelDropdownOpen, isSecondaryOpen, isNotifOpen]);
+
+  useEffect(() => {
+    if (!isNavigationDrawerOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsNavigationDrawerOpen(false);
+        profileButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isNavigationDrawerOpen]);
 
   const channels: { id: ChannelFilterType; label: string }[] = [
     { id: 'all', label: 'كل القنوات' },
@@ -181,11 +203,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     { id: 'comments', label: 'التعليقات', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
-  const activeNavItem = navItems.find((item) => item.id === activeMainView) || navItems[0];
-
   return (
     <header className="sticky top-0 z-30 w-full min-h-[56px] h-14 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip">
-      {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark + Primary Navigation */}
+      {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Corporate Brand Mark & Dynamic Typographic Branding */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 group cursor-default">
@@ -208,91 +228,6 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           </div>
         </div>
 
-        {/* Desktop Primary Navigation Strip (wide screens) */}
-        {isUserAdmin && setActiveMainView && (
-          <nav
-            className="hidden 2xl:flex items-center gap-0.5 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60 backdrop-blur-md shrink-0"
-            aria-label="التنقل الرئيسي"
-          >
-            {navItems.map((item) => {
-              const isActive = activeMainView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveMainView(item.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
-                  className={`text-[11px] flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 select-none cursor-pointer transition-all duration-200 ease-out ${
-                    isActive
-                      ? 'text-white border-transparent shadow-xs font-bold'
-                      : 'text-slate-600 border-transparent hover:text-slate-900 hover:bg-white hover:border-slate-200/70 font-medium'
-                  }`}
-                >
-                  <span className={isActive ? 'text-white' : 'text-slate-500'}>
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        )}
-
-        {/* Responsive Collapsible Menu Drawer Trigger */}
-        {isUserAdmin && setActiveMainView && (
-          <div className="relative 2xl:hidden" ref={mobileMenuRef}>
-            <button
-              type="button"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-1.5 sm:p-2 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70 bg-slate-50 transition cursor-pointer flex items-center gap-1 text-xs font-bold shadow-2xs"
-              title="القائمة الرئيسية والتنقل"
-            >
-              {isMobileMenuOpen ? <X className="w-4 h-4 text-slate-600" /> : <Menu className="w-4 h-4 text-slate-600" />}
-              <span className="hidden sm:inline text-xs max-w-[150px] truncate">{activeNavItem.label}</span>
-            </button>
-
-            {/* Mobile / Tablet Nav Dropdown Menu */}
-            {isMobileMenuOpen && (
-              <div className="absolute top-full right-0 mt-2 w-56 bg-white/95 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/10 border border-slate-100 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150 text-right">
-                <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                  <span>أقسام النظام والتنقل</span>
-                  <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">LUXIRA</span>
-                </div>
-                <div className="max-h-80 overflow-y-auto space-y-0.5 pr-0.5">
-                  {navItems.map((item) => {
-                    const isActive = activeMainView === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveMainView(item.id);
-                          setIsMobileMenuOpen(false);
-                        }}
-                        aria-current={isActive ? 'page' : undefined}
-                        style={isActive ? { backgroundColor: branding.theme_primary_color || '#0d9488' } : undefined}
-                        className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                          isActive
-                            ? 'text-white font-bold shadow-xs'
-                            : 'text-slate-700 hover:bg-slate-50 font-medium'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={isActive ? 'text-white' : 'text-slate-500'}>
-                            {item.icon}
-                          </span>
-                          <span>{item.label}</span>
-                        </div>
-                        {isActive && <Check className="w-3.5 h-3.5 text-white" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Middle Side: Compact, Sleek Contextual Filter Triggers */}
@@ -519,10 +454,19 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
           )}
         </div>
 
-        {/* User Profile Chip */}
+        {/* User Profile Chip / Navigation Drawer Trigger */}
         {user && (
-          <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2 border-r border-slate-200/60">
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 bg-slate-50/80 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 text-xs transition-colors">
+          <div className="flex items-center pr-1.5 sm:pr-2 border-r border-slate-200/60">
+            <button
+              ref={profileButtonRef}
+              type="button"
+              onClick={() => setIsNavigationDrawerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isNavigationDrawerOpen}
+              aria-controls="account-navigation-drawer"
+              className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 bg-slate-50/80 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 text-xs transition-all hover:ring-2 hover:ring-theme-primary/15 cursor-pointer"
+              title="فتح قائمة الحساب والتنقل"
+            >
               <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold shrink-0">
                 {user.full_name
                   ? user.full_name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
@@ -534,17 +478,151 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   {user.role === 'admin' || user.role === 'superadmin' ? 'Admin' : 'Agent'}
                 </span>
               </div>
-            </div>
-            <button
-              onClick={logout}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-              title="تسجيل الخروج"
-            >
-              <LogOut className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5 text-slate-400" />
             </button>
           </div>
         )}
       </div>
+
+      {/* Account & Navigation Drawer */}
+      {user && typeof document !== 'undefined' && createPortal(
+        <div
+          className={`fixed inset-0 z-[9998] transition-[visibility] duration-300 ${
+            isNavigationDrawerOpen ? 'visible' : 'invisible pointer-events-none'
+          }`}
+          aria-hidden={!isNavigationDrawerOpen}
+        >
+          <button
+            type="button"
+            tabIndex={isNavigationDrawerOpen ? 0 : -1}
+            aria-label="إغلاق قائمة التنقل"
+            onClick={() => setIsNavigationDrawerOpen(false)}
+            className={`absolute inset-0 w-full h-full bg-slate-950/45 backdrop-blur-[2px] transition-opacity duration-300 ${
+              isNavigationDrawerOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+
+          <aside
+            id="account-navigation-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="قائمة الحساب والتنقل الرئيسية"
+            dir="rtl"
+            className={`absolute inset-y-0 right-0 flex w-[min(92vw,360px)] flex-col bg-white shadow-2xl border-l border-slate-200/80 text-right transition-transform duration-300 ease-out ${
+              isNavigationDrawerOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          >
+            <div className="relative overflow-hidden border-b border-slate-200/70 bg-gradient-to-bl from-theme-primary-tint via-white to-slate-50 px-5 py-5">
+              <button
+                type="button"
+                tabIndex={isNavigationDrawerOpen ? 0 : -1}
+                onClick={() => setIsNavigationDrawerOpen(false)}
+                className="absolute left-4 top-4 rounded-xl p-2 text-slate-500 transition hover:bg-white hover:text-slate-900 hover:shadow-sm"
+                aria-label="إغلاق القائمة"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-3 pl-10">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-theme-primary text-base font-black text-white shadow-md shadow-theme-primary/20">
+                  {user.full_name
+                    ? user.full_name.split(' ').map((name) => name[0]).join('').substring(0, 2).toUpperCase()
+                    : 'BS'}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-950">{user.full_name || 'Bishoy Safwat'}</p>
+                  <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{user.email}</p>
+                  <span className="mt-1.5 inline-flex rounded-full border border-theme-primary/20 bg-white/80 px-2 py-0.5 text-[10px] font-bold text-theme-primary">
+                    {user.role === 'admin' || user.role === 'superadmin' ? 'مدير النظام' : 'موظف خدمة عملاء'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {isUserAdmin && setActiveMainView && (
+                <nav aria-label="التنقل الرئيسي" className="space-y-1">
+                  <p className="px-2 pb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">أقسام النظام</p>
+                  {navItems.map((item) => {
+                    const isActive = activeMainView === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        tabIndex={isNavigationDrawerOpen ? 0 : -1}
+                        onClick={() => {
+                          setActiveMainView(item.id);
+                          setIsNavigationDrawerOpen(false);
+                        }}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-xs transition-all duration-200 ${
+                          isActive
+                            ? 'border-theme-primary/25 bg-theme-primary-tint text-theme-primary shadow-sm font-black'
+                            : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50 font-semibold'
+                        }`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${isActive ? 'bg-theme-primary text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                            {item.icon}
+                          </span>
+                          <span>{item.label}</span>
+                        </span>
+                        {isActive && <Check className="h-4 w-4" />}
+                      </button>
+                    );
+                  })}
+                </nav>
+              )}
+
+              <section className="mt-5 border-t border-slate-100 pt-4" aria-labelledby="system-status-heading">
+                <div className="mb-2 flex items-center justify-between px-2">
+                  <p id="system-status-heading" className="text-[10px] font-black uppercase tracking-wider text-slate-400">التشغيل والاتصال</p>
+                  <Activity className="h-3.5 w-3.5 text-slate-400" />
+                </div>
+                <div className="space-y-2 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 font-semibold text-slate-700">
+                      {isRealtimeConnected ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-amber-600" />}
+                      التحديث الفوري
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${isRealtimeConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {isRealtimeConnected ? 'متصل' : 'إعادة اتصال'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-slate-200/70 pt-2 text-xs">
+                    <span className="font-semibold text-slate-600">المحادثات المحمّلة</span>
+                    <span className="font-mono font-black text-slate-900">{conversations.length}</span>
+                  </div>
+                  <button
+                    type="button"
+                    tabIndex={isNavigationDrawerOpen ? 0 : -1}
+                    onClick={() => fetchUnreadSummary()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition hover:border-theme-primary/30 hover:bg-theme-primary-tint hover:text-theme-primary"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    تحديث حالة النظام
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <div className="border-t border-slate-200 bg-white p-4">
+              <button
+                type="button"
+                tabIndex={isNavigationDrawerOpen ? 0 : -1}
+                onClick={() => {
+                  setIsNavigationDrawerOpen(false);
+                  logout();
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+              >
+                <LogOut className="h-4 w-4" />
+                تسجيل الخروج
+              </button>
+            </div>
+          </aside>
+        </div>,
+        document.body
+      )}
 
       {/* Quick Post Publisher Modal (Rendered with Portal for Viewport Centering) */}
       {isPostModalOpen &&

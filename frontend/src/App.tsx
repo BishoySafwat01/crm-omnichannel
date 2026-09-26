@@ -95,12 +95,13 @@ export const App: React.FC = () => {
 
     // Auto-re-subscribe active conversation room on initial open and reconnect
     const unsubscribeOpen = realtimeService.onOpen(() => {
-      setWsConnected(true);
       const activeId = useCrmStore.getState().activeConversationId;
       if (activeId) {
         realtimeService.send({ type: 'JOIN_CONVERSATION', conversation_id: activeId });
       }
     });
+
+    const unsubscribeConnectionStatus = realtimeService.onConnectionStatusChange(setWsConnected);
 
     // Track open/close so polling can be suppressed while WS is active
     const unsubscribeWs = realtimeService.subscribe((event) => {
@@ -114,18 +115,14 @@ export const App: React.FC = () => {
 
     // Send a periodic PING to detect connection state
     const pingInterval = setInterval(() => {
-      try {
-        realtimeService.send({ type: 'PING' });
-        setWsConnected(true);
-      } catch {
-        setWsConnected(false);
-      }
+      realtimeService.send({ type: 'PING' });
     }, 10000);
 
     return () => {
       clearInterval(pollInterval);
       clearInterval(pingInterval);
       unsubscribeOpen();
+      unsubscribeConnectionStatus();
       unsubscribeWs();
       realtimeService.close();
       setWsConnected(false);
@@ -161,7 +158,11 @@ export const App: React.FC = () => {
       />
 
       {/* Top Header & Brand Switcher */}
-      <TopBar activeMainView={activeMainView} setActiveMainView={setActiveMainView} />
+      <TopBar
+        activeMainView={activeMainView}
+        setActiveMainView={setActiveMainView}
+        isRealtimeConnected={wsConnected}
+      />
 
       {/* Main View Area (Feature / Page-Based Routing) */}
       {isUserAdmin && activeMainView === 'settings' ? (
