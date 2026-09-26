@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BarChart3, Bot, Check, Database, LogOut, Menu, MessageCircle, MessageSquare, Radio, Settings as SettingsIcon, Users, X } from 'lucide-react';
-import { useBrandStore } from '../../store/useBrandStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
 
 interface TopBarProps {
@@ -12,17 +11,11 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView }) => {
   const { user, logout } = useAuthStore();
-  const brands = useBrandStore((state) => state.brands);
-  const fetchBackendBrands = useBrandStore((state) => state.fetchBackendBrands);
   const [isNavigationDrawerOpen, setIsNavigationDrawerOpen] = useState(false);
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
   const normalizedRole = String(user?.role || '').toLowerCase();
   const isUserAdmin = isAdminUser(user);
   const isCallCenterUser = normalizedRole === 'agent' || normalizedRole === 'call_center';
-
-  useEffect(() => {
-    if (user) fetchBackendBrands();
-  }, [fetchBackendBrands, user]);
 
   useEffect(() => {
     if (!isNavigationDrawerOpen) return;
@@ -41,15 +34,6 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [isNavigationDrawerOpen]);
 
-  const activeStores = useMemo(() => {
-    const storeBrands = brands.filter((brand) => brand.id.toLowerCase() !== 'all');
-    const brandAccess = user?.brand_access || [];
-    const hasAllAccess = brandAccess.some((brand) => ['all', 'الكل'].includes(String(brand).trim().toLowerCase()));
-    if (!isCallCenterUser || hasAllAccess) return storeBrands;
-    const permitted = new Set(brandAccess.map((brand) => String(brand).trim().toLowerCase()));
-    return storeBrands.filter((brand) => permitted.has(brand.id.toLowerCase()) || permitted.has(brand.name.toLowerCase()));
-  }, [brands, isCallCenterUser, user?.brand_access]);
-
   const navItems: {
     id: 'chat' | 'database' | 'channels' | 'automations' | 'dashboard' | 'team' | 'comments' | 'settings';
     label: string;
@@ -67,18 +51,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
 
   return (
     <header dir="ltr" className="sticky top-0 z-30 grid h-16 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center border-b border-slate-200/70 bg-white/95 px-3 shadow-sm backdrop-blur-md sm:px-5">
-      <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-1 no-scrollbar scrollbar-none" aria-label="Active stores">
-        {activeStores.map((store) => (
-          <div key={store.id} title={store.name} aria-label={store.name} className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-slate-100 text-[10px] font-bold text-white shadow-sm ring-1 ring-slate-200">
-            {store.logo_url ? (
-              <img src={store.logo_url} alt={store.name} className="h-full w-full object-cover" />
-            ) : (
-              <span className={`flex h-full w-full items-center justify-center bg-gradient-to-tr ${store.color}`}>
-                {store.avatar?.substring(0, 2) || store.name.substring(0, 2).toUpperCase()}
-              </span>
-            )}
-          </div>
-        ))}
+      <div className="flex justify-start">
+        <button ref={navigationToggleRef} type="button" onClick={() => setIsNavigationDrawerOpen((isOpen) => !isOpen)} aria-haspopup="dialog" aria-expanded={isNavigationDrawerOpen} aria-controls="account-navigation-drawer" className="rounded-full border border-slate-200 bg-white p-2.5 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-theme-primary/20" title="فتح قائمة التنقل">
+          <Menu className="h-5 w-5" />
+        </button>
       </div>
 
       <div dir="rtl" className="min-w-0 px-3 text-center leading-tight">
@@ -86,11 +62,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
         <p className="mt-0.5 max-w-[46vw] truncate text-xs text-muted-foreground">{user?.full_name || 'مستخدم النظام'}</p>
       </div>
 
-      <div className="flex justify-end">
-        <button ref={navigationToggleRef} type="button" onClick={() => setIsNavigationDrawerOpen((isOpen) => !isOpen)} aria-haspopup="dialog" aria-expanded={isNavigationDrawerOpen} aria-controls="account-navigation-drawer" className="rounded-full border border-slate-200 bg-white p-2.5 text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-theme-primary/20" title="فتح قائمة التنقل">
-          <Menu className="h-5 w-5" />
-        </button>
-      </div>
+      <div aria-hidden="true" />
 
       {user && typeof document !== 'undefined' && createPortal(
         <div className={`fixed inset-0 z-[9998] transition-[visibility] duration-300 ${isNavigationDrawerOpen ? 'visible' : 'invisible pointer-events-none'}`} aria-hidden={!isNavigationDrawerOpen}>

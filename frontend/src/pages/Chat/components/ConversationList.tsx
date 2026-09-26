@@ -1,7 +1,9 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store, Ban, Tags } from 'lucide-react';
-import { useCrmStore } from '../../../store/useCrmStore';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, Globe, Users, ChevronDown, X, Check, Store, Radio } from 'lucide-react';
+import { useCrmStore, ChannelFilterType } from '../../../store/useCrmStore';
+import { useBrandStore } from '../../../store/useBrandStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { fetchActiveChannelsDirect } from '../../../services/api';
 import { FilterTab } from '../../../types/crm';
 import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
@@ -140,10 +142,15 @@ export interface ConversationListProps {
 
 export const ConversationList: React.FC<ConversationListProps> = ({ className = '' }) => {
   const currentUser = useAuthStore((state) => state.user);
+  const brands = useBrandStore((state) => state.brands);
+  const fetchBackendBrands = useBrandStore((state) => state.fetchBackendBrands);
   const normalizedRole = String(currentUser?.role || '').toLowerCase();
   const canFilterByEmployee = normalizedRole !== 'agent' && normalizedRole !== 'call_center';
   const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
+  const [openFilterMenu, setOpenFilterMenu] = useState<'brands' | 'channels' | 'countries' | null>(null);
+  const [activeChannelIds, setActiveChannelIds] = useState<ChannelFilterType[]>([]);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
+  const filterMenusRef = useRef<HTMLDivElement>(null);
   const filterTabsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,13 +164,48 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEmployeeMenuOpen]);
 
+  useEffect(() => {
+    if (!openFilterMenu) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterMenusRef.current && !filterMenusRef.current.contains(event.target as Node)) {
+        setOpenFilterMenu(null);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenFilterMenu(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [openFilterMenu]);
+
+  useEffect(() => {
+    if (currentUser) fetchBackendBrands();
+  }, [currentUser, fetchBackendBrands]);
+
+  useEffect(() => {
+    fetchActiveChannelsDirect().then((items) => {
+      const supportedChannels: ChannelFilterType[] = ['messenger', 'instagram', 'whatsapp', 'tiktok', 'sms'];
+      setActiveChannelIds(
+        Array.from(new Set(items.filter((item): item is ChannelFilterType => supportedChannels.includes(item as ChannelFilterType))))
+      );
+    });
+  }, []);
+
   const {
     conversations,
     activeConversationId,
     setActiveConversationId,
     selectedBrandIds,
+    setSelectedBrandIds,
     selectedChannels,
+    setSelectedChannels,
     selectedCountries,
+    setSelectedCountries,
+    availableCountries,
     selectedEmployeeId,
     setSelectedEmployeeId,
     availableEmployees,
@@ -180,6 +222,29 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     loadMoreConversations,
     fetchConversations,
   } = useCrmStore();
+
+  const brandOptions = useMemo(() => {
+    const connectedBrands = brands.filter((brand) => brand.id.toLowerCase() !== 'all');
+    const brandAccess = currentUser?.brand_access || [];
+    const hasAllAccess = brandAccess.some((brand) => ['all', 'الكل'].includes(String(brand).trim().toLowerCase()));
+    if (canFilterByEmployee || hasAllAccess) return connectedBrands;
+    const permitted = new Set(brandAccess.map((brand) => String(brand).trim().toLowerCase()));
+    return connectedBrands.filter((brand) => permitted.has(brand.id.toLowerCase()) || permitted.has(brand.name.toLowerCase()));
+  }, [brands, canFilterByEmployee, currentUser?.brand_access]);
+
+  const channelLabels: Record<ChannelFilterType, string> = {
+    messenger: 'ماسنجر',
+    instagram: 'إنستغرام',
+    whatsapp: 'واتساب',
+    tiktok: 'تيك توك',
+    sms: 'رسائل نصية',
+  };
+  const channelOptions = activeChannelIds.map((id) => ({ id, label: channelLabels[id] }));
+  const countryOptions = (availableCountries || [])
+    .filter((country) => country && country !== 'all' && country !== 'unspecified')
+    .map((country) => ({ id: country, label: country }));
+  const toggleSelection = <T extends string>(items: T[], value: T): T[] =>
+    items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
 
   useEffect(() => {
     if (!canFilterByEmployee && selectedEmployeeId) {
@@ -390,13 +455,135 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       badgeCount: unreadTotal > 0 ? unreadTotal : undefined,
     },
     { id: 'completed', label: 'طلبات مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
-    { id: 'incomplete', label: 'التصنيفات', icon: <Tags className="w-3.5 h-3.5" /> },
   ];
 
   return (
     <aside className={`w-full min-w-0 bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)] rounded-2xl flex flex-col shrink-0 h-full min-h-0 relative z-10 overflow-hidden ${className}`}>
       {/* Header Search & Filter Toolbar */}
       <div className="p-3 border-b border-slate-100/70 space-y-2.5">
+        <div ref={filterMenusRef} className="flex w-full items-center gap-1.5" dir="rtl">
+          <div className="relative min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setOpenFilterMenu((menu) => menu === 'brands' ? null : 'brands')}
+              aria-haspopup="menu"
+              aria-expanded={openFilterMenu === 'brands'}
+              className={`flex w-full items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                openFilterMenu === 'brands' || selectedBrandIds.length > 0
+                  ? 'border-theme-primary/30 bg-theme-primary-tint text-theme-primary'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title="فلتر حسب المتجر"
+            >
+              <Store className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{selectedBrandIds.length > 0 ? `المتاجر (${selectedBrandIds.length})` : 'المتاجر'}</span>
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openFilterMenu === 'brands' ? 'rotate-180' : ''}`} />
+            </button>
+
+            {openFilterMenu === 'brands' && (
+              <div role="menu" aria-label="اختيار المتاجر" className="absolute right-0 top-full z-50 mt-1.5 max-h-72 w-56 overflow-y-auto rounded-2xl border border-slate-100 bg-white/95 p-2 text-right shadow-xl backdrop-blur-md scrollbar-none">
+                <div className="mb-1 flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                  <span>المتاجر</span>
+                  {selectedBrandIds.length > 0 && <button type="button" onClick={() => setSelectedBrandIds([])} className="text-theme-primary hover:underline">مسح</button>}
+                </div>
+                <div className="space-y-1">
+                  {brandOptions.map((brand) => {
+                    const isSelected = selectedBrandIds.includes(brand.id);
+                    return (
+                      <label key={brand.id} role="menuitemcheckbox" aria-checked={isSelected} className={`flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors ${isSelected ? 'border border-theme-primary/20 bg-theme-primary-tint font-bold text-theme-primary' : 'font-medium text-slate-700 hover:bg-slate-50'}`}>
+                        <input type="checkbox" checked={isSelected} onChange={() => setSelectedBrandIds(toggleSelection(selectedBrandIds, brand.id))} className="h-4 w-4 shrink-0 accent-[var(--theme-primary)]" />
+                        {brand.logo_url ? <img src={brand.logo_url} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" /> : <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr ${brand.color} text-[7px] font-bold text-white`}>{brand.avatar?.substring(0, 2) || 'ST'}</span>}
+                        <span className="truncate">{brand.name}</span>
+                      </label>
+                    );
+                  })}
+                  {brandOptions.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد متاجر متصلة نشطة</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setOpenFilterMenu((menu) => menu === 'channels' ? null : 'channels')}
+              aria-haspopup="menu"
+              aria-expanded={openFilterMenu === 'channels'}
+              className={`flex w-full items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                openFilterMenu === 'channels' || selectedChannels.length > 0
+                  ? 'border-theme-primary/30 bg-theme-primary-tint text-theme-primary'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title="تصفية المحادثات حسب نوع الصفحة"
+            >
+              <Radio className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{selectedChannels.length > 0 ? `نوع الصفحة (${selectedChannels.length})` : 'نوع الصفحة'}</span>
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openFilterMenu === 'channels' ? 'rotate-180' : ''}`} />
+            </button>
+
+            {openFilterMenu === 'channels' && (
+              <div role="menu" aria-label="اختيار نوع الصفحة" className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-2xl border border-slate-100 bg-white/95 p-2 text-right shadow-xl backdrop-blur-md">
+                <div className="mb-1 flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                  <span>نوع الصفحة</span>
+                  {selectedChannels.length > 0 && <button type="button" onClick={() => setSelectedChannels([])} className="text-theme-primary hover:underline">مسح</button>}
+                </div>
+                <div className="space-y-1">
+                  {channelOptions.map((channel) => {
+                    const isSelected = selectedChannels.includes(channel.id);
+                    return (
+                      <label key={channel.id} role="menuitemcheckbox" aria-checked={isSelected} className={`flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors ${isSelected ? 'border border-theme-primary/20 bg-theme-primary-tint font-bold text-theme-primary' : 'font-medium text-slate-700 hover:bg-slate-50'}`}>
+                        <input type="checkbox" checked={isSelected} onChange={() => setSelectedChannels(toggleSelection(selectedChannels, channel.id))} className="h-4 w-4 accent-[var(--theme-primary)]" />
+                        <span>{channel.label}</span>
+                      </label>
+                    );
+                  })}
+                  {channelOptions.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد صفحات متصلة نشطة</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setOpenFilterMenu((menu) => menu === 'countries' ? null : 'countries')}
+              aria-haspopup="menu"
+              aria-expanded={openFilterMenu === 'countries'}
+              className={`flex w-full items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                openFilterMenu === 'countries' || selectedCountries.length > 0
+                  ? 'border-theme-primary/30 bg-theme-primary-tint text-theme-primary'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title="فلتر حسب الموقع"
+            >
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{selectedCountries.length > 0 ? `المواقع (${selectedCountries.length})` : 'المواقع'}</span>
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openFilterMenu === 'countries' ? 'rotate-180' : ''}`} />
+            </button>
+
+            {openFilterMenu === 'countries' && (
+              <div role="menu" aria-label="اختيار المواقع" className="absolute left-0 top-full z-50 mt-1.5 max-h-72 w-52 overflow-y-auto rounded-2xl border border-slate-100 bg-white/95 p-2 text-right shadow-xl backdrop-blur-md scrollbar-none">
+                <div className="mb-1 flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                  <span>المواقع</span>
+                  {selectedCountries.length > 0 && <button type="button" onClick={() => setSelectedCountries([])} className="text-theme-primary hover:underline">مسح</button>}
+                </div>
+                <div className="space-y-1">
+                  {countryOptions.map((country) => {
+                    const isSelected = selectedCountries.includes(country.id);
+                    return (
+                      <label key={country.id} role="menuitemcheckbox" aria-checked={isSelected} className={`flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors ${isSelected ? 'border border-theme-primary/20 bg-theme-primary-tint font-bold text-theme-primary' : 'font-medium text-slate-700 hover:bg-slate-50'}`}>
+                        <input type="checkbox" checked={isSelected} onChange={() => setSelectedCountries(toggleSelection(selectedCountries, country.id))} className="h-4 w-4 shrink-0 accent-[var(--theme-primary)]" />
+                        <span className="truncate">{country.label}</span>
+                      </label>
+                    );
+                  })}
+                  {countryOptions.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد مواقع مسجلة</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="flex items-center gap-1.5">
           <div className="relative flex-1 flex items-center">
             <input
@@ -512,36 +699,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
           </div>}
         </div>
 
-        {/* Active Employee Filter Pill Indicator with Store Logo */}
-        {canFilterByEmployee && selectedEmployeeObj && (() => {
-          const brandObj = getBrandObject(selectedEmployeeObj.brand, selectedEmployeeObj.brand);
-          const brandName = selectedEmployeeObj.brand || brandObj?.name || 'LUXIRA';
-          const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
-          const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
-
-          return (
-            <div className="flex items-center justify-between bg-theme-primary-tint border border-theme-primary/20 px-3 py-1 rounded-xl text-xs text-theme-primary font-semibold animate-in fade-in duration-100">
-              <div className="flex items-center gap-2 truncate">
-                <div
-                  className={`w-5 h-5 rounded-md bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
-                  title={`المتجر: ${brandName}`}
-                >
-                  {brandAvatar}
-                </div>
-                <span>الموظف: {selectedEmployeeObj.name}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedEmployeeId(null)}
-                className="text-theme-primary hover:text-theme-primary-hover p-0.5 rounded-full cursor-pointer"
-                title="إلغاء تصفية الموظف"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          );
-        })()}
-
         {/* Filter Tabs (Clean Adaptive Unread Badge & Tab Layout) */}
         <div
           ref={filterTabsRef}
@@ -592,6 +749,36 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
             );
           })}
         </div>
+
+        {/* Active Employee Filter Pill Indicator with Store Logo */}
+        {canFilterByEmployee && selectedEmployeeObj && (() => {
+          const brandObj = getBrandObject(selectedEmployeeObj.brand, selectedEmployeeObj.brand);
+          const brandName = selectedEmployeeObj.brand || brandObj?.name || 'LUXIRA';
+          const brandAvatar = brandObj?.avatar || brandName.substring(0, 2).toUpperCase();
+          const brandColor = brandObj?.color || 'from-[#1A73E8] to-blue-600';
+
+          return (
+            <div className="flex items-center justify-between bg-theme-primary-tint border border-theme-primary/20 px-3 py-1 rounded-xl text-xs text-theme-primary font-semibold animate-in fade-in duration-100">
+              <div className="flex items-center gap-2 truncate">
+                <div
+                  className={`w-5 h-5 rounded-md bg-gradient-to-tr ${brandColor} text-white flex items-center justify-center text-[9px] font-black shrink-0 shadow-2xs`}
+                  title={`المتجر: ${brandName}`}
+                >
+                  {brandAvatar}
+                </div>
+                <span>الموظف: {selectedEmployeeObj.name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeId(null)}
+                className="text-theme-primary hover:text-theme-primary-hover p-0.5 rounded-full cursor-pointer"
+                title="إلغاء تصفية الموظف"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Clean Minimalist Glass Conversation Cards with Continuous Messenger Stream */}
