@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 import uuid
 from typing import Any, Dict, Optional
 from sqlalchemy import func, or_, select
@@ -61,6 +62,61 @@ class ConversationService:
         ("بيروت", "لبنان", ("بيروت",)),
         ("دمشق", "سوريا", ("دمشق",)),
     )
+    _FLAG_PATTERN = re.compile(r"[\U0001F1E6-\U0001F1FF]{2}")
+    _FLAG_COUNTRIES: dict[str, str] = {
+        "AE": "الإمارات",
+        "BH": "البحرين",
+        "DZ": "الجزائر",
+        "EG": "مصر",
+        "IQ": "العراق",
+        "JO": "الأردن",
+        "KW": "الكويت",
+        "LB": "لبنان",
+        "LY": "ليبيا",
+        "MA": "المغرب",
+        "OM": "عُمان",
+        "PS": "فلسطين",
+        "QA": "قطر",
+        "SA": "السعودية",
+        "SD": "السودان",
+        "SO": "الصومال",
+        "SY": "سوريا",
+        "TN": "تونس",
+        "TR": "تركيا",
+        "YE": "اليمن",
+        # Common non-Arab markets. Other valid flags use their ISO alpha-2 code
+        # rather than being discarded and causing the location prompt to fire.
+        "CA": "كندا",
+        "CN": "الصين",
+        "DE": "ألمانيا",
+        "ES": "إسبانيا",
+        "FR": "فرنسا",
+        "GB": "المملكة المتحدة",
+        "IN": "الهند",
+        "IT": "إيطاليا",
+        "JP": "اليابان",
+        "RU": "روسيا",
+        "US": "الولايات المتحدة",
+    }
+    _COUNTRY_CONTEXT_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("ليبيا", ("دينار ليبي", "د.ل", "libyan dinar", "libya")),
+        ("مصر", ("جنيه مصري", "ج.م", "egyptian pound", "egypt")),
+        ("السعودية", ("ريال سعودي", "ر.س", "saudi riyal", "saudi arabia")),
+        ("الإمارات", ("درهم إماراتي", "درهم اماراتي", "د.إ", "uae dirham", "united arab emirates")),
+        ("تونس", ("دينار تونسي", "tunisian dinar", "tunisia")),
+        ("الجزائر", ("دينار جزائري", "algerian dinar", "algeria")),
+        ("الكويت", ("دينار كويتي", "kuwaiti dinar", "kuwait")),
+        ("قطر", ("ريال قطري", "qatari riyal", "qatar")),
+        ("البحرين", ("دينار بحريني", "bahraini dinar", "bahrain")),
+        ("عُمان", ("ريال عماني", "omani rial", "oman")),
+        ("الأردن", ("دينار أردني", "دينار اردني", "jordanian dinar", "jordan")),
+        ("العراق", ("دينار عراقي", "iraqi dinar", "iraq")),
+        ("لبنان", ("ليرة لبنانية", "lebanese pound", "lebanon")),
+        ("سوريا", ("ليرة سورية", "syrian pound", "syria")),
+        ("المغرب", ("درهم مغربي", "moroccan dirham", "morocco")),
+        ("اليمن", ("ريال يمني", "yemeni rial", "yemen")),
+        ("السودان", ("جنيه سوداني", "sudanese pound", "sudan")),
+    )
 
     @staticmethod
     def _normalize_location_text(text: str) -> str:
@@ -76,6 +132,12 @@ class ConversationService:
         if not text or not text.strip():
             return None, None
 
+        flag_match = cls._FLAG_PATTERN.search(text)
+        if flag_match:
+            flag = flag_match.group(0)
+            country_code = "".join(chr(ord(char) - 0x1F1E6 + ord("A")) for char in flag)
+            return cls._FLAG_COUNTRIES.get(country_code, country_code), None
+
         normalized = cls._normalize_location_text(text)
         for city, country, aliases in cls._ARAB_CITIES:
             if any(cls._normalize_location_text(alias) in normalized for alias in aliases):
@@ -86,6 +148,23 @@ class ConversationService:
                 return country, None
 
         return None, None
+
+    @classmethod
+    def infer_country_from_context(cls, *context_values: Optional[str]) -> Optional[str]:
+        """Infer a country from page/store names or explicit currency hints."""
+        context = " ".join(str(value).strip() for value in context_values if value)
+        if not context:
+            return None
+
+        country, _ = cls.extract_arab_location(context)
+        if country:
+            return country
+
+        normalized = cls._normalize_location_text(context)
+        for country, hints in cls._COUNTRY_CONTEXT_HINTS:
+            if any(cls._normalize_location_text(hint) in normalized for hint in hints):
+                return country
+        return None
 
     @staticmethod
     async def update_unread_count(

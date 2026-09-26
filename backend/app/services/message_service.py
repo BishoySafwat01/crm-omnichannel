@@ -12,6 +12,7 @@ from app.core.country_detector import CountryDetector
 from app.integrations.base import BaseMessagingProvider
 from app.integrations.factory import ProviderFactory
 from app.integrations.meta import MetaProvider
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
 from app.models.enums import ChannelEnum, MessageTypeEnum, ProviderEnum, SenderTypeEnum
@@ -37,6 +38,30 @@ class MessageService:
         if not text or not text.strip() or not conversation.customer_id:
             return
 
+        customer = customer or await session.get(Customer, conversation.customer_id)
+        if not customer:
+            return
+
+        # Message evidence always wins, even outside the opening exchange. In
+        # particular, a flag reply must be persisted before any prompt gates.
+        country, city = ConversationService.extract_arab_location(text)
+        if country:
+            customer.country = country
+            customer.location = city or country
+        if city:
+            customer.city = city
+            customer.country = country
+            customer.location = city
+        if country or city:
+            session.add(customer)
+            await session.commit()
+            return
+
+        # A stored country is sufficient to suppress the country/city prompt.
+        # Asking for a missing city must be handled by a separate, city-only flow.
+        if customer.country and customer.country.strip():
+            return
+
         customer_message_count = (
             await session.execute(
                 select(func.count(Message.id)).where(
@@ -47,10 +72,6 @@ class MessageService:
             )
         ).scalar_one()
         is_first_customer_message = customer_message_count == 1
-
-        customer = customer or await session.get(Customer, conversation.customer_id)
-        if not customer:
-            return
 
         awaiting_location_reply = False
         if not is_first_customer_message and (not customer.city or not customer.country):
@@ -70,20 +91,37 @@ class MessageService:
         if not is_first_customer_message and not awaiting_location_reply:
             return
 
-        country, city = ConversationService.extract_arab_location(text)
-        if country:
-            customer.country = country
-            customer.location = city or country
-        if city:
-            customer.city = city
-            customer.country = country
-            customer.location = city
-        if country or city:
+        page = None
+        if conversation.connected_page_id:
+            page = await session.get(ConnectedPage, conversation.connected_page_id)
+        elif conversation.page_id:
+            page = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        ConnectedPage.page_id == conversation.page_id,
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+
+        inferred_country = ConversationService.infer_country_from_context(
+            conversation.brand,
+            getattr(conversation, "default_country", None),
+            getattr(conversation, "currency", None),
+            page.name if page else None,
+            page.category if page else None,
+            getattr(page, "default_country", None) if page else None,
+            getattr(page, "country", None) if page else None,
+            getattr(page, "currency", None) if page else None,
+        )
+        if inferred_country:
+            customer.country = inferred_country
+            customer.location = customer.location or inferred_country
             session.add(customer)
             await session.commit()
             return
 
-        if not is_first_customer_message or (customer.country and customer.city):
+        if not is_first_customer_message:
             return
 
         await MessageService.send_agent_reply(
