@@ -1,5 +1,17 @@
-import React from 'react';
-import { UserCheck, Ban, AlertTriangle, RotateCcw, ChevronRight, User } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Ban,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Mail,
+  MailOpen,
+  Star,
+  Tag,
+  User,
+} from 'lucide-react';
 import { Conversation, MetaMessageTag } from '../../../../types/crm';
 import { ConversationAvatar, getBrandObject } from '../../../../components/ConversationAvatar';
 import { PresenceState } from '../../../../utils/presence';
@@ -8,6 +20,55 @@ import { AiInsightsDrawer, AiInsightsData } from './AiInsightsDrawer';
 import { META_TAGS } from '../../constants/chatConstants';
 import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
 import { useCrmStore } from '../../../../store/useCrmStore';
+
+const CONVERSATION_LABELS = [
+  'طلبات مكتملة',
+  'طلبات غير مكتملة',
+  'تم إرسال عرض',
+  'محظورة',
+] as const;
+
+interface IconActionProps {
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}
+
+const IconAction: React.FC<IconActionProps> = ({
+  label,
+  onClick,
+  active = false,
+  disabled = false,
+  danger = false,
+  children,
+}) => (
+  <div className="group relative flex shrink-0">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={`flex h-8 w-8 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-theme-primary/40 disabled:cursor-not-allowed disabled:opacity-45 ${
+        danger && active
+          ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+          : active
+          ? 'border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100'
+          : 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800'
+      }`}
+    >
+      {children}
+    </button>
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+    >
+      {label}
+    </span>
+  </div>
+);
 
 export interface ChatHeaderProps {
   activeConv: Conversation;
@@ -80,6 +141,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 }) => {
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = isAdminUser(currentUser);
+  const setConversationUnreadCount = useCrmStore((state) => state.setConversationUnreadCount);
+  const setConversationLabels = useCrmStore((state) => state.setConversationLabels);
+  const setConversationPriority = useCrmStore((state) => state.setConversationPriority);
+  const [isLabelsOpen, setIsLabelsOpen] = useState(false);
+  const [isUpdatingLabels, setIsUpdatingLabels] = useState(false);
+  const labelsPopoverRef = useRef<HTMLDivElement>(null);
   const customerName =
     activeConv.customer_display_name || activeConv.customer?.display_name || 'عميل بدون اسم';
   const avatarUrl = activeConv.customer_avatar_url || activeConv.customer?.avatar_url;
@@ -91,6 +158,46 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
       : (activeConv.status?.toLowerCase() === 'pending')
       ? 'pending'
       : 'open';
+  const isUnread = (activeConv.unread_count || 0) > 0;
+  const isStarred = activeConv.priority === 'urgent';
+  const conversationLabels = activeConv.labels || [];
+
+  useEffect(() => {
+    setIsLabelsOpen(false);
+  }, [activeConv.id]);
+
+  useEffect(() => {
+    if (!isLabelsOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!labelsPopoverRef.current?.contains(event.target as Node)) {
+        setIsLabelsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsLabelsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isLabelsOpen]);
+
+  const handleToggleLabel = async (label: string) => {
+    if (isUpdatingLabels) return;
+    const nextLabels = conversationLabels.includes(label)
+      ? conversationLabels.filter((currentLabel) => currentLabel !== label)
+      : [...conversationLabels, label];
+    setIsUpdatingLabels(true);
+    try {
+      await setConversationLabels(activeConv.id, nextLabels);
+    } finally {
+      setIsUpdatingLabels(false);
+    }
+  };
 
   const handleBack = () => {
     if (onBackToList) {
@@ -188,77 +295,124 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           </div>
         )}
 
-        {/* Status Dropdown Pill */}
-        <select
-          value={currentNormalizedStatus}
-          onChange={(e) => setConversationStatus(activeConv.id, e.target.value)}
-          className={`text-xs font-bold rounded-full px-3 py-1 focus:outline-none cursor-pointer border transition-colors ${
-            currentNormalizedStatus === 'completed'
-              ? 'bg-slate-100 text-slate-700 border-slate-300'
-              : currentNormalizedStatus === 'pending'
-              ? 'bg-amber-50 text-amber-700 border-amber-200'
-              : 'bg-theme-primary-tint text-theme-primary border-theme-primary/20'
-          }`}
-        >
-          <option value="open">مفتوحة</option>
-          <option value="pending">قيد الانتظار</option>
-          <option value="completed">المغلقة</option>
-        </select>
-
-        {/* Complete / Reopen Action Button */}
-        {currentNormalizedStatus === 'completed' ? (
-          <button
-            type="button"
-            onClick={() => setConversationStatus(activeConv.id, 'open')}
-            className="px-3 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
-            title="إعادة فتح المحادثة"
+        {/* Meta-style conversation actions */}
+        <div className="flex items-center gap-0.5 rounded-full border border-slate-200/80 bg-white/90 p-0.5 shadow-2xs">
+          <IconAction
+            label={isUnread ? 'تحديد كمقروء' : 'تحديد كغير مقروء'}
+            onClick={() => setConversationUnreadCount(activeConv.id, isUnread ? 0 : 1)}
+            active={isUnread}
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>إعادة فتح</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConversationStatus(activeConv.id, 'completed')}
-            className="px-3 py-1 text-xs font-bold bg-theme-primary hover:bg-theme-primary-hover text-white rounded-full transition flex items-center gap-1 shadow-2xs cursor-pointer"
-            title="إكمال وإغلاق المحادثة"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>إكمال</span>
-          </button>
-        )}
+            {isUnread ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+          </IconAction>
 
-        {/* Block / Unblock Customer Header Action */}
-        {activeConv.customer?.is_blocked ? (
-          isAdmin ? (
+          <div ref={labelsPopoverRef} className="group relative flex shrink-0">
             <button
               type="button"
-              onClick={() => onOpenBlockModal('unblock')}
-              className="px-2.5 py-1 text-xs font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full transition flex items-center gap-1 border border-rose-300 shadow-2xs cursor-pointer"
-              title="إلغاء حظر العميل"
+              onClick={() => setIsLabelsOpen((isOpen) => !isOpen)}
+              aria-label="تصنيفات وليبولز المحادثة"
+              aria-haspopup="menu"
+              aria-expanded={isLabelsOpen}
+              className={`flex h-8 items-center justify-center gap-0.5 rounded-full border px-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-theme-primary/40 ${
+                isLabelsOpen || conversationLabels.length > 0
+                  ? 'border-theme-primary/20 bg-theme-primary-tint text-theme-primary'
+                  : 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800'
+              }`}
             >
-              <Ban className="w-3.5 h-3.5 text-rose-600" />
-              <span>محظور (فك الحظر)</span>
+              <Tag className="h-4 w-4" />
+              <ChevronDown className={`h-3 w-3 transition-transform ${isLabelsOpen ? 'rotate-180' : ''}`} />
             </button>
-          ) : (
-            <span
-              className="px-2.5 py-1 text-xs font-bold bg-rose-100 text-rose-700 rounded-full flex items-center gap-1 border border-rose-300 shadow-2xs select-none"
-              title="العميل محظور حالياً"
-            >
-              <Ban className="w-3.5 h-3.5 text-rose-600" />
-              <span>محظور</span>
-            </span>
-          )
-        ) : isAdmin ? (
-          <button
-            type="button"
-            onClick={() => onOpenBlockModal('block')}
-            className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
-            title="حظر هذا العميل (Block Customer)"
+            {!isLabelsOpen && (
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                تصنيفات وليبولز المحادثة
+              </span>
+            )}
+            {isLabelsOpen && (
+              <div
+                role="menu"
+                aria-label="تصنيفات المحادثة"
+                className="absolute left-0 top-full z-50 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-xl"
+                dir="rtl"
+              >
+                <p className="px-2 pb-2 pt-1 text-[11px] font-bold text-slate-500">
+                  تصنيفات المحادثة
+                </p>
+                {CONVERSATION_LABELS.map((label) => {
+                  const isSelected = conversationLabels.includes(label);
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={isSelected}
+                      disabled={isUpdatingLabels}
+                      onClick={() => handleToggleLabel(label)}
+                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded border ${
+                          isSelected
+                            ? 'border-theme-primary bg-theme-primary text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {isSelected && <Check className="h-3 w-3" />}
+                      </span>
+                      <span>{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <IconAction
+            label={isStarred ? 'إلغاء تمييز المحادثة' : 'تمييز المحادثة كأولوية'}
+            onClick={() => setConversationPriority(activeConv.id, isStarred ? 'normal' : 'urgent')}
+            active={isStarred}
           >
-            <Ban className="w-3.5 h-3.5" />
-          </button>
-        ) : null}
+            <Star className={`h-4 w-4 ${isStarred ? 'fill-current' : ''}`} />
+          </IconAction>
+
+          <IconAction
+            label={
+              !isAdmin
+                ? 'حظر العميل متاح للمشرف فقط'
+                : activeConv.customer?.is_blocked
+                ? 'إلغاء حظر العميل'
+                : 'حظر العميل كرسائل مزعجة'
+            }
+            onClick={
+              isAdmin
+                ? () => onOpenBlockModal(activeConv.customer?.is_blocked ? 'unblock' : 'block')
+                : undefined
+            }
+            active={Boolean(activeConv.customer?.is_blocked)}
+            disabled={!isAdmin}
+            danger
+          >
+            <Ban className="h-4 w-4" />
+          </IconAction>
+
+          <IconAction
+            label={
+              currentNormalizedStatus === 'completed'
+                ? 'إعادة فتح المحادثة'
+                : 'إكمال وحل المحادثة'
+            }
+            onClick={() =>
+              setConversationStatus(
+                activeConv.id,
+                currentNormalizedStatus === 'completed' ? 'open' : 'completed'
+              )
+            }
+            active={currentNormalizedStatus === 'completed'}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+          </IconAction>
+        </div>
 
         {/* Customer Profile Drawer Toggle (< 1400px / 2xl) */}
         {onToggleProfile && (

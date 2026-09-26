@@ -122,6 +122,56 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     }
   },
 
+  setConversationUnreadCount: async (id, unreadCount) => {
+    const previousConversation = get().conversations.find((conversation) => conversation.id === id);
+    if (!previousConversation) return;
+    const previousUnreadCount = previousConversation.unread_count || 0;
+
+    set((state) => ({
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === id ? { ...conversation, unread_count: unreadCount } : conversation
+      ),
+      unreadSummary: {
+        ...state.unreadSummary,
+        total_unread: Math.max(
+          0,
+          (state.unreadSummary?.total_unread || 0) - previousUnreadCount + unreadCount
+        ),
+      },
+    }));
+
+    const didUpdate = await apiService.updateConversationUnreadCount(id, unreadCount);
+    if (!didUpdate) {
+      set((state) => ({
+        conversations: state.conversations.map((conversation) =>
+          conversation.id === id
+            ? { ...conversation, unread_count: previousUnreadCount }
+            : conversation
+        ),
+      }));
+    }
+    get().fetchUnreadSummary();
+  },
+
+  setConversationLabels: async (id, labels) => {
+    const previousLabels =
+      get().conversations.find((conversation) => conversation.id === id)?.labels || [];
+    set((state) => ({
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === id ? { ...conversation, labels } : conversation
+      ),
+    }));
+
+    const didUpdate = await apiService.updateConversationLabels(id, labels);
+    if (!didUpdate) {
+      set((state) => ({
+        conversations: state.conversations.map((conversation) =>
+          conversation.id === id ? { ...conversation, labels: previousLabels } : conversation
+        ),
+      }));
+    }
+  },
+
   fetchConversations: async () => {
     try {
       const selectedBrand = get().selectedBrand || get().selectedBrandId;
@@ -1046,6 +1096,17 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     }
 
     if ((event as any).type === 'CONVERSATION_READ') {
+      const conversationId = event.conversation_id;
+      const unreadCount = Number((event as any).unread_count || 0);
+      if (conversationId) {
+        set((state) => ({
+          conversations: state.conversations.map((conversation) =>
+            conversation.id === conversationId
+              ? { ...conversation, unread_count: unreadCount }
+              : conversation
+          ),
+        }));
+      }
       get().fetchUnreadSummary();
       return;
     }

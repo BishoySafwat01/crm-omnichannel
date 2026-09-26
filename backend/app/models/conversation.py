@@ -61,6 +61,7 @@ class Conversation(Base):
     detected_intent: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     detected_sentiment: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     ai_suggested_replies: Mapped[List[str]] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
+    labels: Mapped[List[str]] = mapped_column(JSONB, default=list, server_default="[]", nullable=False)
 
 
     created_at: Mapped[datetime] = mapped_column(

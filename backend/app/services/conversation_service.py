@@ -13,6 +13,55 @@ from app.models.enums import ChannelEnum, ConversationStatusEnum, ProviderEnum, 
 
 
 class ConversationService:
+    MAX_CONVERSATION_LABELS = 20
+    MAX_CONVERSATION_LABEL_LENGTH = 80
+
+    @staticmethod
+    async def update_unread_count(
+        session: AsyncSession,
+        conversation: Conversation,
+        unread_count: int,
+    ) -> Conversation:
+        """Persist an explicit read/unread state for an existing conversation."""
+        conversation.unread_count = max(0, unread_count)
+        # This timestamp also distinguishes an explicit agent toggle from stale
+        # unread counters left behind by an older outbound-message workflow.
+        conversation.last_read_at = func.now()
+        await session.commit()
+        await session.refresh(conversation)
+        return conversation
+
+    @classmethod
+    async def update_labels(
+        cls,
+        session: AsyncSession,
+        conversation: Conversation,
+        labels: list[str],
+    ) -> Conversation:
+        """Replace conversation labels after trimming and stable de-duplication."""
+        normalized_labels: list[str] = []
+        seen: set[str] = set()
+        for raw_label in labels:
+            label = str(raw_label).strip()
+            key = label.casefold()
+            if not label or key in seen:
+                continue
+            if len(label) > cls.MAX_CONVERSATION_LABEL_LENGTH:
+                raise ValueError(
+                    f"Conversation labels must not exceed {cls.MAX_CONVERSATION_LABEL_LENGTH} characters."
+                )
+            seen.add(key)
+            normalized_labels.append(label)
+        if len(normalized_labels) > cls.MAX_CONVERSATION_LABELS:
+            raise ValueError(
+                f"A conversation can have at most {cls.MAX_CONVERSATION_LABELS} labels."
+            )
+
+        conversation.labels = normalized_labels
+        await session.commit()
+        await session.refresh(conversation)
+        return conversation
+
     @staticmethod
     async def sync_unread_state_with_latest_message(
         session: AsyncSession,
@@ -382,15 +431,31 @@ class ConversationService:
             conv.connected_page_id for conv in conversations if conv.connected_page_id
         }
         conversation_page_ids = {
-            str(conv.page_id).strip()
+            str(
+                getattr(conv, "external_page_id", None)
+                or getattr(conv, "page_id", None)
+            ).strip()
             for conv in conversations
-            if getattr(conv, "page_id", None)
+            if getattr(conv, "external_page_id", None)
+            or getattr(conv, "page_id", None)
+        }
+        conversation_brands = {
+            str(conv.brand).strip().lower()
+            for conv in conversations
+            if getattr(conv, "brand", None)
         }
         page_conditions = []
         if connected_page_ids:
             page_conditions.append(ConnectedPage.id.in_(connected_page_ids))
         if conversation_page_ids:
-            page_conditions.append(ConnectedPage.page_id.in_(conversation_page_ids))
+            page_conditions.append(
+                or_(
+                    ConnectedPage.page_id.in_(conversation_page_ids),
+                    ConnectedPage.instagram_business_account_id.in_(conversation_page_ids),
+                )
+            )
+        if conversation_brands:
+            page_conditions.append(func.lower(ConnectedPage.name).in_(conversation_brands))
         if page_conditions:
             page_rows = (
                 await session.execute(
@@ -401,7 +466,18 @@ class ConversationService:
                 )
             ).scalars().all()
             connected_page_map = {page.id: page for page in page_rows}
-            page_id_map = {str(page.page_id): page for page in page_rows if page.page_id}
+            for page in page_rows:
+                if page.page_id:
+                    page_id_map[str(page.page_id).strip()] = page
+                if page.instagram_business_account_id:
+                    page_id_map[str(page.instagram_business_account_id).strip()] = page
+            brand_map = {
+                str(page.name).strip().lower(): page
+                for page in page_rows
+                if page.name
+            }
+        else:
+            brand_map = {}
 
         items = []
         for conv in conversations:
@@ -417,8 +493,14 @@ class ConversationService:
                     cust_name = "عميل Messenger"
             cust_avatar = cust.avatar_url if cust and cust.avatar_url else None
             connected_page = connected_page_map.get(conv.connected_page_id)
-            if not connected_page and getattr(conv, "page_id", None):
-                connected_page = page_id_map.get(str(conv.page_id).strip())
+            page_reference = (
+                getattr(conv, "external_page_id", None)
+                or getattr(conv, "page_id", None)
+            )
+            if not connected_page and page_reference:
+                connected_page = page_id_map.get(str(page_reference).strip())
+            if not connected_page and getattr(conv, "brand", None):
+                connected_page = brand_map.get(str(conv.brand).strip().lower())
             page_avatar_url = connected_page.avatar_url if connected_page else None
             unread_cnt = getattr(conv, 'unread_count', 0) or 0
             agent_id = getattr(conv, 'assigned_agent_id', None)
@@ -442,7 +524,15 @@ class ConversationService:
             else:
                 last_text = getattr(conv, 'last_message_text', None) or "محادثة نشطة"
 
-            if last_sender_type != SenderTypeEnum.CUSTOMER.value:
+            was_explicitly_toggled = bool(
+                conv.last_read_at
+                and conv.last_message_at
+                and conv.last_read_at >= conv.last_message_at
+            )
+            if (
+                last_sender_type != SenderTypeEnum.CUSTOMER.value
+                and not was_explicitly_toggled
+            ):
                 unread_cnt = 0
 
             cust_msg_at = conv.last_customer_message_at
@@ -460,7 +550,8 @@ class ConversationService:
                 "priority": prio,
                 "assigned_agent_id": agent_id,
                 "unread_count": unread_cnt,
-                "is_unread": unread_cnt > 0 and last_sender_type == SenderTypeEnum.CUSTOMER.value,
+                "is_unread": unread_cnt > 0,
+                "labels": getattr(conv, "labels", []) or [],
                 "customer_id": conv.customer_id,
                 "customer_display_name": cust_name,
                 "customer_avatar_url": cust_avatar,
@@ -554,15 +645,44 @@ class ConversationService:
                 if hasattr(latest_message.sender_type, "value")
                 else str(latest_message.sender_type)
             )
-        unread_count = conv.unread_count if last_sender_type == SenderTypeEnum.CUSTOMER.value else 0
+        was_explicitly_toggled = bool(
+            conv.last_read_at
+            and conv.last_message_at
+            and conv.last_read_at >= conv.last_message_at
+        )
+        unread_count = (
+            conv.unread_count or 0
+            if last_sender_type == SenderTypeEnum.CUSTOMER.value or was_explicitly_toggled
+            else 0
+        )
         connected_page = None
         if conv.connected_page_id:
             connected_page = await session.get(ConnectedPage, conv.connected_page_id)
-        if not connected_page and getattr(conv, "page_id", None):
+            if connected_page and connected_page.deleted_at is not None:
+                connected_page = None
+        page_reference = (
+            getattr(conv, "external_page_id", None)
+            or getattr(conv, "page_id", None)
+        )
+        if not connected_page and page_reference:
             connected_page = (
                 await session.execute(
                     select(ConnectedPage).where(
-                        ConnectedPage.page_id == str(conv.page_id).strip(),
+                        or_(
+                            ConnectedPage.page_id == str(page_reference).strip(),
+                            ConnectedPage.instagram_business_account_id
+                            == str(page_reference).strip(),
+                        ),
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+        if not connected_page and getattr(conv, "brand", None):
+            connected_page = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        func.lower(ConnectedPage.name)
+                        == str(conv.brand).strip().lower(),
                         ConnectedPage.deleted_at.is_(None),
                     )
                 )
@@ -580,6 +700,7 @@ class ConversationService:
             "status": conv.status,
             "unread_count": unread_count,
             "is_unread": unread_count > 0,
+            "labels": getattr(conv, "labels", []) or [],
             "last_sender_type": last_sender_type,
             "created_at": conv.created_at,
             "updated_at": conv.updated_at,
@@ -696,7 +817,10 @@ class ConversationService:
             .where(
                 Conversation.unread_count > 0,
                 Conversation.deleted_at.is_(None),
-                latest_sender_type == SenderTypeEnum.CUSTOMER,
+                or_(
+                    latest_sender_type == SenderTypeEnum.CUSTOMER,
+                    Conversation.last_read_at >= Conversation.last_message_at,
+                ),
             )
         )
         if brand:

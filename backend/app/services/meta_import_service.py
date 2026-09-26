@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 import httpx
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,56 @@ class MetaImportService:
         if verify_token and len(verify_token) > 0:
             err_str = err_str.replace(verify_token, "[REDACTED_VERIFY_TOKEN]")
         return err_str
+
+    @staticmethod
+    async def resolve_connected_page(
+        session: AsyncSession,
+        entry_page_id: Optional[str],
+        brand_name: Optional[str],
+        active_connected_pages: Optional[dict[str, ConnectedPage]] = None,
+    ) -> Optional[ConnectedPage]:
+        """Match a conversation source to its ConnectedPage by ID or brand name."""
+        page_id = str(entry_page_id).strip() if entry_page_id else ""
+        if page_id and active_connected_pages:
+            connected_page = active_connected_pages.get(page_id)
+            if connected_page:
+                return connected_page
+
+        normalized_brand = str(brand_name).strip().lower() if brand_name else ""
+        if active_connected_pages and normalized_brand:
+            seen_page_ids: set[uuid.UUID] = set()
+            for connected_page in active_connected_pages.values():
+                if connected_page.id in seen_page_ids:
+                    continue
+                seen_page_ids.add(connected_page.id)
+                if connected_page.name.strip().lower() == normalized_brand:
+                    return connected_page
+
+        if page_id:
+            connected_page = (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        or_(
+                            ConnectedPage.page_id == page_id,
+                            ConnectedPage.instagram_business_account_id == page_id,
+                        ),
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+            if connected_page:
+                return connected_page
+
+        if normalized_brand:
+            return (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        func.lower(ConnectedPage.name) == normalized_brand,
+                        ConnectedPage.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+        return None
 
     @classmethod
     async def resolve_brand_name_dynamically(
@@ -337,7 +387,11 @@ class MetaImportService:
             connected_page = (
                 await session.execute(
                     select(ConnectedPage).where(
-                        ConnectedPage.page_id == str(target_page_id),
+                        or_(
+                            ConnectedPage.page_id == str(target_page_id),
+                            ConnectedPage.instagram_business_account_id
+                            == str(target_page_id),
+                        ),
                         ConnectedPage.deleted_at.is_(None),
                     )
                 )
@@ -414,6 +468,11 @@ class MetaImportService:
                     entry_page_id=target_page_id,
                     session=session,
                 )
+                connected_page = await MetaImportService.resolve_connected_page(
+                    session=session,
+                    entry_page_id=target_page_id,
+                    brand_name=brand_name,
+                )
 
                 customer, _ = await CustomerService.get_or_create_customer_with_identity(
                     session=session,
@@ -451,6 +510,8 @@ class MetaImportService:
                         conv.brand = brand_name
                     if target_page_id:
                         conv.page_id = str(target_page_id).strip()
+                    if connected_page:
+                        conv.connected_page_id = connected_page.id
                     await session.commit()
                 else:
                     conv = await ConversationService.create_conversation(
@@ -466,7 +527,9 @@ class MetaImportService:
                     )
                     if target_page_id:
                         conv.page_id = str(target_page_id).strip()
-                        await session.commit()
+                    if connected_page:
+                        conv.connected_page_id = connected_page.id
+                    await session.commit()
 
 
                 # Fetch Messages for this conversation (time-bounded to last 7 days)
@@ -1048,8 +1111,14 @@ class MetaImportService:
                         conv.brand = brand_name
                     if entry_page_id:
                         conv.page_id = str(entry_page_id).strip()
-                    if active_connected_pages and str(entry_page_id).strip() in active_connected_pages:
-                        conv.connected_page_id = active_connected_pages[str(entry_page_id).strip()].id
+                    connected_page = await MetaImportService.resolve_connected_page(
+                        session=session,
+                        entry_page_id=entry_page_id,
+                        brand_name=brand_name,
+                        active_connected_pages=active_connected_pages,
+                    )
+                    if connected_page:
+                        conv.connected_page_id = connected_page.id
                     await session.commit()
 
 
@@ -1204,8 +1273,14 @@ class MetaImportService:
                     conv.brand = brand_name
                 if entry_page_id:
                     conv.page_id = str(entry_page_id).strip()
-                if active_connected_pages and str(entry_page_id).strip() in active_connected_pages:
-                    conv.connected_page_id = active_connected_pages[str(entry_page_id).strip()].id
+                connected_page = await MetaImportService.resolve_connected_page(
+                    session=session,
+                    entry_page_id=entry_page_id,
+                    brand_name=brand_name,
+                    active_connected_pages=active_connected_pages,
+                )
+                if connected_page:
+                    conv.connected_page_id = connected_page.id
                 await session.commit()
 
 

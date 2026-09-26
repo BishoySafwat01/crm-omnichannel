@@ -323,6 +323,32 @@ export const apiService = {
     }
   },
 
+  async updateConversationUnreadCount(conversationId: string, unreadCount: 0 | 1): Promise<boolean> {
+    try {
+      const res = await safeFetch(`/conversations/${conversationId}/unread`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unread_count: unreadCount }),
+      });
+      return res ? res.ok : false;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async updateConversationLabels(conversationId: string, labels: string[]): Promise<boolean> {
+    try {
+      const res = await safeFetch(`/conversations/${conversationId}/labels`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labels }),
+      });
+      return res ? res.ok : false;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async assignAgent(conversationId: string, agentId: string | null): Promise<boolean> {
     try {
       const res = await safeFetch(`/conversations/${conversationId}/assign`, {
@@ -1521,5 +1547,4 @@ export const metaOAuthApi = {
   syncConnectedPageHistory,
   refreshConnectedPages,
 };
-
 

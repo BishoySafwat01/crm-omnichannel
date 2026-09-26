@@ -87,6 +87,8 @@ export interface ChatSlice {
   setActiveConversationId: (id: string) => void;
   fetchUnreadSummary: () => Promise<void>;
   markConversationAsRead: (conversationId: string) => Promise<void>;
+  setConversationUnreadCount: (conversationId: string, unreadCount: 0 | 1) => Promise<void>;
+  setConversationLabels: (conversationId: string, labels: string[]) => Promise<void>;
   fetchConversations: () => Promise<void>;
   loadMoreConversations: () => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;

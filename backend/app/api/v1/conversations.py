@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
 import logging
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,14 @@ from app.services.message_actions_service import MessageActionsService
 from app.services.message_service import MessageService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+class ConversationUnreadUpdate(BaseModel):
+    unread_count: int = Field(ge=0, le=1)
+
+
+class ConversationLabelsUpdate(BaseModel):
+    labels: list[str] = Field(default_factory=list, max_length=20)
 
 
 @router.get(
@@ -134,11 +142,11 @@ async def mark_conversation_read(
         )
     require_conversation_access(conv, current_user)
 
-    now_utc = datetime.now(timezone.utc)
-    conv.unread_count = 0
-    conv.last_read_at = now_utc
-
-    await db.commit()
+    await ConversationService.update_unread_count(
+        session=db,
+        conversation=conv,
+        unread_count=0,
+    )
 
     try:
         from app.api.v1.ws import manager
@@ -154,6 +162,101 @@ async def mark_conversation_read(
         "status": "success",
         "conversation_id": str(conversation_id),
         "unread_count": 0,
+    }
+
+
+@router.patch(
+    "/{conversation_id}/unread",
+    summary="Update Conversation Read State",
+)
+async def update_conversation_unread_count(
+    conversation_id: uuid.UUID,
+    payload: ConversationUnreadUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set unread_count to 0 (read) or 1 (unread)."""
+    conv = await ConversationService.get_conversation_by_id(
+        session=db,
+        conversation_id=conversation_id,
+    )
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+    require_conversation_access(conv, current_user)
+
+    await ConversationService.update_unread_count(
+        session=db,
+        conversation=conv,
+        unread_count=payload.unread_count,
+    )
+    try:
+        from app.api.v1.ws import manager
+        await manager.broadcast({
+            "type": "CONVERSATION_READ",
+            "conversation_id": str(conversation_id),
+            "unread_count": conv.unread_count,
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "conversation_id": str(conversation_id),
+        "unread_count": conv.unread_count,
+    }
+
+
+@router.patch(
+    "/{conversation_id}/labels",
+    summary="Update Conversation Labels",
+)
+async def update_conversation_labels(
+    conversation_id: uuid.UUID,
+    payload: ConversationLabelsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replace the custom labels assigned to a conversation."""
+    conv = await ConversationService.get_conversation_by_id(
+        session=db,
+        conversation_id=conversation_id,
+    )
+    if not conv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found.",
+        )
+    require_conversation_access(conv, current_user)
+
+    try:
+        await ConversationService.update_labels(
+            session=db,
+            conversation=conv,
+            labels=payload.labels,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        from app.api.v1.ws import manager
+        await manager.broadcast({
+            "type": "CONVERSATION_UPDATED",
+            "conversation_id": str(conversation_id),
+            "data": {"labels": conv.labels},
+        })
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "conversation_id": str(conversation_id),
+        "labels": conv.labels,
     }
 
 

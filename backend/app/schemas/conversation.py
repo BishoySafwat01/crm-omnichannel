@@ -27,6 +27,8 @@ class ConversationUpdate(BaseModel):
     brand: Optional[str] = None
     subject: Optional[str] = None
     last_message_at: Optional[datetime] = None
+    unread_count: Optional[int] = None
+    labels: Optional[list[str]] = None
 
 
 class ConversationResponse(BaseModel):
@@ -61,6 +63,7 @@ class ConversationResponse(BaseModel):
     detected_intent: Optional[str] = None
     detected_sentiment: Optional[str] = None
     ai_suggested_replies: list[str] = []
+    labels: list[str] = []
     customer: Optional[CustomerResponse] = None
 
 

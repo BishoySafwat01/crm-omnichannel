@@ -135,6 +135,7 @@ export interface Conversation {
   assigned_agent_id?: string;
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   unread_count?: number;
+  labels?: string[];
   last_message_text?: string;
   last_message_at: string;
   last_customer_message_at?: string;
