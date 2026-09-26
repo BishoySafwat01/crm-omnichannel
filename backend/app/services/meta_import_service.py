@@ -1470,10 +1470,14 @@ class MetaImportService:
 
                 sender_type_str = norm_event.sender_type.value if hasattr(norm_event.sender_type, "value") else str(norm_event.sender_type)
                 is_customer_message = not is_echo and sender_type_str == "customer"
+                should_increment_unread = is_customer_message and MessageService.should_increment_inbound_unread(
+                    sender_type=norm_event.sender_type,
+                    message_created_at=norm_event.created_at,
+                )
                 await ConversationService.sync_unread_state_with_latest_message(
                     session=session,
                     conversation=conv,
-                    increment_customer=is_customer_message,
+                    increment_customer=should_increment_unread,
                 )
                 if is_customer_message:
                     conv.updated_at = datetime.now(timezone.utc)
@@ -1484,6 +1488,20 @@ class MetaImportService:
 
                 # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for inbound customer messages
                 if not is_echo and sender_type_str == "customer":
+                    try:
+                        await MessageService.process_new_inbound_location(
+                            session=session,
+                            conversation=conv,
+                            customer=customer,
+                            text=norm_event.text,
+                        )
+                    except Exception as location_err:
+                        logger.error(
+                            "[Location Extraction] Webhook processing error: %s",
+                            location_err,
+                            exc_info=True,
+                        )
+
                     try:
                         from app.services.customer_timeline_service import CustomerTimelineService
                         chan_str = conv.channel.value if hasattr(conv.channel, "value") else str(conv.channel)
@@ -1846,7 +1864,10 @@ class MetaImportService:
                                 await ConversationService.sync_unread_state_with_latest_message(
                                     session=session,
                                     conversation=conversation,
-                                    increment_customer=new_msg.sender_type == SenderTypeEnum.CUSTOMER,
+                                    increment_customer=MessageService.should_increment_inbound_unread(
+                                        sender_type=new_msg.sender_type,
+                                        message_created_at=created_dt,
+                                    ),
                                 )
 
                                 # Trigger SLA Initialization, Smart Routing & Custom Automation Engine safely for newly polled customer messages

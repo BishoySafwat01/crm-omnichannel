@@ -89,7 +89,12 @@ export const MemoizedMessageBubble = React.memo<{
     (msg.sender_name && msg.sender_name.includes('(Bot)')) ||
     sType === 'bot'
   );
-  const isAgent = sType === 'agent' || sType === 'bot' || isAutomated;
+  const isAgent =
+    sType === 'agent' ||
+    sType === 'user' ||
+    sType === 'bot' ||
+    Boolean((msg as Message & { is_from_agent?: boolean }).is_from_agent) ||
+    isAutomated;
   const botSenderName =
     msg.metadata?.bot_sender_name ||
     msg.metadata_?.bot_sender_name ||
@@ -112,24 +117,26 @@ export const MemoizedMessageBubble = React.memo<{
 
       <div
         id={`msg-${msg.id}`}
+        dir="ltr"
         className={`group/msg relative flex items-center gap-1.5 my-1 transition-all ${
           isAgent ? 'flex-row-reverse' : 'flex-row'
         }`}
       >
         <div
+          dir="auto"
           className={`max-w-md px-4 py-2.5 rounded-2xl text-xs leading-relaxed shadow-2xs transition-all relative ${
             isFailed
-              ? `bg-rose-50 text-rose-800 border border-rose-200 font-medium ${isAgent ? 'rounded-tl-none' : 'rounded-tr-none'}`
+              ? `bg-rose-50 text-rose-800 border border-rose-200 font-medium ${isAgent ? 'rounded-tr-none' : 'rounded-tl-none'}`
               : isDeleted
               ? 'bg-slate-100/90 text-slate-400 border border-slate-200/80 rounded-2xl italic'
               : isAgent
-              ? 'bg-theme-primary-tint text-slate-800 border border-theme-primary/25 rounded-2xl rounded-tl-none font-normal'
-              : 'bg-white text-slate-800 border border-slate-200/60 rounded-2xl rounded-tr-none font-normal'
+              ? 'bg-theme-primary text-white border border-theme-primary rounded-2xl rounded-tr-none font-normal shadow-sm shadow-theme-primary/20'
+              : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm border border-slate-200/80 dark:border-slate-700/80 rounded-2xl rounded-tl-none font-normal'
           }`}
         >
           {/* Sender Tag for Agent / Bot Messages */}
           {isAgent && !isDeleted && (
-            <span className="text-[10px] text-theme-primary font-bold block mb-1">
+            <span className="text-[10px] text-white/90 font-bold block mb-1">
               {isAutomated ? (
                 <span className="inline-flex items-center gap-1">
                   <span className="text-[11px] leading-none" role="img" aria-label="Bot">🤖</span>
@@ -149,8 +156,8 @@ export const MemoizedMessageBubble = React.memo<{
 
           {/* Forwarded Tag */}
           {msg.forwarded && !isDeleted && (
-            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-semibold mb-1">
-              <ForwardIcon className="w-3 h-3 text-slate-400" />
+            <div className={`flex items-center gap-1 text-[10px] font-semibold mb-1 ${isAgent ? 'text-white/70' : 'text-slate-400'}`}>
+              <ForwardIcon className={`w-3 h-3 ${isAgent ? 'text-white/70' : 'text-slate-400'}`} />
               <span>معاد توجيهها</span>
             </div>
           )}
@@ -165,7 +172,7 @@ export const MemoizedMessageBubble = React.memo<{
                 <CornerUpLeft className="w-3 h-3" />
                 <span>{msg.reply_to.sender_name || 'رد على رسالة'}</span>
               </div>
-              <p className="text-slate-600 truncate mt-0.5 max-w-xs">
+              <p className={`${isAgent ? 'text-white/80' : 'text-slate-600'} truncate mt-0.5 max-w-xs`}>
                 {msg.reply_to.text || 'مرفق وسائط'}
               </p>
             </div>
@@ -357,7 +364,7 @@ export const MemoizedMessageBubble = React.memo<{
           {/* Timestamp, Pin, Edited & Delivery Status */}
           <div
             className={`flex items-center gap-1.5 mt-1 text-[10px] ${
-              isAgent ? 'text-theme-primary justify-start' : 'text-slate-400 justify-end'
+              isAgent ? 'text-white/75 justify-start' : 'text-slate-400 justify-end'
             }`}
           >
             <span>{formatMessageTime(msg.created_at)}</span>
@@ -366,7 +373,7 @@ export const MemoizedMessageBubble = React.memo<{
                 msg.sender_name ||
                 (msg.sender_user_id &&
                   teamMembers.find((m) => m.id === msg.sender_user_id)?.full_name)) && (
-                <span className="text-[10px] text-theme-primary font-semibold flex items-center gap-0.5">
+                <span className="text-[10px] text-white/80 font-semibold flex items-center gap-0.5">
                   <span>•</span>
                   <span>
                     {isAutomated
@@ -387,7 +394,7 @@ export const MemoizedMessageBubble = React.memo<{
             {isPending && <Clock className="w-3 h-3 text-amber-500 animate-spin" />}
             {isFailed && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
             {isAgent && !isPending && !isFailed && !isDeleted && (
-              <span className="text-theme-primary font-bold text-[11px]" title="تم التوصيل">
+              <span className="text-white/90 font-bold text-[11px]" title="تم التوصيل">
                 ✓✓
               </span>
             )}
@@ -568,8 +575,52 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
     <div
       ref={scrollContainerRef as any}
       onScroll={onInternalScroll}
-      className="flex-1 overflow-y-auto px-6 py-4 space-y-3 bg-gradient-to-b from-theme-primary-subtle via-white/90 to-slate-50/70 scrollbar-none"
+      className="relative flex-1 overflow-y-auto px-6 py-4 bg-gradient-to-b from-theme-primary-subtle via-white/90 to-slate-50/70 dark:via-slate-950/90 dark:to-slate-900/80 scrollbar-none"
     >
+      <div className="relative min-h-full">
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full stroke-current text-theme-primary opacity-[0.04] dark:opacity-[0.07]"
+        >
+          <defs>
+            <pattern id="luxira-makeup-doodles" width="180" height="180" patternUnits="userSpaceOnUse">
+              {/* Lipstick */}
+              <g transform="translate(14 18) rotate(-12 12 20)" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 13h9v24H8zM6 37h13v7H6zM9 13V7l4-5 4 5v6" />
+              </g>
+              {/* Mascara */}
+              <g transform="translate(69 12) rotate(10 15 22)" fill="none" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="3" y="25" width="10" height="27" rx="3" />
+                <path d="M8 25V8m-5 3 10-2M3 15l10-2M3 19l10-2" />
+              </g>
+              {/* Perfume bottle */}
+              <g transform="translate(124 20)" fill="none" strokeWidth="1.6" strokeLinejoin="round">
+                <path d="M10 13h22l4 8v23H6V21l4-8Z" />
+                <path d="M15 5h12v8H15zM18 1h6v4M12 27c6-5 12-5 18 0" />
+              </g>
+              {/* Makeup brush */}
+              <g transform="translate(18 94) rotate(18 24 18)" fill="none" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 7c5-6 14-6 19 0l-4 10H13L9 7ZM13 17h11l-3 31h-5l-3-31Z" />
+              </g>
+              {/* Hand mirror */}
+              <g transform="translate(76 91) rotate(-8 20 27)" fill="none" strokeWidth="1.6">
+                <circle cx="19" cy="17" r="14" />
+                <circle cx="19" cy="17" r="10" />
+                <path d="m19 31 2 23h-4l2-23Z" strokeLinejoin="round" />
+              </g>
+              {/* Compact powder */}
+              <g transform="translate(127 105)" fill="none" strokeWidth="1.6">
+                <ellipse cx="20" cy="24" rx="18" ry="10" />
+                <path d="M2 24V13c0-6 36-6 36 0v11M8 17c7-4 17-4 24 0" />
+              </g>
+              <text x="116" y="86" fill="currentColor" stroke="none" fontSize="9" fontWeight="700" letterSpacing="2">LUXIRA</text>
+              <text x="9" y="166" fill="currentColor" stroke="none" fontSize="8" fontWeight="700" letterSpacing="1.5">LUXIRA</text>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#luxira-makeup-doodles)" stroke="none" />
+        </svg>
+
+        <div className="relative z-10 space-y-3">
       {isFetchingMore && (
         <div className="text-center py-1 text-xs text-[#1A73E8] animate-pulse font-semibold">
           جاري تحميل الرسائل الأقدم...
@@ -641,6 +692,8 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
 
       <div ref={messagesEndRef as any} />
       <div ref={bottomAnchorRef as any} className="h-px w-full" />
+        </div>
+      </div>
     </div>
   );
 };

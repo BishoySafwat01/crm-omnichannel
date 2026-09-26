@@ -30,6 +30,7 @@ import { metaApi } from '../../services/api';
 import { getBrandObject } from '../ConversationAvatar';
 import luxiraLogo from '../../assets/luxira-logo.png';
 import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
+import { useChannelsStore } from '../../store/useChannelsStore';
 
 interface TopBarProps {
   activeMainView?: 'chat' | 'comments' | 'automations' | 'dashboard' | 'database' | 'team' | 'channels' | 'settings';
@@ -52,6 +53,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   } = useCrmStore();
   const { user, logout } = useAuthStore();
   const { branding } = usePortalBrandingStore();
+  const connectedPages = useChannelsStore((state) => state.connectedPages);
 
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postMessage, setPostMessage] = useState('');
@@ -181,14 +183,64 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   };
 
   const isUserAdmin = isAdminUser(user);
+  const normalizedRole = String(user?.role || '').toLowerCase();
+  const isCallCenterUser = normalizedRole === 'agent' || normalizedRole === 'call_center';
 
   const dynamicBrands = useBrandStore((state) => state.brands);
 
+  const permittedBrandNames = useMemo(
+    () => (user?.brand_access || [])
+      .map((brand) => String(brand).trim())
+      .filter((brand) => brand && !['all', 'الكل'].includes(brand.toLowerCase())),
+    [user?.brand_access]
+  );
+
+  const hasAllBrandAccess = (user?.brand_access || []).some((brand) =>
+    ['all', 'الكل'].includes(String(brand).trim().toLowerCase())
+  );
+
+  const availableBrands = useMemo(() => {
+    if (!isCallCenterUser || hasAllBrandAccess) return dynamicBrands;
+
+    const allowed = new Set(permittedBrandNames.map((brand) => brand.toLowerCase()));
+    return dynamicBrands.filter((brand) =>
+      allowed.has(brand.id.toLowerCase()) || allowed.has(brand.name.toLowerCase())
+    );
+  }, [dynamicBrands, hasAllBrandAccess, isCallCenterUser, permittedBrandNames]);
+
+  useEffect(() => {
+    if (!isCallCenterUser) return;
+
+    if (selectedChannel !== 'all') {
+      setSelectedChannel('all');
+    }
+
+    if (hasAllBrandAccess) return;
+
+    const selectedIsPermitted = availableBrands.some(
+      (brand) => brand.id.toLowerCase() === selectedBrandId.toLowerCase()
+        || brand.name.toLowerCase() === selectedBrandId.toLowerCase()
+    );
+    const assignedBrand = availableBrands[0]?.id || permittedBrandNames[0];
+    if (!selectedIsPermitted && assignedBrand) {
+      setSelectedBrandId(assignedBrand);
+    }
+  }, [
+    availableBrands,
+    hasAllBrandAccess,
+    isCallCenterUser,
+    permittedBrandNames,
+    selectedBrandId,
+    selectedChannel,
+    setSelectedBrandId,
+    setSelectedChannel,
+  ]);
+
   const selectedBrandObj = useMemo(() => {
     if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
-      return dynamicBrands[0];
+      return availableBrands[0];
     }
-    const found = dynamicBrands.find(
+    const found = availableBrands.find(
       (b) => b.id.toLowerCase() === selectedBrandId.toLowerCase() || b.name.toLowerCase() === selectedBrandId.toLowerCase()
     );
     if (found) return found;
@@ -200,7 +252,34 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
       logo_url: resolved.logo_url,
       color: resolved.color,
     };
-  }, [dynamicBrands, selectedBrandId]);
+  }, [availableBrands, selectedBrandId]);
+
+  const assignedStore = useMemo(() => {
+    if (!isCallCenterUser) return null;
+
+    const assignedName = permittedBrandNames[0] || selectedBrandObj?.name || 'المتجر غير محدد';
+    const brand = availableBrands.find(
+      (candidate) => candidate.id.toLowerCase() === assignedName.toLowerCase()
+        || candidate.name.toLowerCase() === assignedName.toLowerCase()
+    ) || selectedBrandObj;
+    const connectedPage = connectedPages.find((page) => {
+      const pageBrand = String(page.brand || page.name || '').toLowerCase();
+      return pageBrand === assignedName.toLowerCase()
+        || pageBrand === String(brand?.name || '').toLowerCase();
+    });
+    const conversationAvatar = conversations.find((conversation) => {
+      const conversationBrand = String(conversation.brand || conversation.brand_name || '').toLowerCase();
+      return conversationBrand === assignedName.toLowerCase()
+        || conversationBrand === String(brand?.name || '').toLowerCase();
+    })?.page_avatar_url;
+
+    return {
+      name: brand?.name || assignedName,
+      logoUrl: connectedPage?.avatar_url || conversationAvatar || brand?.logo_url,
+      avatar: brand?.avatar || assignedName.substring(0, 2).toUpperCase(),
+      color: brand?.color || 'from-teal-600 to-cyan-700',
+    };
+  }, [availableBrands, connectedPages, conversations, isCallCenterUser, permittedBrandNames, selectedBrandObj]);
 
   // Main navigation tabs ordered by workflow priority
   const navItems: {
@@ -218,7 +297,29 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     { id: 'settings', label: 'الإعدادات', icon: <SettingsIcon className="w-3.5 h-3.5" /> },
   ];
   return (
-    <header className="sticky top-0 z-30 w-full min-h-[56px] h-14 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip">
+    <header className={`sticky top-0 z-30 w-full min-h-[56px] bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] px-2.5 sm:px-4 py-2 flex items-center justify-between select-none overflow-x-clip ${isCallCenterUser ? 'h-auto flex-wrap gap-y-2' : 'h-14'}`}>
+      {isCallCenterUser && assignedStore && (
+        <section
+          aria-label="المتجر المعيّن لموظف خدمة العملاء"
+          className="order-first flex w-full basis-full items-center justify-center gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-l from-teal-950 via-teal-900 to-slate-950 px-4 py-2 text-white shadow-sm"
+        >
+          {assignedStore.logoUrl ? (
+            <img
+              src={assignedStore.logoUrl}
+              alt={`شعار ${assignedStore.name}`}
+              className="h-10 w-10 rounded-xl border border-white/20 bg-white object-cover p-0.5 shadow-md"
+            />
+          ) : (
+            <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr ${assignedStore.color} text-xs font-black shadow-md ring-1 ring-white/25`}>
+              {assignedStore.avatar}
+            </div>
+          )}
+          <div className="min-w-0 text-right">
+            <p className="text-[10px] font-bold text-teal-200">متجرك المعيّن</p>
+            <p className="max-w-[70vw] truncate text-sm font-black tracking-tight sm:text-base">{assignedStore.name}</p>
+          </div>
+        </section>
+      )}
       {/* Right Side (RTL Start): LUXIRA HOLDING Corporate Brand Mark */}
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Corporate Brand Mark & Dynamic Typographic Branding */}
@@ -261,22 +362,24 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             <div className="relative" ref={brandDropdownRef}>
               <button
                 type="button"
-                onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
-                title="تصفية المحادثات حسب الماركة"
+                onClick={() => availableBrands.length > 1 && setIsBrandDropdownOpen(!isBrandDropdownOpen)}
+                disabled={isCallCenterUser && availableBrands.length <= 1}
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer disabled:cursor-default disabled:opacity-80"
+                title="فلتر حسب المتجر"
               >
                 {selectedBrandObj?.logo_url ? (
                   <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover ring-1 ring-slate-200" />
                 ) : (
                   <span className="w-2 h-2 rounded-full bg-teal-600" />
                 )}
-                <span className="max-w-[65px] sm:max-w-[85px] md:max-w-[110px] truncate">{selectedBrandObj?.name || 'كل الماركات'}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="hidden lg:inline text-slate-500">فلتر حسب المتجر:</span>
+                <span className="max-w-[65px] sm:max-w-[85px] md:max-w-[110px] truncate">{selectedBrandObj?.name || 'كل المتاجر'}</span>
+                {(!isCallCenterUser || availableBrands.length > 1) && <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
               </button>
 
-              {isBrandDropdownOpen && (
+              {isBrandDropdownOpen && availableBrands.length > 1 && (
                 <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-none">
-                  {dynamicBrands.map((b) => {
+                  {availableBrands.map((b) => {
                     const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
                     const isSelected = selectedBrandId === b.id || (!selectedBrandId && b.id === 'all');
                     return (
@@ -316,7 +419,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             </div>
 
             {/* 2. Channel Filter Pill Dropdown */}
-            <div className="relative" ref={channelDropdownRef}>
+            {isUserAdmin && <div className="relative" ref={channelDropdownRef}>
               <button
                 type="button"
                 onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
@@ -353,7 +456,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* 3. Country / Location Filter Pill Dropdown */}
             <div className="relative" ref={countryDropdownRef}>
@@ -367,9 +470,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                     ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
                     : 'bg-slate-50/80 text-slate-700 border-slate-200/70 hover:bg-slate-100'
                 }`}
-                title="تصفية المحادثات حسب الموقع / الدولة"
+                title="فلتر حسب الدولة"
               >
                 <Globe className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                <span className="hidden xl:inline text-slate-500">فلتر حسب الدولة:</span>
                 <span className="max-w-[72px] sm:max-w-[110px] md:max-w-[145px] truncate">
                   {countryOptions.find((country) => country.id === selectedCountry)?.label || selectedCountry || 'كل المواقع والدول'}
                 </span>
@@ -579,10 +683,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4">
-              {isUserAdmin && setActiveMainView && (
+              {(isUserAdmin || isCallCenterUser) && setActiveMainView && (
                 <nav aria-label="التنقل الرئيسي" className="space-y-1">
                   <p className="px-2 pb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">أقسام النظام</p>
-                  {navItems.map((item) => {
+                  {navItems.filter((item) => isUserAdmin || item.id === 'chat' || item.id === 'automations').map((item) => {
                     const isActive = activeMainView === item.id;
                     return (
                       <button

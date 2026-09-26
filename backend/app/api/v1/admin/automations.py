@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_admin
+from app.api.deps import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.automation import AutomationExecutionLog, AutomationRule
+from app.models.connected_page import ConnectedPage
 from app.models.user import User
 from app.schemas.automation import (
     AutomationExecutionLogResponse,
+    AutomationKeywordsUpdate,
     AutomationRuleCreate,
     AutomationRuleResponse,
     AutomationRuleUpdate,
@@ -23,6 +25,76 @@ from app.services.automation_service import (
 )
 
 router = APIRouter()
+
+
+def _role_name(user: User) -> str:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    return str(role).strip().lower()
+
+
+def _can_manage_rule_keywords(
+    user: User,
+    rule: AutomationRule,
+    page_names: dict[str, str],
+) -> bool:
+    if _role_name(user) in ("admin", "superadmin"):
+        return True
+    if _role_name(user) not in ("agent", "call_center"):
+        return False
+
+    allowed = {
+        str(value).strip().casefold()
+        for value in (user.brand_access or [])
+        if str(value).strip()
+    }
+    if not allowed:
+        return False
+
+    target_page_ids = [
+        str(page_id)
+        for page_id in [rule.page_id, *(rule.page_responses or {}).keys()]
+        if page_id
+    ]
+    normalized_brand = str(rule.brand_id or "").strip().casefold()
+    is_global_rule = not target_page_ids and normalized_brand in ("", "all", "الكل")
+    if is_global_rule:
+        return False
+    if allowed.intersection({"all", "الكل"}):
+        return True
+
+    if target_page_ids:
+        return all(
+            str(page_id).strip().casefold() in allowed
+            or page_names.get(str(page_id), "").strip().casefold() in allowed
+            for page_id in target_page_ids
+        )
+    return normalized_brand in allowed
+
+
+def _keyword_rule_payload(
+    rule: AutomationRule, page_names: Optional[dict[str, str]] = None
+) -> dict:
+    page_names = page_names or {}
+    return {
+        "id": rule.id,
+        "name": rule.name,
+        "brand_id": rule.brand_id or page_names.get(str(rule.page_id or "")),
+        "page_id": rule.page_id,
+        "keywords": rule.keywords,
+        "is_active": rule.is_active,
+        "created_at": rule.created_at,
+    }
+
+
+async def _connected_page_names(db: AsyncSession) -> dict[str, str]:
+    rows = (
+        await db.execute(
+            select(ConnectedPage.page_id, ConnectedPage.name).where(
+                ConnectedPage.deleted_at.is_(None)
+            )
+        )
+    ).all()
+    return {str(page_id): str(name) for page_id, name in rows}
 
 
 @router.get("/global-toggle", response_model=GlobalAutomationToggleResponse)
@@ -115,6 +187,62 @@ async def create_automation_rule(
     )
 
     return rule
+
+
+@router.get("/keywords")
+async def list_automation_rule_keywords(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if _role_name(current_user) not in ("admin", "superadmin", "agent", "call_center"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    rules = list(
+        (
+            await db.execute(
+                select(AutomationRule).order_by(AutomationRule.created_at.desc())
+            )
+        ).scalars().all()
+    )
+    page_names = await _connected_page_names(db)
+    return [
+        _keyword_rule_payload(rule, page_names)
+        for rule in rules
+        if _can_manage_rule_keywords(current_user, rule, page_names)
+    ]
+
+
+@router.patch("/keywords/{rule_id}")
+async def update_automation_rule_keywords(
+    rule_id: uuid.UUID,
+    payload: AutomationKeywordsUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rule = (
+        await db.execute(select(AutomationRule).where(AutomationRule.id == rule_id))
+    ).scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Automation rule not found.")
+
+    page_names = await _connected_page_names(db)
+    if not _can_manage_rule_keywords(current_user, rule, page_names):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied for this store.")
+
+    rule.keywords = payload.keywords
+    await db.commit()
+    await db.refresh(rule)
+    await AuditService.log_action(
+        session=db,
+        user_id=current_user.id,
+        action="automation.keywords_updated",
+        resource_type="automation",
+        resource_id=str(rule.id),
+        payload={"name": rule.name, "keywords": rule.keywords},
+        ip_address=request.client.host if request.client else None,
+    )
+    return _keyword_rule_payload(rule, page_names)
 
 
 @router.patch("/{rule_id}", response_model=AutomationRuleResponse)

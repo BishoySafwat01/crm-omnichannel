@@ -58,6 +58,23 @@ class AutomationRuleUpdate(BaseModel):
         return v
 
 
+class AutomationKeywordsUpdate(BaseModel):
+    keywords: list[str] = Field(..., min_length=1)
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def deduplicate_keywords(cls, v: Any) -> list[str]:
+        if not isinstance(v, list):
+            return v
+        return list(
+            dict.fromkeys(
+                keyword.strip()
+                for keyword in v
+                if isinstance(keyword, str) and keyword.strip()
+            )
+        )
+
+
 class AutomationRuleResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -99,4 +116,3 @@ class GlobalAutomationToggleRequest(BaseModel):
 class GlobalAutomationToggleResponse(BaseModel):
     is_global_automation_enabled: bool
     status: str = "ok"
-

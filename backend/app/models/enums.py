@@ -56,7 +56,7 @@ class RawEventStatusEnum(str, enum.Enum):
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     AGENT = "agent"
+    CALL_CENTER = "call_center"
     SUPERVISOR = "supervisor"
     SUPERADMIN = "superadmin"
-
 

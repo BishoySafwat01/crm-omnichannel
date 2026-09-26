@@ -474,6 +474,46 @@ export const automationApi = {
     return [];
   },
 
+  async listKeywordRules(): Promise<AutomationRule[]> {
+    const res = await safeFetch('/admin/automations/keywords', {
+      method: 'GET',
+      headers: getAuthHeaders({ 'Accept': 'application/json' }),
+    });
+    if (!res || !res.ok) return [];
+    const rules = await res.json();
+    return rules.map((rule: Partial<AutomationRule>) => ({
+      ...rule,
+      channels: [],
+      trigger_type: '',
+      match_type: '',
+      response_text: '',
+      page_responses: null,
+      cooldown_minutes: 0,
+    })) as AutomationRule[];
+  },
+
+  async updateRuleKeywords(id: string, keywords: string[]): Promise<AutomationRule> {
+    const res = await safeFetch(`/admin/automations/keywords/${id}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ keywords }),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث الكلمات المفتاحية' }));
+      throw new Error(err?.detail || 'فشل في تحديث الكلمات المفتاحية');
+    }
+    const rule = await res.json();
+    return {
+      ...rule,
+      channels: [],
+      trigger_type: '',
+      match_type: '',
+      response_text: '',
+      page_responses: null,
+      cooldown_minutes: 0,
+    } as AutomationRule;
+  },
+
   async createRule(payload: Partial<AutomationRule>): Promise<AutomationRule> {
     const res = await safeFetch('/admin/automations', {
       method: 'POST',
@@ -1547,4 +1587,3 @@ export const metaOAuthApi = {
   syncConnectedPageHistory,
   refreshConnectedPages,
 };
-

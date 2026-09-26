@@ -33,6 +33,7 @@ import {
 import { CommentAutomationRule, ConnectedPage } from '../../types/crm';
 import { BadWordsModerationModal } from './components/BadWordsModerationModal';
 import { useBrandStore } from '../../store/useBrandStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { getBrandObject } from '../../components/ConversationAvatar';
 
 export const suggestSemanticName = (kws: string[]): string => {
@@ -76,6 +77,9 @@ export const suggestSemanticName = (kws: string[]): string => {
 
 export const AutomationsManager: React.FC = () => {
   const brands = useBrandStore((state) => state.brands);
+  const user = useAuthStore((state) => state.user);
+  const normalizedRole = String(user?.role || '').trim().toLowerCase();
+  const isRestrictedOperator = normalizedRole === 'agent' || normalizedRole === 'call_center';
   const [activeTab, setActiveTab] = useState<'messages' | 'comments'>('messages');
 
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -153,10 +157,14 @@ export const AutomationsManager: React.FC = () => {
   const fetchRulesAndLogs = async () => {
     setIsLoading(true);
     try {
-      const fetchedRules = await automationApi.listRules();
+      const fetchedRules = isRestrictedOperator
+        ? await automationApi.listKeywordRules()
+        : await automationApi.listRules();
       setRules(fetchedRules);
-      const fetchedLogs = await automationApi.listLogs();
-      setLogs(fetchedLogs);
+      if (!isRestrictedOperator) {
+        const fetchedLogs = await automationApi.listLogs();
+        setLogs(fetchedLogs);
+      }
     } catch (e) {
       console.warn('[AutomationsManager] Error fetching rules/logs:', e);
     } finally {
@@ -196,10 +204,14 @@ export const AutomationsManager: React.FC = () => {
 
   useEffect(() => {
     fetchRulesAndLogs();
-    fetchCommentRules();
-    fetchGlobalToggle();
-    fetchConnectedPagesList();
-  }, []);
+    if (!isRestrictedOperator) {
+      fetchCommentRules();
+      fetchGlobalToggle();
+    }
+    if (!isRestrictedOperator) {
+      fetchConnectedPagesList();
+    }
+  }, [isRestrictedOperator]);
 
   const handleToggleGlobal = async () => {
     const nextState = !isGlobalEnabled;
@@ -430,6 +442,30 @@ export const AutomationsManager: React.FC = () => {
     }
   };
 
+  const handleRestrictedKeywordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRule) return;
+    if (keywords.length === 0) {
+      setFormError('يرجى إضافة كلمة مفتاحية واحدة على الأقل');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+    try {
+      const updated = await automationApi.updateRuleKeywords(editingRule.id, keywords);
+      setRules((previous) => previous.map((rule) => (
+        rule.id === editingRule.id ? { ...rule, keywords: updated.keywords } : rule
+      )));
+      setIsModalOpen(false);
+      setEditingRule(null);
+    } catch (err: any) {
+      setFormError(err?.message || 'تعذر تحديث الكلمات المفتاحية');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -589,6 +625,134 @@ export const AutomationsManager: React.FC = () => {
   };
 
   const activeRulesCount = rules.filter((r) => r.is_active).length;
+
+  const restrictedRules = rules;
+
+  const getRestrictedStoreName = (rule: AutomationRule) => {
+    if (rule.page_id) {
+      return connectedPages.find((page) => page.page_id === rule.page_id)?.name || rule.brand_id || rule.page_id;
+    }
+    return rule.brand_id || 'المتجر المصرح';
+  };
+
+  if (isRestrictedOperator) {
+    return (
+      <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
+        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6">
+          <div className="flex items-center gap-3.5 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
+              <Tag className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">إدارة الكلمات المفتاحية</h1>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                يمكنك إضافة أو تعديل الكلمات المفتاحية لقواعد متجرك المصرح فقط
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            {isLoading ? (
+              <div className="p-12 text-center text-slate-400 text-xs font-medium">جاري تحميل قواعد الكلمات المفتاحية...</div>
+            ) : restrictedRules.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-xs font-medium">لا توجد قواعد متاحة للمتجر المصرح لك.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3 font-bold">القاعدة</th>
+                      <th className="px-5 py-3 font-bold">المتجر</th>
+                      <th className="px-5 py-3 font-bold">الكلمات المفتاحية</th>
+                      <th className="px-5 py-3 font-bold w-24">تعديل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {restrictedRules.map((rule) => (
+                      <tr key={rule.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-5 py-4 text-xs font-bold text-slate-900">{rule.name}</td>
+                        <td className="px-5 py-4 text-xs font-semibold text-slate-600">{getRestrictedStoreName(rule)}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            {(rule.keywords || []).map((keyword) => (
+                              <span key={keyword} className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-200/80">
+                                {keyword}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(rule)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-theme-primary-tint text-theme-primary hover:bg-theme-primary-subtle text-xs font-bold transition"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            تعديل
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isModalOpen && editingRule && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div>
+                  <h3 className="text-sm font-bold">تعديل الكلمات المفتاحية</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">{editingRule.name} — {getRestrictedStoreName(editingRule)}</p>
+                </div>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleRestrictedKeywordSubmit} className="space-y-4">
+                {formError && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{formError}</div>}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={keywordInput}
+                    onChange={(event) => setKeywordInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleAddKeyword();
+                      }
+                    }}
+                    placeholder="اكتب كلمة أو عدة كلمات مفصولة بفاصلة"
+                    className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                  />
+                  <button type="button" onClick={handleAddKeyword} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition">
+                    إضافة
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5 min-h-12 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                  {keywords.map((keyword) => (
+                    <span key={keyword} className="px-2.5 py-1 bg-theme-primary-tint text-theme-primary text-xs font-bold rounded-lg border border-theme-primary/20 flex items-center gap-1.5">
+                      {keyword}
+                      <button type="button" onClick={() => handleRemoveKeyword(keyword)} aria-label={`حذف ${keyword}`} className="text-theme-primary/70 hover:text-theme-primary">✕</button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-3 border-t">
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">إلغاء</button>
+                  <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold disabled:opacity-50">
+                    {isSubmitting ? 'جاري الحفظ...' : 'حفظ الكلمات'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">

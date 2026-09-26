@@ -130,6 +130,8 @@ export const App: React.FC = () => {
   }, [isAuthenticated]);
 
   const isUserAdmin = isAdminUser(user);
+  const normalizedRole = String(user?.role || '').toLowerCase();
+  const isCallCenterUser = normalizedRole === 'agent' || normalizedRole === 'call_center';
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 text-slate-900 font-sans overflow-hidden select-none" dir="rtl">
@@ -171,7 +173,7 @@ export const App: React.FC = () => {
         <ChannelsPage />
       ) : isUserAdmin && activeMainView === 'comments' ? (
         <CommentsPage />
-      ) : isUserAdmin && activeMainView === 'automations' ? (
+      ) : (isUserAdmin || isCallCenterUser) && activeMainView === 'automations' ? (
         <AutomationPage />
       ) : isUserAdmin && activeMainView === 'dashboard' ? (
         <DashboardPage />

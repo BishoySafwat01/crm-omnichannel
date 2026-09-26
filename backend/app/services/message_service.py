@@ -24,6 +24,81 @@ logger = logging.getLogger("MessageService")
 
 
 class MessageService:
+    LOCATION_PROMPT = "أهلاً بك، من أي دولة ومدينتك الكريمة لتأكيد التوصيل؟"
+
+    @staticmethod
+    async def process_new_inbound_location(
+        session: AsyncSession,
+        conversation: Conversation,
+        text: Optional[str],
+        customer: Optional[Customer] = None,
+    ) -> None:
+        """Extract location, or ask once, during a conversation's opening exchange."""
+        if not text or not text.strip() or not conversation.customer_id:
+            return
+
+        customer_message_count = (
+            await session.execute(
+                select(func.count(Message.id)).where(
+                    Message.conversation_id == conversation.id,
+                    Message.sender_type == SenderTypeEnum.CUSTOMER,
+                    Message.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        is_first_customer_message = customer_message_count == 1
+
+        customer = customer or await session.get(Customer, conversation.customer_id)
+        if not customer:
+            return
+
+        awaiting_location_reply = False
+        if not is_first_customer_message and (not customer.city or not customer.country):
+            awaiting_location_reply = (
+                await session.execute(
+                    select(Message.id)
+                    .where(
+                        Message.conversation_id == conversation.id,
+                        Message.sender_type == SenderTypeEnum.AGENT,
+                        Message.metadata_.contains({"location_prompt": True}),
+                        Message.deleted_at.is_(None),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none() is not None
+
+        if not is_first_customer_message and not awaiting_location_reply:
+            return
+
+        country, city = ConversationService.extract_arab_location(text)
+        if country:
+            customer.country = country
+            customer.location = city or country
+        if city:
+            customer.city = city
+            customer.country = country
+            customer.location = city
+        if country or city:
+            session.add(customer)
+            await session.commit()
+            return
+
+        if not is_first_customer_message or (customer.country and customer.city):
+            return
+
+        await MessageService.send_agent_reply(
+            session=session,
+            conversation_id=conversation.id,
+            text=MessageService.LOCATION_PROMPT,
+            sender_external_id="automation_bot",
+            metadata_={
+                "is_automated": True,
+                "is_bot": True,
+                "location_prompt": True,
+            },
+            sender_name="مساعد التوصيل",
+        )
+
     @staticmethod
     def _is_automated_reply(
         metadata: Optional[dict[str, Any]], sender_external_id: Optional[str]
@@ -34,6 +109,31 @@ class MessageService:
             or metadata.get("is_bot")
             or sender_external_id == "automation_bot"
         )
+
+    @staticmethod
+    def should_increment_inbound_unread(
+        sender_type: SenderTypeEnum,
+        message_created_at: Optional[datetime],
+        received_at: Optional[datetime] = None,
+    ) -> bool:
+        """Return whether an inbound message belongs to today's live unread window."""
+        if sender_type != SenderTypeEnum.CUSTOMER:
+            return False
+
+        received_utc = received_at or datetime.now(timezone.utc)
+        if received_utc.tzinfo is None:
+            received_utc = received_utc.replace(tzinfo=timezone.utc)
+        else:
+            received_utc = received_utc.astimezone(timezone.utc)
+
+        created_utc = message_created_at or received_utc
+        if created_utc.tzinfo is None:
+            created_utc = created_utc.replace(tzinfo=timezone.utc)
+        else:
+            created_utc = created_utc.astimezone(timezone.utc)
+
+        today_baseline = received_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        return created_utc >= today_baseline
 
     @staticmethod
     async def _broadcast_automation_visibility_sync(
@@ -73,7 +173,15 @@ class MessageService:
         message_type: MessageTypeEnum = MessageTypeEnum.TEXT,
         text: Optional[str] = None,
         metadata_: Optional[dict[str, Any]] = None,
+        created_at: Optional[datetime] = None,
     ) -> Message:
+        received_at = datetime.now(timezone.utc)
+        stmt = select(Conversation).where(Conversation.id == conversation_id)
+        result = await session.execute(stmt)
+        conversation = result.scalar_one_or_none()
+
+        is_customer_message = sender_type == SenderTypeEnum.CUSTOMER
+
         message = Message(
             conversation_id=conversation_id,
             external_message_id=external_message_id,
@@ -82,13 +190,11 @@ class MessageService:
             message_type=message_type,
             text=text,
             metadata_=metadata_ or {},
+            created_at=created_at or received_at,
         )
         session.add(message)
 
-        # Update last_message_at on parent conversation & auto-detect location
-        stmt = select(Conversation).where(Conversation.id == conversation_id)
-        result = await session.execute(stmt)
-        conversation = result.scalar_one_or_none()
+        customer = None
         if conversation:
             now = datetime.now(timezone.utc)
             conversation.last_message_at = now
@@ -99,22 +205,16 @@ class MessageService:
             if conversation.customer_id:
                 cust_stmt = select(Customer).where(Customer.id == conversation.customer_id)
                 cust_res = await session.execute(cust_stmt)
-                cust = cust_res.scalar_one_or_none()
-                if cust:
-                    cust.last_activity_at = now
-                    if text:
-                        from app.services.location_extractor import extract_location_from_text
-                        detected_loc = extract_location_from_text(text)
-                        if detected_loc:
-                            cust.country = detected_loc
-                            cust.location = detected_loc
-                    session.add(cust)
+                customer = cust_res.scalar_one_or_none()
+                if customer:
+                    customer.last_activity_at = now
+                    session.add(customer)
 
                 if sender_type == SenderTypeEnum.CUSTOMER:
                     try:
                         from app.services.customer_timeline_service import CustomerTimelineService
                         chan_str = conversation.channel.value if hasattr(conversation.channel, "value") else str(conversation.channel)
-                        cust_name = (cust.display_name if cust else None) or "العميل"
+                        cust_name = (customer.display_name if customer else None) or "العميل"
                         await CustomerTimelineService.record_event(
                             session=session,
                             customer_id=conversation.customer_id,
@@ -136,7 +236,11 @@ class MessageService:
             await ConversationService.sync_unread_state_with_latest_message(
                 session=session,
                 conversation=conversation,
-                increment_customer=sender_type == SenderTypeEnum.CUSTOMER,
+                increment_customer=MessageService.should_increment_inbound_unread(
+                    sender_type=sender_type,
+                    message_created_at=message.created_at,
+                    received_at=received_at,
+                ),
             )
 
         await session.commit()
@@ -169,6 +273,22 @@ class MessageService:
             )
         except Exception as ws_err:
             logger.debug("[MessageService] Real-time broadcast exception: %s", ws_err)
+
+        if conversation and is_customer_message:
+            try:
+                await MessageService.process_new_inbound_location(
+                    session=session,
+                    conversation=conversation,
+                    customer=customer,
+                    text=text,
+                )
+            except Exception as prompt_err:
+                logger.error(
+                    "[Location Extraction] Failed to process conversation %s: %s",
+                    conversation_id,
+                    prompt_err,
+                    exc_info=True,
+                )
 
         return message
 
@@ -813,19 +933,6 @@ class MessageService:
         if is_automated_reply:
             conv.unread_count = 0
             conv.is_unread = False
-
-        # Auto-detect location from outbound text and update customer record
-        if clean_text:
-            from app.services.location_extractor import extract_location_from_text
-            detected_loc = extract_location_from_text(clean_text)
-            if detected_loc and conv.customer_id:
-                cust_stmt = select(Customer).where(Customer.id == conv.customer_id)
-                cust_res = await session.execute(cust_stmt)
-                cust_obj = cust_res.scalar_one_or_none()
-                if cust_obj:
-                    cust_obj.country = detected_loc
-                    cust_obj.location = detected_loc
-                    session.add(cust_obj)
 
         # Record agent response for SLA tracking
         try:

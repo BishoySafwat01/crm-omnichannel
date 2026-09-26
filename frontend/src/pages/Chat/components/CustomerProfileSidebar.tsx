@@ -10,7 +10,6 @@ import { UserAvatar } from '../../../components/ui/UserAvatar';
 import { ConversationAvatar, getBrandObject } from '../../../components/ConversationAvatar';
 import { useCustomerPresence } from '../../../hooks/useCustomerPresence';
 import { BlockCustomerModal } from '../../../components/common/BlockCustomerModal';
-import { useBrandStore } from '../../../store/useBrandStore';
 import { useAuthStore, isAdminUser } from '../../../store/useAuthStore';
 
 export interface CustomerProfileSidebarProps {
@@ -24,19 +23,16 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
   onClose,
   className = '',
 }) => {
-  const brands = useBrandStore((state) => state.brands);
   const currentUser = useAuthStore((state) => state.user);
   const isAdmin = isAdminUser(currentUser);
   const {
     conversations,
     activeConversationId,
     updateCustomerProfile,
-    updateConversationBrand,
     blockCustomer,
     unblockCustomer,
     setDraftText,
     isTyping,
-    addLocationAlert,
   } = useCrmStore();
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
@@ -65,8 +61,6 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
   const [formData, setFormData] = useState({
     display_name: '',
     phone: '',
-    country: '',
-    brand: 'LAVVA',
   });
   const [copiedScriptId, setCopiedScriptId] = useState<string | null>(null);
 
@@ -85,8 +79,6 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
       setFormData({
         display_name: customer.display_name || '',
         phone: customer.phone || '',
-        country: customer.country || '',
-        brand: activeConversation?.brand || activeConversation?.brand_name || 'LAVVA',
       });
       setIsEditing(false);
 
@@ -95,7 +87,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
         loadTimeline(customer.id);
       }
     }
-  }, [customer?.id, customer?.display_name, customer?.phone, customer?.country, activeConversation?.brand, activeConversation?.brand_name]);
+  }, [customer?.id, customer?.display_name, customer?.phone]);
 
   const loadNotes = async (custId: string) => {
     try {
@@ -148,25 +140,10 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
 
   const handleSaveContact = async () => {
     if (customer?.id) {
-      const countryValue = formData.country.trim() || undefined;
       await updateCustomerProfile(customer.id, {
         display_name: formData.display_name.trim() || customer.display_name,
         phone: formData.phone.trim() || undefined,
-        country: countryValue,
       });
-
-      if (formData.brand && activeConversation?.id && formData.brand !== activeConversation.brand) {
-        await updateConversationBrand(activeConversation.id, formData.brand);
-      }
-
-      const previousCountry = (customer.country || '').trim();
-      if (countryValue && countryValue !== previousCountry) {
-        addLocationAlert({
-          type: 'detected',
-          location: countryValue,
-          customerName: formData.display_name.trim() || customer.display_name,
-        });
-      }
     }
     setIsEditing(false);
   };
@@ -250,6 +227,7 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
   };
 
   const formattedCountry = customer?.country?.trim() || 'غير محددة';
+  const formattedStore = activeConversation?.brand || activeConversation?.brand_name || 'LAVVA';
 
   const customerOrder = (customer as any)?.metadata_?.order || (customer as any)?.order;
 
@@ -390,47 +368,25 @@ export const CustomerProfileSidebar: React.FC<CustomerProfileSidebarProps> = ({
             </div>
 
             {/* Country */}
-            <div className="flex items-start gap-2.5 text-slate-700">
-              <Globe className="w-3.5 h-3.5 text-theme-primary shrink-0 mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold text-slate-500 mb-0.5">
-                  الدولة
-                </span>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    aria-label="الدولة"
-                    value={formData.country}
-                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                    placeholder="الدولة"
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs focus:ring-1 focus:ring-theme-primary outline-none"
-                  />
-                ) : (
-                  <span className="block font-semibold text-slate-800 truncate">{formattedCountry}</span>
-                )}
-              </div>
+            <div className="flex items-center justify-between gap-2.5 rounded-xl border border-theme-primary/15 bg-theme-primary-subtle px-2.5 py-2 text-slate-700">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
+                <Globe className="w-3.5 h-3.5 text-theme-primary shrink-0" />
+                الدولة
+              </span>
+              <span className="max-w-[60%] truncate rounded-full border border-theme-primary/20 bg-white px-2.5 py-0.5 text-[11px] font-bold text-theme-primary shadow-2xs">
+                {formattedCountry}
+              </span>
             </div>
 
-            {/* Store / Brand Selection */}
-            <div className="flex items-center gap-2.5 text-slate-700">
-              <Store className="w-3.5 h-3.5 text-theme-primary shrink-0" />
-              {isEditing ? (
-                <select
-                  value={formData.brand}
-                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                  className="w-full rounded-lg border border-theme-primary/30 bg-theme-primary-subtle px-2 py-0.5 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-theme-primary outline-none cursor-pointer"
-                >
-                  {brands.filter((b) => b.id !== 'all').map((b) => (
-                    <option key={b.id} value={b.id}>
-                      متجر: {b.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="font-bold text-slate-800">
-                  متجر: {activeConversation?.brand || activeConversation?.brand_name || 'LAVVA'}
-                </span>
-              )}
+            {/* Store / Brand (read-only conversation assignment) */}
+            <div className="flex items-center justify-between gap-2.5 rounded-xl border border-theme-primary/15 bg-theme-primary-subtle px-2.5 py-2 text-slate-700">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
+                <Store className="w-3.5 h-3.5 text-theme-primary shrink-0" />
+                المتجر
+              </span>
+              <span className="max-w-[60%] truncate rounded-full border border-theme-primary/20 bg-white px-2.5 py-0.5 text-[11px] font-bold text-theme-primary shadow-2xs">
+                {formattedStore}
+              </span>
             </div>
 
             {/* Join Date */}

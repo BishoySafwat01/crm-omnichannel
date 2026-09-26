@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { authApi } from '../services/api';
 
-export type UserRole = 'admin' | 'superadmin' | 'agent' | 'supervisor';
+export type UserRole = 'admin' | 'superadmin' | 'agent' | 'call_center' | 'supervisor';
 
 export const isAdminUser = (user: User | null): boolean => {
   if (!user) return false;
