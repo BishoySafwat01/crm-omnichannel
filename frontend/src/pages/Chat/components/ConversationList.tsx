@@ -245,6 +245,24 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     .map((country) => ({ id: country, label: country }));
   const toggleSelection = <T extends string>(items: T[], value: T): T[] =>
     items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
+  const toggleBrandSelection = (brand: (typeof brandOptions)[number]) => {
+    const identifiers = Array.from(
+      new Set([brand.name, brand.page_id].map((value) => String(value || '').trim()).filter(Boolean))
+    );
+    const selected = identifiers.some((identifier) => selectedBrandIds.includes(identifier));
+    setSelectedBrandIds(
+      selected
+        ? selectedBrandIds.filter((identifier) => !identifiers.includes(identifier))
+        : [...selectedBrandIds, ...identifiers]
+    );
+  };
+
+  const selectedBrandCount = brandOptions.filter((brand) =>
+    [brand.name, brand.page_id]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .some((identifier) => selectedBrandIds.includes(identifier))
+  ).length;
 
   useEffect(() => {
     if (!canFilterByEmployee && selectedEmployeeId) {
@@ -403,9 +421,12 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
         ]
           .filter(Boolean)
           .map((value) => String(value).trim().toLowerCase());
-        const isMatched = selectedBrandIds.some((brandId) =>
-          storeIdentifiers.includes(brandId.trim().toLowerCase())
-        );
+        const isMatched = selectedBrandIds.some((brandId) => {
+          const normalizedBrand = brandId.trim().toLowerCase();
+          return storeIdentifiers.some(
+            (identifier) => identifier === normalizedBrand || identifier.includes(normalizedBrand)
+          );
+        });
         if (!isMatched) {
           return false;
         }
@@ -476,7 +497,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
               title="فلتر حسب المتجر"
             >
               <Store className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{selectedBrandIds.length > 0 ? `المتاجر (${selectedBrandIds.length})` : 'المتاجر'}</span>
+              <span className="truncate">{selectedBrandCount > 0 ? `المتاجر (${selectedBrandCount})` : 'المتاجر'}</span>
               <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${openFilterMenu === 'brands' ? 'rotate-180' : ''}`} />
             </button>
 
@@ -488,10 +509,13 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                 </div>
                 <div className="space-y-1">
                   {brandOptions.map((brand) => {
-                    const isSelected = selectedBrandIds.includes(brand.id);
+                    const identifiers = [brand.name, brand.page_id]
+                      .map((value) => String(value || '').trim())
+                      .filter(Boolean);
+                    const isSelected = identifiers.some((identifier) => selectedBrandIds.includes(identifier));
                     return (
                       <label key={brand.id} role="menuitemcheckbox" aria-checked={isSelected} className={`flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs transition-colors ${isSelected ? 'border border-theme-primary/20 bg-theme-primary-tint font-bold text-theme-primary' : 'font-medium text-slate-700 hover:bg-slate-50'}`}>
-                        <input type="checkbox" checked={isSelected} onChange={() => setSelectedBrandIds(toggleSelection(selectedBrandIds, brand.id))} className="h-4 w-4 shrink-0 accent-[var(--theme-primary)]" />
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleBrandSelection(brand)} className="h-4 w-4 shrink-0 accent-[var(--theme-primary)]" />
                         {brand.logo_url ? <img src={brand.logo_url} alt="" className="h-4 w-4 shrink-0 rounded-full object-cover" /> : <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr ${brand.color} text-[7px] font-bold text-white`}>{brand.avatar?.substring(0, 2) || 'ST'}</span>}
                         <span className="truncate">{brand.name}</span>
                       </label>

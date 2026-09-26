@@ -452,8 +452,14 @@ class ConversationService:
 
         # Enforce user authorization scoping for brands
         if allowed_brands is not None:
-            clean_allowed_b = [str(b).strip().lower() for b in allowed_brands if str(b).strip()]
-            allowed_brand_filter = func.trim(func.lower(Conversation.brand)).in_(clean_allowed_b)
+            clean_allowed_b = [str(b).strip() for b in allowed_brands if str(b).strip()]
+            allowed_brand_filter = or_(
+                Conversation.page_id.in_(clean_allowed_b),
+                *[
+                    Conversation.brand.ilike(f"%{allowed_brand}%")
+                    for allowed_brand in clean_allowed_b
+                ],
+            )
             stmt = stmt.where(allowed_brand_filter)
             count_stmt = count_stmt.where(allowed_brand_filter)
 
@@ -476,10 +482,12 @@ class ConversationService:
         raw_brands = brands if brands is not None else ([brand] if brand is not None else [])
         target_stores = [str(value).strip() for value in raw_brands if value and str(value).strip().lower() not in ["all", "الكل", "none"]]
         if target_stores:
-            normalized_store_names = [value.lower() for value in target_stores]
             brand_filter = or_(
-                func.trim(func.lower(Conversation.brand)).in_(normalized_store_names),
                 Conversation.page_id.in_(target_stores),
+                *[
+                    Conversation.brand.ilike(f"%{store}%")
+                    for store in target_stores
+                ],
             )
             stmt = stmt.where(brand_filter)
             count_stmt = count_stmt.where(brand_filter)

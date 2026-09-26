@@ -7,6 +7,19 @@ const normalizeStore = (store?: string | null): string | null => {
   return !cleanStore || ['all', 'الكل'].includes(cleanStore.toLowerCase()) ? null : cleanStore;
 };
 
+const normalizeStores = (stores: string[]): string[] => {
+  const seen = new Set<string>();
+  return stores
+    .map(normalizeStore)
+    .filter((store): store is string => Boolean(store))
+    .filter((store) => {
+      const key = store.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
 export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (set, get) => ({
   selectedProvider: 'all',
   selectedBrand: null,
@@ -46,7 +59,7 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
   },
 
   setSelectedBrandIds: (brandIds) => {
-    const cleanBrands = Array.from(new Set(brandIds.map(normalizeStore).filter((brand): brand is string => Boolean(brand))));
+    const cleanBrands = normalizeStores(brandIds);
     set({
       selectedBrandIds: cleanBrands,
       selectedBrandId: cleanBrands[0] || 'all',

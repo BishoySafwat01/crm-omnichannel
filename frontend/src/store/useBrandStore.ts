@@ -13,7 +13,7 @@ interface BrandState {
   fetchBackendBrands: () => Promise<void>;
 }
 
-const cachedBackendBrandNames = new Set<string>();
+const cachedBackendBrands = new Map<string, string>();
 
 const computeDynamicBrands = (): Brand[] => {
   const list: Brand[] = [
@@ -21,7 +21,7 @@ const computeDynamicBrands = (): Brand[] => {
   ];
   const seen = new Set<string>(['all', 'الكل']);
 
-  const addBrand = (bName?: string | null) => {
+  const addBrand = (bName?: string | null, pageId?: string | null) => {
     if (!bName) return;
     const clean = bName.trim();
     if (!clean) return;
@@ -35,13 +35,13 @@ const computeDynamicBrands = (): Brand[] => {
       name: meta.name || clean,
       avatar: meta.avatar,
       color: meta.color,
-      page_id: '',
+      page_id: String(pageId || '').trim(),
       logo_url: meta.logo_url,
     });
   };
 
   // Active connected pages are the sole source of store filter options.
-  cachedBackendBrandNames.forEach(addBrand);
+  cachedBackendBrands.forEach((pageId, name) => addBrand(name, pageId));
 
   return list;
 };
@@ -69,9 +69,9 @@ export const useBrandStore = create<BrandState>((set, get) => ({
     try {
       const backendBrands = await fetchActiveBrandsDirect();
       if (backendBrands && Array.isArray(backendBrands)) {
-        cachedBackendBrandNames.clear();
+        cachedBackendBrands.clear();
         backendBrands.forEach((b) => {
-          if (b.name) cachedBackendBrandNames.add(b.name);
+          if (b.name) cachedBackendBrands.set(b.name, String(b.page_id || '').trim());
         });
         const updated = computeDynamicBrands();
         set({ brands: updated });

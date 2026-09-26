@@ -319,17 +319,32 @@ async def list_conversations(
                 except ValueError:
                     continue
 
-    # Compute authorized brand and channel scoping for non-admin users
+    # Read live permissions from the database. JWT contents must not control
+    # conversation visibility after an administrator changes access.
     allowed_brands = None
     allowed_channels = None
     if current_user:
-        role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+        live_permissions = (
+            await db.execute(
+                select(User.role, User.brand_access, User.channel_access).where(
+                    User.id == current_user.id
+                )
+            )
+        ).one_or_none()
+        if live_permissions is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found.",
+            )
+
+        live_role, live_brand_access, live_channel_access = live_permissions
+        role_val = live_role.value if hasattr(live_role, "value") else str(live_role)
         if role_val not in (UserRole.ADMIN.value, UserRole.SUPERADMIN.value, "admin", "superadmin"):
-            user_b = current_user.brand_access or []
+            user_b = live_brand_access or []
             norm_b = [str(x).strip().lower() for x in user_b]
             if "all" not in norm_b and "الكل" not in norm_b:
                 allowed_brands = [str(value).strip() for value in user_b if str(value).strip()]
-            user_c = getattr(current_user, "channel_access", None)
+            user_c = live_channel_access
             if user_c is not None:
                 norm_c = [str(x).strip().lower() for x in user_c]
                 if "all" not in norm_c and "الكل" not in norm_c:
