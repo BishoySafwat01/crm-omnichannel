@@ -15,11 +15,16 @@ from app.schemas.automation import (
     AutomationRuleCreate,
     AutomationRuleResponse,
     AutomationRuleUpdate,
+    AutomationSettingsResponse,
+    AutomationSettingsUpdate,
     GlobalAutomationToggleRequest,
     GlobalAutomationToggleResponse,
+    RestrictedAutomationRuleCreate,
 )
 from app.services.audit_service import AuditService
 from app.services.automation_service import (
+    AutomationAuthorizationError,
+    AutomationService,
     is_global_automation_enabled,
     set_global_automation_enabled,
 )
@@ -61,13 +66,19 @@ def _can_manage_rule_keywords(
         return False
     if allowed.intersection({"all", "الكل"}):
         return True
-
     if target_page_ids:
-        return all(
+        pages_are_allowed = all(
             str(page_id).strip().casefold() in allowed
             or page_names.get(str(page_id), "").strip().casefold() in allowed
             for page_id in target_page_ids
         )
+        if pages_are_allowed:
+            return True
+
+        # Legacy single-page rules may only carry a recognizable brand_id even
+        # when their page identifier is not present in brand_access.
+        return len(target_page_ids) == 1 and normalized_brand in allowed
+
     return normalized_brand in allowed
 
 
@@ -82,6 +93,7 @@ def _keyword_rule_payload(
         "page_id": rule.page_id,
         "keywords": rule.keywords,
         "is_active": rule.is_active,
+        "created_by": rule.created_by,
         "created_at": rule.created_at,
     }
 
@@ -129,6 +141,37 @@ async def set_global_automation_toggle_endpoint(
     )
 
     return GlobalAutomationToggleResponse(is_global_automation_enabled=enabled, status="ok")
+
+
+@router.get("/settings", response_model=AutomationSettingsResponse)
+async def get_automation_settings(
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    return await AutomationService.get_settings(db)
+
+
+@router.put("/settings", response_model=AutomationSettingsResponse)
+async def update_automation_settings(
+    payload: AutomationSettingsUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    automation_settings = await AutomationService.update_settings(
+        db,
+        **payload.model_dump(),
+    )
+    await AuditService.log_action(
+        session=db,
+        user_id=admin_user.id,
+        action="automation.settings_updated",
+        resource_type="automation",
+        resource_id="built_in_bots",
+        payload=payload.model_dump(),
+        ip_address=request.client.host if request.client else None,
+    )
+    return automation_settings
 
 
 @router.get("", response_model=list[AutomationRuleResponse])
@@ -212,6 +255,50 @@ async def list_automation_rule_keywords(
     ]
 
 
+@router.post("/keywords", status_code=status.HTTP_201_CREATED)
+async def create_restricted_automation_rule(
+    payload: RestrictedAutomationRuleCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        rule = await AutomationService.create_restricted_keyword_rule(
+            session=db,
+            user=current_user,
+            name=payload.name,
+            brand_id=payload.brand_id,
+            keywords=payload.keywords,
+        )
+    except AutomationAuthorizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    await AuditService.log_action(
+        session=db,
+        user_id=current_user.id,
+        action="automation.created",
+        resource_type="automation",
+        resource_id=str(rule.id),
+        payload={
+            "name": rule.name,
+            "brand_id": rule.brand_id,
+            "page_id": rule.page_id,
+            "keywords": rule.keywords,
+            "creation_mode": "restricted_operator",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    return _keyword_rule_payload(rule, {str(rule.page_id): str(rule.brand_id)})
+
+
 @router.patch("/keywords/{rule_id}")
 async def update_automation_rule_keywords(
     rule_id: uuid.UUID,
@@ -229,6 +316,18 @@ async def update_automation_rule_keywords(
     page_names = await _connected_page_names(db)
     if not _can_manage_rule_keywords(current_user, rule, page_names):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied for this store.")
+
+    try:
+        AutomationService.validate_keyword_update(
+            current_user,
+            rule,
+            payload.keywords,
+        )
+    except AutomationAuthorizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
 
     rule.keywords = payload.keywords
     await db.commit()

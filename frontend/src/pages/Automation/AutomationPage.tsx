@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import {
   automationApi,
+  AutomationSettings,
   AutomationRule,
   AutomationExecutionLog,
   commentAutomationApi,
@@ -96,6 +97,7 @@ export const AutomationsManager: React.FC = () => {
   const [matchType, setMatchType] = useState<'contains' | 'exact' | 'regex'>('contains');
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [protectedKeywords, setProtectedKeywords] = useState<Set<string>>(new Set());
   const [cooldownMinutes, setCooldownMinutes] = useState(15);
   const [isActive, setIsActive] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
@@ -147,12 +149,37 @@ export const AutomationsManager: React.FC = () => {
   const [isGlobalEnabled, setIsGlobalEnabled] = useState<boolean>(true);
   const [isTogglingGlobal, setIsTogglingGlobal] = useState<boolean>(false);
   const [globalToggleError, setGlobalToggleError] = useState<string | null>(null);
+  const [automationSettings, setAutomationSettings] = useState<AutomationSettings>({
+    location_bot_enabled: true,
+    location_prompt_1: 'يا هلا',
+    location_prompt_2: 'حضرتك من اي دولة ؟',
+    order_completion_bot_enabled: true,
+  });
+  const [isSavingAutomationSettings, setIsSavingAutomationSettings] = useState(false);
+  const [automationSettingsFeedback, setAutomationSettingsFeedback] = useState<string | null>(null);
 
   // Multi-Filter State (by Account/Page and Channel)
   const [connectedPages, setConnectedPages] = useState<ConnectedPage[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>('all');
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const restrictedStores = useMemo(() => {
+    const assignedStores = (user?.brand_access || [])
+      .map((store) => String(store || '').trim())
+      .filter(Boolean);
+    const hasAllAccess = assignedStores.some((store) => ['all', 'الكل'].includes(store.toLowerCase()));
+    const candidates = hasAllAccess
+      ? brands.filter((brand) => brand.id.toLowerCase() !== 'all').map((brand) => brand.name)
+      : assignedStores;
+    const seen = new Set<string>();
+    return candidates.filter((store) => {
+      const normalized = store.toLowerCase();
+      if (['all', 'الكل'].includes(normalized) || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }, [brands, user?.brand_access]);
 
   const fetchRulesAndLogs = async () => {
     setIsLoading(true);
@@ -193,6 +220,15 @@ export const AutomationsManager: React.FC = () => {
     }
   };
 
+  const fetchAutomationSettings = async () => {
+    try {
+      setAutomationSettings(await automationApi.getSettings());
+    } catch (e) {
+      console.warn('[AutomationsManager] Error fetching automation settings:', e);
+      setAutomationSettingsFeedback('تعذر تحميل إعدادات الأتمتة');
+    }
+  };
+
   const fetchConnectedPagesList = async () => {
     try {
       const pages = await getConnectedPages();
@@ -207,6 +243,7 @@ export const AutomationsManager: React.FC = () => {
     if (!isRestrictedOperator) {
       fetchCommentRules();
       fetchGlobalToggle();
+      fetchAutomationSettings();
     }
     if (!isRestrictedOperator) {
       fetchConnectedPagesList();
@@ -226,6 +263,28 @@ export const AutomationsManager: React.FC = () => {
       setGlobalToggleError(err?.message || 'فشل في تغيير حالة التحكم الشامل بالأتمتة');
     } finally {
       setIsTogglingGlobal(false);
+    }
+  };
+
+  const handleSaveAutomationSettings = async () => {
+    if (!automationSettings.location_prompt_1.trim() || !automationSettings.location_prompt_2.trim()) {
+      setAutomationSettingsFeedback('يجب إدخال نص الرسالتين');
+      return;
+    }
+    setIsSavingAutomationSettings(true);
+    setAutomationSettingsFeedback(null);
+    try {
+      const updated = await automationApi.updateSettings({
+        ...automationSettings,
+        location_prompt_1: automationSettings.location_prompt_1.trim(),
+        location_prompt_2: automationSettings.location_prompt_2.trim(),
+      });
+      setAutomationSettings(updated);
+      setAutomationSettingsFeedback('تم حفظ الإعدادات بنجاح');
+    } catch (err: any) {
+      setAutomationSettingsFeedback(err?.message || 'تعذر حفظ إعدادات الأتمتة');
+    } finally {
+      setIsSavingAutomationSettings(false);
     }
   };
 
@@ -328,10 +387,11 @@ export const AutomationsManager: React.FC = () => {
 
   const openCreateModal = () => {
     setEditingRule(null);
-    const initialKws = ['خصم', 'عروض'];
+    const initialKws = isRestrictedOperator ? [] : ['خصم', 'عروض'];
     setKeywords(initialKws);
-    setName(suggestSemanticName(initialKws));
-    setBrandId('all');
+    setProtectedKeywords(new Set());
+    setName(isRestrictedOperator ? '' : suggestSemanticName(initialKws));
+    setBrandId(isRestrictedOperator ? (restrictedStores[0] || '') : 'all');
     setSelectedModalPages(availablePages.map((p) => p.page_id));
     setIsCustomPerPage(false);
     setPerPageReplies({});
@@ -356,6 +416,11 @@ export const AutomationsManager: React.FC = () => {
       new Set((rule.keywords || []).map((k) => (typeof k === 'string' ? k.trim() : '')).filter(Boolean))
     );
     setKeywords(initialKws);
+    setProtectedKeywords(
+      isRestrictedOperator && rule.created_by !== user?.id
+        ? new Set(initialKws)
+        : new Set()
+    );
     setResponseText(rule.response_text || '');
     setCooldownMinutes(rule.cooldown_minutes);
     setIsActive(rule.is_active);
@@ -413,6 +478,7 @@ export const AutomationsManager: React.FC = () => {
   };
 
   const handleRemoveKeyword = (kwToRemove: string) => {
+    if (isRestrictedOperator && protectedKeywords.has(kwToRemove)) return;
     const nextKws = keywords.filter((k) => k !== kwToRemove);
     setKeywords(nextKws);
     if (!name.trim() || name.startsWith('قاعدة:') || name.startsWith('Rule_')) {
@@ -444,7 +510,14 @@ export const AutomationsManager: React.FC = () => {
 
   const handleRestrictedKeywordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingRule) return;
+    if (!editingRule && !name.trim()) {
+      setFormError('يرجى إدخال اسم القاعدة');
+      return;
+    }
+    if (!editingRule && !brandId) {
+      setFormError('يرجى اختيار متجر مصرح به');
+      return;
+    }
     if (keywords.length === 0) {
       setFormError('يرجى إضافة كلمة مفتاحية واحدة على الأقل');
       return;
@@ -453,14 +526,23 @@ export const AutomationsManager: React.FC = () => {
     setIsSubmitting(true);
     setFormError(null);
     try {
-      const updated = await automationApi.updateRuleKeywords(editingRule.id, keywords);
-      setRules((previous) => previous.map((rule) => (
-        rule.id === editingRule.id ? { ...rule, keywords: updated.keywords } : rule
-      )));
+      if (editingRule) {
+        const updated = await automationApi.updateRuleKeywords(editingRule.id, keywords);
+        setRules((previous) => previous.map((rule) => (
+          rule.id === editingRule.id ? { ...rule, keywords: updated.keywords } : rule
+        )));
+      } else {
+        const created = await automationApi.createKeywordRule({
+          name: name.trim(),
+          brand_id: brandId,
+          keywords,
+        });
+        setRules((previous) => [created, ...previous]);
+      }
       setIsModalOpen(false);
       setEditingRule(null);
     } catch (err: any) {
-      setFormError(err?.message || 'تعذر تحديث الكلمات المفتاحية');
+      setFormError(err?.message || (editingRule ? 'تعذر تحديث الكلمات المفتاحية' : 'تعذر إنشاء القاعدة'));
     } finally {
       setIsSubmitting(false);
     }
@@ -639,16 +721,28 @@ export const AutomationsManager: React.FC = () => {
     return (
       <div className="flex-1 bg-slate-50/50 p-3.5 sm:p-6 overflow-y-auto" dir="rtl">
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 space-y-6">
-          <div className="flex items-center gap-3.5 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
-            <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
-              <Tag className="w-6 h-6" />
+          <div className="flex items-center justify-between gap-3.5 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-theme-primary text-white flex items-center justify-center shadow-lg shadow-theme-primary/20">
+                <Tag className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight">إدارة الكلمات المفتاحية</h1>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  يمكنك إضافة أو تعديل الكلمات المفتاحية لقواعد متجرك المصرح فقط
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">إدارة الكلمات المفتاحية</h1>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                يمكنك إضافة أو تعديل الكلمات المفتاحية لقواعد متجرك المصرح فقط
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              disabled={restrictedStores.length === 0}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              title={restrictedStores.length === 0 ? 'لا توجد متاجر مصرح بها متاحة' : undefined}
+            >
+              <Plus className="w-4 h-4" />
+              قاعدة جديدة
+            </button>
           </div>
 
           <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
@@ -700,13 +794,17 @@ export const AutomationsManager: React.FC = () => {
           </div>
         </div>
 
-        {isModalOpen && editingRule && (
+        {isModalOpen && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <div>
-                  <h3 className="text-sm font-bold">تعديل الكلمات المفتاحية</h3>
-                  <p className="text-[11px] text-slate-500 mt-1">{editingRule.name} — {getRestrictedStoreName(editingRule)}</p>
+                  <h3 className="text-sm font-bold">{editingRule ? 'تعديل الكلمات المفتاحية' : 'قاعدة جديدة'}</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {editingRule
+                      ? `${editingRule.name} — ${getRestrictedStoreName(editingRule)}`
+                      : 'أدخل اسم القاعدة والمتجر والكلمات المفتاحية فقط'}
+                  </p>
                 </div>
                 <button type="button" onClick={() => setIsModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl">
                   <X className="w-4 h-4" />
@@ -714,36 +812,69 @@ export const AutomationsManager: React.FC = () => {
               </div>
               <form onSubmit={handleRestrictedKeywordSubmit} className="space-y-4">
                 {formError && <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{formError}</div>}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={keywordInput}
-                    onChange={(event) => setKeywordInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        handleAddKeyword();
-                      }
-                    }}
-                    placeholder="اكتب كلمة أو عدة كلمات مفصولة بفاصلة"
-                    className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
-                  />
-                  <button type="button" onClick={handleAddKeyword} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition">
-                    إضافة
-                  </button>
+                {!editingRule && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">اسم القاعدة:</label>
+                      <input
+                        type="text"
+                        required
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        placeholder="مثال: استفسارات الأسعار"
+                        className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">المتجر:</label>
+                      <select
+                        required
+                        value={brandId}
+                        onChange={(event) => setBrandId(event.target.value)}
+                        className="w-full bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                      >
+                        {restrictedStores.map((store) => (
+                          <option key={store} value={store}>{store}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">الكلمات المفتاحية:</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={keywordInput}
+                      onChange={(event) => setKeywordInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          handleAddKeyword();
+                        }
+                      }}
+                      placeholder="اكتب كلمة أو عدة كلمات مفصولة بفاصلة"
+                      className="flex-1 bg-slate-50 text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                    />
+                    <button type="button" onClick={handleAddKeyword} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition">
+                      إضافة
+                    </button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5 min-h-12 p-3 bg-slate-50 rounded-2xl border border-slate-200">
                   {keywords.map((keyword) => (
                     <span key={keyword} className="px-2.5 py-1 bg-theme-primary-tint text-theme-primary text-xs font-bold rounded-lg border border-theme-primary/20 flex items-center gap-1.5">
                       {keyword}
-                      <button type="button" onClick={() => handleRemoveKeyword(keyword)} aria-label={`حذف ${keyword}`} className="text-theme-primary/70 hover:text-theme-primary">✕</button>
+                      {!protectedKeywords.has(keyword) && (
+                        <button type="button" onClick={() => handleRemoveKeyword(keyword)} aria-label={`حذف ${keyword}`} className="text-theme-primary/70 hover:text-theme-primary">✕</button>
+                      )}
                     </span>
                   ))}
                 </div>
                 <div className="flex items-center justify-end gap-2 pt-3 border-t">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">إلغاء</button>
                   <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold disabled:opacity-50">
-                    {isSubmitting ? 'جاري الحفظ...' : 'حفظ الكلمات'}
+                    {isSubmitting ? 'جاري الحفظ...' : editingRule ? 'حفظ الكلمات' : 'إنشاء القاعدة'}
                   </button>
                 </div>
               </form>
@@ -824,6 +955,110 @@ export const AutomationsManager: React.FC = () => {
                 <span>إنشاء قاعدة تعليقات</span>
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Built-in Location and Order Automation Controls */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-5">
+          <div>
+            <h2 className="text-base font-black text-slate-900">أتمتة الموقع والطلبات</h2>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              تحكم في رسائل طلب الموقع واكتشاف اكتمال الطلب من محادثات العملاء.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">أتمتة استخراج الموقع</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">إرسال رسالتين عند عدم توفر دولة العميل.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={automationSettings.location_bot_enabled}
+                  onClick={() => setAutomationSettings((current) => ({
+                    ...current,
+                    location_bot_enabled: !current.location_bot_enabled,
+                  }))}
+                  className={`w-14 h-7 flex items-center rounded-full p-1 transition-colors ${
+                    automationSettings.location_bot_enabled ? 'bg-emerald-500 justify-start' : 'bg-slate-300 justify-end'
+                  }`}
+                >
+                  <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="block text-xs font-bold text-slate-700 mb-1.5">الرسالة الأولى</span>
+                  <input
+                    type="text"
+                    value={automationSettings.location_prompt_1}
+                    onChange={(event) => setAutomationSettings((current) => ({
+                      ...current,
+                      location_prompt_1: event.target.value,
+                    }))}
+                    className="w-full bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-bold text-slate-700 mb-1.5">الرسالة الثانية</span>
+                  <input
+                    type="text"
+                    value={automationSettings.location_prompt_2}
+                    onChange={(event) => setAutomationSettings((current) => ({
+                      ...current,
+                      location_prompt_2: event.target.value,
+                    }))}
+                    className="w-full bg-white text-xs font-medium text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-theme-primary/20 focus:border-theme-primary"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 h-fit">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">أتمتة اكتمال الطلب</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">تمييز المحادثة تلقائياً عند اكتشاف طلب مكتمل.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={automationSettings.order_completion_bot_enabled}
+                  onClick={() => setAutomationSettings((current) => ({
+                    ...current,
+                    order_completion_bot_enabled: !current.order_completion_bot_enabled,
+                  }))}
+                  className={`w-14 h-7 flex items-center rounded-full p-1 transition-colors ${
+                    automationSettings.order_completion_bot_enabled ? 'bg-emerald-500 justify-start' : 'bg-slate-300 justify-end'
+                  }`}
+                >
+                  <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+            {automationSettingsFeedback && (
+              <span className={`text-xs font-bold ${
+                automationSettingsFeedback.includes('بنجاح') ? 'text-emerald-700' : 'text-rose-600'
+              }`}>
+                {automationSettingsFeedback}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveAutomationSettings}
+              disabled={isSavingAutomationSettings}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-theme-primary hover:bg-theme-primary-hover text-white text-xs font-bold transition disabled:opacity-50"
+            >
+              <Check className="w-4 h-4" />
+              {isSavingAutomationSettings ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+            </button>
           </div>
         </div>
 

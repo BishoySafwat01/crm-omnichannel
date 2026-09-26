@@ -636,96 +636,41 @@ export const MessageThread: React.FC<MessageThreadProps> = ({
       <div className="relative min-h-full select-text">
         <svg
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 h-full w-full stroke-slate-500/25 dark:stroke-slate-400/20"
+          className="pointer-events-none absolute inset-0 h-full w-full stroke-slate-400/20"
         >
           <defs>
             <pattern id="chat-makeup-doodles" width="128" height="128" patternUnits="userSpaceOnUse">
-              <g fill="none" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round">
+              <g fill="none" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round">
                 {/* Lipstick */}
-                <g transform="translate(5 5) rotate(-10 8 14)">
+                <g transform="translate(8 9) rotate(-10 8 14)">
                   <path d="M5 9h7v15H5zM3.5 24h10v5h-10zM6 9V5l3-3 3 3v4M5 19h7" />
                 </g>
                 {/* Perfume bottle */}
-                <g transform="translate(29 3)">
+                <g transform="translate(44 7)">
                   <path d="M5 9h16l3 5v17H2V14l3-5ZM8 4h10v5H8zM11 1h4v3M6 19c4-3 10-3 14 0" />
                   <path d="m18 4 7-2m0 0 4 2m-4-2 3-2" />
                 </g>
-                {/* Mascara wand */}
-                <g transform="translate(59 2) rotate(9 8 16)">
+                {/* Eyeliner */}
+                <g transform="translate(96 8) rotate(9 8 16)">
                   <rect x="5" y="17" width="7" height="18" rx="2.5" />
                   <path d="M8.5 17V4M4 5l9-1M4 8l9-1M4 11l9-1" />
                 </g>
-                {/* Hand mirror */}
-                <g transform="translate(83 4) rotate(-8 11 15)">
-                  <circle cx="10" cy="10" r="8" />
-                  <circle cx="10" cy="10" r="5.5" />
-                  <path d="M10 18v12m-3 2h6m-3-2v2" />
-                </g>
-                {/* Lip gloss */}
-                <g transform="translate(108 4) rotate(12 7 14)">
-                  <rect x="4" y="12" width="7" height="18" rx="2" />
-                  <path d="M7.5 12V3m0 0 3 6M4 16h7" />
-                </g>
-
                 {/* Powder compact */}
-                <g transform="translate(4 39)">
+                <g transform="translate(7 69)">
                   <ellipse cx="12" cy="14" rx="11" ry="5.5" />
                   <path d="M1 14V7c0-5 22-5 22 0v7M5 9c4-3 10-3 14 0" />
                 </g>
-                {/* Nail polish */}
-                <g transform="translate(33 38) rotate(-7 8 13)">
-                  <path d="M4 11h13v18H4zM6 5h9v6H6zM8 2h5v3M6 19c3-2 6-2 9 0" />
-                </g>
                 {/* Makeup brush */}
-                <g transform="translate(57 39) rotate(15 8 14)">
+                <g transform="translate(51 65) rotate(15 8 14)">
                   <path d="M3 6c4-5 11-5 15 0l-3 7H6L3 6ZM6 13h9l-2 22H9L6 13Z" />
                   <path d="m5 3 3 4m3-6v6m5-4-2 4" />
                 </g>
-                {/* Cosmetic tube */}
-                <g transform="translate(80 40) rotate(-8 8 13)">
-                  <path d="M5 3h11l1 20-3 6H7l-3-6L5 3ZM5 8h11M7 22h9" />
-                </g>
-                {/* Eyelashes */}
-                <g transform="translate(104 45)">
-                  <path d="M1 8c6 5 15 5 21 0M4 10l-2 4m6-2-1 5m6-5 1 5m4-7 3 4" />
-                </g>
-
-                {/* Lipstick */}
-                <g transform="translate(7 78) rotate(13 8 13)">
-                  <path d="M5 9h7v14H5zM3 23h11v5H3zM6 9V5l3-3 3 3v4" />
-                </g>
-                {/* Round cosmetic mirror */}
-                <g transform="translate(35 77)">
+                {/* Hand mirror */}
+                <g transform="translate(93 68) rotate(-8 11 15)">
                   <circle cx="10" cy="10" r="9" />
                   <circle cx="10" cy="10" r="6" />
                   <path d="m10 19 1.5 12h-3L10 19ZM5 8c2-3 5-4 8-2" />
                 </g>
-                {/* Perfume atomizer */}
-                <g transform="translate(62 78)">
-                  <path d="M4 8h15l3 4v17H1V12l3-4ZM7 3h9v5H7zM9 1h5v2" />
-                  <path d="m16 3 7-2m0 0 4 2" />
-                </g>
-                {/* Mascara brush */}
-                <g transform="translate(92 77) rotate(-12 8 15)">
-                  <path d="M8 15V3M3 4l10-1M3 7l10-1M3 10l10-1" />
-                  <rect x="4" y="15" width="8" height="17" rx="2.5" />
-                </g>
-                {/* Compact powder */}
-                <g transform="translate(109 91) rotate(7 9 8)">
-                  <ellipse cx="9" cy="9" rx="9" ry="4.5" />
-                  <path d="M0 9V4c0-4 18-4 18 0v5M4 5c3-2 7-2 11 0" />
-                </g>
-
-                {/* Hearts and sparkle field */}
-                <path d="M25 34c-3.5-4-8 1.5 0 7 8-5.5 3.5-11 0-7ZM106 34c-3-3.5-7 1-0 6 7-5 3-9.5 0-6Z" />
-                <path d="m121 35 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM29 70l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3ZM103 111l1.2 3.5 3.3 1.2-3.3 1.2-1.2 3.5-1.2-3.5-3.3-1.2 3.3-1.2 1.2-3.5Z" />
-              </g>
-
-              <g className="fill-current text-theme-primary/20" stroke="none">
-                <circle cx="56" cy="31" r="1.4" />
-                <circle cx="117" cy="71" r="1.3" />
-                <circle cx="28" cy="113" r="1.5" />
-                <path d="m77 69 1.3 3.2 3.2 1.3-3.2 1.3-1.3 3.2-1.3-3.2-3.2-1.3 3.2-1.3 1.3-3.2Z" />
               </g>
             </pattern>
           </defs>

@@ -25,9 +25,6 @@ logger = logging.getLogger("MessageService")
 
 
 class MessageService:
-    LOCATION_GREETING = "يا هلا"
-    LOCATION_PROMPT = "حضرتك من اي دولة ؟"
-
     @staticmethod
     async def process_new_inbound_location(
         session: AsyncSession,
@@ -39,11 +36,15 @@ class MessageService:
         if not text or not text.strip():
             return
 
-        await ConversationService.apply_completed_order_label(
-            session=session,
-            conversation=conversation,
-            text=text,
-        )
+        from app.services.automation_service import AutomationService
+
+        automation_settings = await AutomationService.get_settings(session)
+        if automation_settings.order_completion_bot_enabled:
+            await ConversationService.apply_completed_order_label(
+                session=session,
+                conversation=conversation,
+                text=text,
+            )
 
         if not conversation.customer_id:
             return
@@ -70,6 +71,11 @@ class MessageService:
         # A stored country is sufficient to suppress the country/city prompt.
         # Asking for a missing city must be handled by a separate, city-only flow.
         if customer.country and customer.country.strip():
+            return
+
+        # Location extraction above remains active while the bot is disabled;
+        # only its outbound prompts are suppressed.
+        if not automation_settings.location_bot_enabled:
             return
 
         customer_message_count = (
@@ -136,11 +142,11 @@ class MessageService:
 
         for prompt_text, prompt_metadata in (
             (
-                MessageService.LOCATION_GREETING,
+                automation_settings.location_prompt_1,
                 {"location_greeting": True},
             ),
             (
-                MessageService.LOCATION_PROMPT,
+                automation_settings.location_prompt_2,
                 {"location_prompt": True},
             ),
         ):

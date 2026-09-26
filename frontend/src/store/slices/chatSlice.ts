@@ -189,9 +189,9 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
 
   fetchConversations: async () => {
     try {
-      const selectedBrand = get().selectedBrand || get().selectedBrandId;
-      const selectedChannel = get().selectedChannel;
-      const selectedCountry = get().selectedCountry;
+      const selectedBrands = get().selectedBrandIds;
+      const selectedChannels = get().selectedChannels;
+      const selectedCountries = get().selectedCountries;
       const selectedProvider = get().selectedProvider;
       const searchQuery = get().searchQuery;
       const conversationFilter = get().activeFilterTab === 'unread' ? 'unread' : undefined;
@@ -199,9 +199,9 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const isBlockedTab = get().activeFilterTab === 'blocked';
       const showArchived = isCompletedTab || isBlockedTab || Boolean(get().showArchived);
       const raw = await getConversationsDirect(
-        selectedBrand,
-        selectedChannel,
-        selectedCountry,
+        selectedBrands,
+        selectedChannels,
+        selectedCountries,
         undefined,
         1,
         50,
@@ -295,8 +295,9 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       conversationsPage,
       selectedBrand,
       selectedBrandId,
-      selectedChannel,
-      selectedCountry,
+      selectedBrandIds,
+      selectedChannels,
+      selectedCountries,
       selectedProvider,
       showArchived,
       conversations,
@@ -309,14 +310,14 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     set({ isLoadingMoreConversations: true });
     try {
       const nextPage = conversationsPage + 1;
-      const targetBrand = selectedBrand || selectedBrandId;
+      const targetBrands = selectedBrandIds.length > 0 ? selectedBrandIds : (selectedBrand && selectedBrandId !== 'all' ? [selectedBrand] : []);
       const isCompletedTab = activeFilterTab === 'completed';
       const conversationFilter = activeFilterTab === 'unread' ? 'unread' : undefined;
       const effectiveShowArchived = isCompletedTab || Boolean(showArchived);
       const raw = await getConversationsDirect(
-        targetBrand,
-        selectedChannel,
-        selectedCountry,
+        targetBrands,
+        selectedChannels,
+        selectedCountries,
         undefined,
         nextPage,
         50,

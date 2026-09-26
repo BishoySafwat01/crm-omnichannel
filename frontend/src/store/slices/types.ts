@@ -1,7 +1,7 @@
 import { AdminSecurityAlert, Conversation, Customer, FilterTab, LocationAlert, Message, MetaMessageTag, WebSocketEvent } from '../../types/crm';
 import { TeamMember } from '../../services/api';
 
-export type ChannelFilterType = 'all' | 'messenger' | 'instagram' | 'whatsapp';
+export type ChannelFilterType = 'messenger' | 'instagram' | 'whatsapp' | 'tiktok' | 'sms';
 
 export interface UnreadSummary {
   total_unread: number;
@@ -18,9 +18,12 @@ export interface FilterSlice {
   selectedProvider: 'all' | 'meta';
   selectedBrand: string | null;
   selectedBrandId: string;
+  selectedBrandIds: string[];
   showArchived: boolean;
-  selectedChannel: ChannelFilterType;
+  selectedChannel: ChannelFilterType | 'all';
+  selectedChannels: ChannelFilterType[];
   selectedCountry: string;
+  selectedCountries: string[];
   availableCountries: string[];
   selectedEmployeeId: string | null;
   availableEmployees: TeamMember[];
@@ -35,9 +38,12 @@ export interface FilterSlice {
   setSelectedProvider: (provider: 'all' | 'meta') => void;
   setSelectedBrand: (brand: string | null) => void;
   setSelectedBrandId: (brandId: string) => void;
+  setSelectedBrandIds: (brandIds: string[]) => void;
   toggleShowArchived: () => void;
-  setSelectedChannel: (channel: ChannelFilterType) => void;
+  setSelectedChannel: (channel: ChannelFilterType | 'all') => void;
+  setSelectedChannels: (channels: ChannelFilterType[]) => void;
   setSelectedCountry: (country: string) => void;
+  setSelectedCountries: (countries: string[]) => void;
   setSelectedEmployeeId: (employeeId: string | null) => void;
   setSelectedAgentId: (agentId: string) => void;
   fetchAvailableCountries: () => Promise<void>;

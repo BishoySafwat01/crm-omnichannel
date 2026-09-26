@@ -1,11 +1,40 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+class AutomationSettings(Base):
+    """Singleton settings for built-in conversation automations."""
+
+    __tablename__ = "automation_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    location_bot_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    location_prompt_1: Mapped[str] = mapped_column(
+        Text, nullable=False, default="يا هلا", server_default="يا هلا"
+    )
+    location_prompt_2: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="حضرتك من اي دولة ؟",
+        server_default="حضرتك من اي دولة ؟",
+    )
+    order_completion_bot_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class AutomationRule(Base):

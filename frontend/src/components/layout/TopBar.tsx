@@ -26,7 +26,7 @@ import {
 import { useBrandStore } from '../../store/useBrandStore';
 import { useCrmStore, ChannelFilterType } from '../../store/useCrmStore';
 import { useAuthStore, isAdminUser } from '../../store/useAuthStore';
-import { metaApi } from '../../services/api';
+import { fetchActiveChannelsDirect, metaApi } from '../../services/api';
 import { getBrandObject } from '../ConversationAvatar';
 import luxiraLogo from '../../assets/luxira-logo.png';
 import { usePortalBrandingStore } from '../../store/usePortalBrandingStore';
@@ -39,12 +39,12 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActiveMainView, isRealtimeConnected = false }) => {
   const {
-    selectedBrandId,
-    setSelectedBrandId,
-    selectedChannel,
-    setSelectedChannel,
-    selectedCountry,
-    setSelectedCountry,
+    selectedBrandIds,
+    setSelectedBrandIds,
+    selectedChannels,
+    setSelectedChannels,
+    selectedCountries,
+    setSelectedCountries,
     availableCountries,
     unreadSummary,
     fetchUnreadSummary,
@@ -53,6 +53,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   } = useCrmStore();
   const { user, logout } = useAuthStore();
   const { branding } = usePortalBrandingStore();
+  const isUserAdmin = isAdminUser(user);
+  const normalizedRole = String(user?.role || '').toLowerCase();
+  const isCallCenterUser = normalizedRole === 'agent' || normalizedRole === 'call_center';
+  const canUseSecondaryTools = normalizedRole === 'admin' || normalizedRole === 'supervisor';
 
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postMessage, setPostMessage] = useState('');
@@ -124,19 +128,31 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     };
   }, [isNavigationDrawerOpen]);
 
-  const channels: { id: ChannelFilterType; label: string }[] = [
-    { id: 'all', label: 'كل القنوات' },
-    { id: 'messenger', label: 'ماسنجر' },
-    { id: 'instagram', label: 'إنستغرام' },
-    { id: 'whatsapp', label: 'واتساب' },
-  ];
+  const [activeChannelIds, setActiveChannelIds] = useState<ChannelFilterType[]>([]);
+  const channelLabels: Record<ChannelFilterType, string> = {
+    messenger: 'ماسنجر',
+    instagram: 'إنستغرام',
+    whatsapp: 'واتساب',
+    tiktok: 'تيك توك',
+    sms: 'رسائل نصية',
+  };
+  const channels = useMemo(
+    () => activeChannelIds.map((id) => ({ id, label: channelLabels[id] })),
+    [activeChannelIds]
+  );
+
+  useEffect(() => {
+    if (!isUserAdmin) return;
+    fetchActiveChannelsDirect().then((items) => {
+      const valid = items.filter((item): item is ChannelFilterType => item in channelLabels);
+      setActiveChannelIds(Array.from(new Set(valid)));
+    });
+  }, [isUserAdmin]);
 
   const countryOptions = useMemo(
-    () => [
-      { id: 'all', label: 'الكل' },
-      ...(availableCountries || []).filter((country) => country !== 'all' && country !== 'unspecified').map((country) => ({ id: country, label: country })),
-      { id: 'unspecified', label: 'غير محدد' },
-    ],
+    () => (availableCountries || [])
+      .filter((country) => country && country !== 'all' && country !== 'unspecified')
+      .map((country) => ({ id: country, label: country })),
     [availableCountries]
   );
 
@@ -175,12 +191,12 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
     }
   };
 
-  const isUserAdmin = isAdminUser(user);
-  const normalizedRole = String(user?.role || '').toLowerCase();
-  const isCallCenterUser = normalizedRole === 'agent' || normalizedRole === 'call_center';
-  const canUseSecondaryTools = normalizedRole === 'admin' || normalizedRole === 'supervisor';
-
   const dynamicBrands = useBrandStore((state) => state.brands);
+  const fetchBackendBrands = useBrandStore((state) => state.fetchBackendBrands);
+
+  useEffect(() => {
+    if (user) fetchBackendBrands();
+  }, [fetchBackendBrands, user]);
 
   const permittedBrandNames = useMemo(
     () => (user?.brand_access || [])
@@ -205,48 +221,38 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   useEffect(() => {
     if (!isCallCenterUser) return;
 
-    if (selectedChannel !== 'all') {
-      setSelectedChannel('all');
+    if (selectedChannels.length > 0) {
+      setSelectedChannels([]);
     }
 
     if (hasAllBrandAccess) return;
 
-    const selectedIsPermitted = availableBrands.some(
-      (brand) => brand.id.toLowerCase() === selectedBrandId.toLowerCase()
-        || brand.name.toLowerCase() === selectedBrandId.toLowerCase()
-    );
-    const assignedBrand = availableBrands[0]?.id || permittedBrandNames[0];
+    const selectedIsPermitted = selectedBrandIds.length > 0 && selectedBrandIds.every((selectedId) => availableBrands.some(
+      (brand) => brand.id.toLowerCase() === selectedId.toLowerCase()
+        || brand.name.toLowerCase() === selectedId.toLowerCase()
+    ));
+    const assignedBrand = availableBrands[0]?.id;
     if (!selectedIsPermitted && assignedBrand) {
-      setSelectedBrandId(assignedBrand);
+      setSelectedBrandIds([assignedBrand]);
     }
   }, [
     availableBrands,
     hasAllBrandAccess,
     isCallCenterUser,
     permittedBrandNames,
-    selectedBrandId,
-    selectedChannel,
-    setSelectedBrandId,
-    setSelectedChannel,
+    selectedBrandIds,
+    selectedChannels,
+    setSelectedBrandIds,
+    setSelectedChannels,
   ]);
 
-  const selectedBrandObj = useMemo(() => {
-    if (!selectedBrandId || selectedBrandId.toLowerCase() === 'all') {
-      return availableBrands[0];
-    }
-    const found = availableBrands.find(
-      (b) => b.id.toLowerCase() === selectedBrandId.toLowerCase() || b.name.toLowerCase() === selectedBrandId.toLowerCase()
-    );
-    if (found) return found;
-    const resolved = getBrandObject(selectedBrandId, selectedBrandId);
-    return {
-      id: selectedBrandId,
-      name: resolved.name || selectedBrandId,
-      avatar: resolved.avatar,
-      logo_url: resolved.logo_url,
-      color: resolved.color,
-    };
-  }, [availableBrands, selectedBrandId]);
+  const storeOptions = useMemo(
+    () => availableBrands.filter((brand) => brand.id.toLowerCase() !== 'all'),
+    [availableBrands]
+  );
+
+  const toggleSelection = <T extends string>(items: T[], value: T): T[] =>
+    items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId
@@ -283,7 +289,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
   }[] = [
     { id: 'chat', label: 'الشات المباشر', icon: <MessageSquare className="w-3.5 h-3.5" /> },
     { id: 'database', label: 'العملاء', icon: <Database className="w-3.5 h-3.5" /> },
-    { id: 'channels', label: 'القنوات (كل القنوات)', icon: <Radio className="w-3.5 h-3.5" /> },
+    { id: 'channels', label: 'القنوات (نوع الصفحة)', icon: <Radio className="w-3.5 h-3.5" /> },
     { id: 'automations', label: 'الأتمتة', icon: <Bot className="w-3.5 h-3.5" /> },
     { id: 'dashboard', label: 'التحليلات', icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { id: 'team', label: 'الفريق', icon: <Users className="w-3.5 h-3.5" /> },
@@ -339,40 +345,40 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
       </div>
 
       {/* Middle Side: Compact, Sleek Contextual Filter Triggers */}
-      <div className={`flex items-center gap-2 ${activeMainView === 'chat' ? 'order-last basis-full w-full overflow-x-auto overflow-y-visible whitespace-nowrap pb-0.5 scrollbar-none' : ''}`}>
+      <div className={`flex items-center gap-2 ${activeMainView === 'chat' ? 'order-last basis-full w-full flex-wrap overflow-visible pb-0.5' : ''}`}>
         {activeMainView === 'chat' && (
           <>
             {/* 1. Store / Brand Switcher Pill Dropdown */}
             <div className="relative" ref={brandDropdownRef}>
               <button
                 type="button"
-                onClick={() => availableBrands.length > 1 && setIsBrandDropdownOpen(!isBrandDropdownOpen)}
-                disabled={isCallCenterUser && availableBrands.length <= 1}
-                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer disabled:cursor-default disabled:opacity-80"
+                onClick={() => setIsBrandDropdownOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={isBrandDropdownOpen}
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
                 title="فلتر حسب المتجر"
               >
-                {selectedBrandObj?.logo_url ? (
-                  <img src={selectedBrandObj.logo_url} alt="" className="w-3.5 h-3.5 rounded-full object-cover ring-1 ring-slate-200" />
-                ) : (
-                  <span className="w-2 h-2 rounded-full bg-teal-600" />
-                )}
-                <span className="max-w-[110px] sm:max-w-[150px] truncate">{selectedBrandObj?.name || selectedBrandId}</span>
-                {(!isCallCenterUser || availableBrands.length > 1) && <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                <span className="w-2 h-2 rounded-full bg-teal-600" />
+                <span className="max-w-[110px] sm:max-w-[150px] truncate">
+                  {selectedBrandIds.length > 0 ? `المتاجر (${selectedBrandIds.length})` : 'المتاجر'}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isBrandDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              {isBrandDropdownOpen && availableBrands.length > 1 && (
-                <div className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-none">
-                  {availableBrands.map((b) => {
+              {isBrandDropdownOpen && (
+                <div role="menu" aria-label="اختيار المتاجر" className="absolute top-full right-0 mt-1.5 w-56 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150 scrollbar-none">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                    <span>المتاجر</span>
+                    {selectedBrandIds.length > 0 && <button type="button" onClick={() => setSelectedBrandIds([])} className="text-teal-700 hover:underline">مسح</button>}
+                  </div>
+                  {storeOptions.map((b) => {
                     const brandUnread = unreadSummary?.brands?.[b.id] || unreadSummary?.brands?.[b.name] || 0;
-                    const isSelected = selectedBrandId === b.id || (!selectedBrandId && b.id === 'all');
+                    const isSelected = selectedBrandIds.includes(b.id);
                     return (
-                      <button
+                      <label
                         key={b.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedBrandId(b.id);
-                          setIsBrandDropdownOpen(false);
-                        }}
+                        role="menuitemcheckbox"
+                        aria-checked={isSelected}
                         className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between cursor-pointer ${
                           isSelected
                             ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50'
@@ -380,6 +386,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
+                          <input type="checkbox" checked={isSelected} onChange={() => setSelectedBrandIds(toggleSelection(selectedBrandIds, b.id))} className="h-4 w-4 accent-teal-600" />
                           {b.logo_url ? (
                             <img src={b.logo_url} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
                           ) : (
@@ -394,9 +401,10 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                             {brandUnread}
                           </span>
                         )}
-                      </button>
+                      </label>
                     );
                   })}
+                  {storeOptions.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد متاجر متصلة نشطة</p>}
                 </div>
               )}
             </div>
@@ -405,38 +413,38 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
             {isUserAdmin && <div className="relative" ref={channelDropdownRef}>
               <button
                 type="button"
-                onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
+                onClick={() => setIsChannelDropdownOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={isChannelDropdownOpen}
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
                 title="تصفية المحادثات حسب القناة"
               >
                 <Radio className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-                <span className="hidden sm:inline">{channels.find((c) => c.id === selectedChannel)?.label || 'كل القنوات'}</span>
-                <span className="sm:hidden text-[11px] font-bold">
-                  {selectedChannel === 'all' ? 'الكل' : selectedChannel === 'messenger' ? 'ماسنجر' : selectedChannel === 'instagram' ? 'إنستا' : 'واتس'}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>{selectedChannels.length > 0 ? `نوع الصفحة (${selectedChannels.length})` : 'نوع الصفحة'}</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isChannelDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {isChannelDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1.5 w-44 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
+                <div role="menu" aria-label="اختيار نوع الصفحة" className="absolute top-full right-0 mt-1.5 w-52 bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-2 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                    <span>نوع الصفحة</span>
+                    {selectedChannels.length > 0 && <button type="button" onClick={() => setSelectedChannels([])} className="text-teal-700 hover:underline">مسح</button>}
+                  </div>
                   {channels.map((ch) => (
-                    <button
+                    <label
                       key={ch.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedChannel(ch.id);
-                        setIsChannelDropdownOpen(false);
-                      }}
+                      role="menuitemcheckbox"
+                      aria-checked={selectedChannels.includes(ch.id)}
                       className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between cursor-pointer ${
-                        selectedChannel === ch.id
+                        selectedChannels.includes(ch.id)
                           ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50'
                           : 'text-slate-700 hover:bg-slate-50 font-medium'
                       }`}
                     >
-                      <span>{ch.label}</span>
-                      {selectedChannel === ch.id && <Check className="w-3.5 h-3.5 text-teal-600" />}
-                    </button>
+                      <span className="flex items-center gap-2"><input type="checkbox" checked={selectedChannels.includes(ch.id)} onChange={() => setSelectedChannels(toggleSelection(selectedChannels, ch.id))} className="h-4 w-4 accent-teal-600" />{ch.label}</span>
+                    </label>
                   ))}
+                  {channels.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد صفحات متصلة نشطة</p>}
                 </div>
               )}
             </div>}
@@ -449,7 +457,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                 aria-haspopup="menu"
                 aria-expanded={isCountryDropdownOpen}
                 className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors shadow-2xs cursor-pointer ${
-                  isCountryDropdownOpen || (selectedCountry && selectedCountry !== 'all')
+                  isCountryDropdownOpen || selectedCountries.length > 0
                     ? 'bg-teal-50 text-teal-800 border-teal-300 ring-2 ring-teal-500/20'
                     : 'bg-slate-50/80 text-slate-700 border-slate-200/70 hover:bg-slate-100'
                 }`}
@@ -457,7 +465,7 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
               >
                 <Globe className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                 <span className="max-w-[72px] sm:max-w-[110px] md:max-w-[145px] truncate">
-                  {countryOptions.find((country) => country.id === selectedCountry)?.label || selectedCountry}
+                  {selectedCountries.length > 0 ? `المواقع (${selectedCountries.length})` : 'المواقع'}
                 </span>
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${isCountryDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -467,26 +475,25 @@ export const TopBar: React.FC<TopBarProps> = ({ activeMainView = 'chat', setActi
                   role="menu"
                   className="absolute top-full right-0 mt-1.5 w-52 max-h-72 overflow-y-auto bg-white/95 backdrop-blur-md rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-100 p-1.5 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-150 scrollbar-none"
                 >
+                  <div className="flex items-center justify-between border-b border-slate-100 px-2 pb-2 text-[11px] font-bold text-slate-600">
+                    <span>المواقع</span>
+                    {selectedCountries.length > 0 && <button type="button" onClick={() => setSelectedCountries([])} className="text-teal-700 hover:underline">مسح</button>}
+                  </div>
                   {countryOptions.map((country) => (
-                    <button
+                    <label
                       key={country.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selectedCountry === country.id}
-                      onClick={() => {
-                        setSelectedCountry(country.id);
-                        setIsCountryDropdownOpen(false);
-                      }}
+                      role="menuitemcheckbox"
+                      aria-checked={selectedCountries.includes(country.id)}
                       className={`w-full text-right px-3 py-2 rounded-xl text-xs transition-colors duration-150 flex items-center justify-between cursor-pointer ${
-                        selectedCountry === country.id
+                        selectedCountries.includes(country.id)
                           ? 'bg-teal-50 text-teal-700 font-bold border border-teal-200/50'
                           : 'text-slate-700 hover:bg-slate-50 font-medium'
                       }`}
                     >
-                      <span className="truncate">{country.label}</span>
-                      {selectedCountry === country.id && <Check className="w-3.5 h-3.5 text-teal-600 shrink-0" />}
-                    </button>
+                      <span className="flex min-w-0 items-center gap-2"><input type="checkbox" checked={selectedCountries.includes(country.id)} onChange={() => setSelectedCountries(toggleSelection(selectedCountries, country.id))} className="h-4 w-4 shrink-0 accent-teal-600" /><span className="truncate">{country.label}</span></span>
+                    </label>
                   ))}
+                  {countryOptions.length === 0 && <p className="px-3 py-2 text-xs text-slate-500">لا توجد مواقع مسجلة</p>}
                 </div>
               )}
             </div>

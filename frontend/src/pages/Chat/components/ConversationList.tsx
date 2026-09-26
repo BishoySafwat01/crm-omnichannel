@@ -161,9 +161,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     conversations,
     activeConversationId,
     setActiveConversationId,
-    selectedBrandId,
-    selectedChannel,
-    selectedCountry,
+    selectedBrandIds,
+    selectedChannels,
+    selectedCountries,
     selectedEmployeeId,
     setSelectedEmployeeId,
     availableEmployees,
@@ -288,9 +288,9 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       // 1. Search is performed by the backend so it can cover the complete dataset and message history.
 
       // 2. Channel Filter
-      if (selectedChannel && selectedChannel !== 'all') {
+      if (selectedChannels.length > 0) {
         const convChan = (conv.channel || 'messenger').toLowerCase();
-        if (convChan !== selectedChannel.toLowerCase()) return false;
+        if (!selectedChannels.includes(convChan as typeof selectedChannels[number])) return false;
       }
 
       // 3. Status Tab Filter
@@ -323,29 +323,15 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       }
 
       // 4. Country / Location Filter
-      if (selectedCountry && selectedCountry !== 'all' && selectedCountry !== 'الكل') {
-        const custLoc = (conv.customer?.location || conv.customer?.country || '').toLowerCase();
-        const target = selectedCountry.toLowerCase();
-        if (target === 'غير ذلك') {
-          if (custLoc && !custLoc.includes('غير ذلك')) return false;
-        } else if (!custLoc.includes(target)) {
-          return false;
-        }
+      if (selectedCountries.length > 0) {
+        const customerCountry = (conv.customer?.country || '').trim().toLowerCase();
+        if (!selectedCountries.some((country) => country.toLowerCase() === customerCountry)) return false;
       }
 
       // 5. Brand Filter
-      if (selectedBrandId && selectedBrandId.toLowerCase() !== 'all' && selectedBrandId !== 'الكل') {
+      if (selectedBrandIds.length > 0) {
         const convBrand = ((conv as any).brand || (conv as any).brand_name || (conv as any).brand_id || '').toLowerCase();
-        const filterBrand = selectedBrandId.toLowerCase();
-        const isMatched =
-          convBrand === filterBrand ||
-          convBrand.includes(filterBrand) ||
-          filterBrand.includes(convBrand) ||
-          (filterBrand.includes('lotus') && convBrand.includes('lotus')) ||
-          (filterBrand.includes('hayat') && convBrand.includes('hayat')) ||
-          ((filterBrand.includes('liora') || filterBrand.includes('luxira')) && (convBrand.includes('liora') || convBrand.includes('luxira'))) ||
-          (filterBrand.includes('loxx') && convBrand.includes('loxx')) ||
-          ((filterBrand.includes('lavva') || filterBrand.includes('lava')) && (convBrand.includes('lavva') || convBrand.includes('lava')));
+        const isMatched = selectedBrandIds.some((brandId) => convBrand === brandId.toLowerCase());
         if (!isMatched) {
           return false;
         }
@@ -382,7 +368,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
 
       return true;
     });
-  }, [conversations, activeFilterTab, selectedBrandId, selectedChannel, selectedCountry, selectedEmployeeId, selectedEmployeeObj, messages]);
+  }, [conversations, activeFilterTab, selectedBrandIds, selectedChannels, selectedCountries, selectedEmployeeId, selectedEmployeeObj, messages]);
 
   const lateCount = useMemo(() => {
     if (!conversations || !Array.isArray(conversations)) return 0;

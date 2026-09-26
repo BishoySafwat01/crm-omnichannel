@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import EmojiPicker, {
+  Categories,
+  EmojiStyle,
+  SuggestionMode,
+  Theme,
+} from 'emoji-picker-react';
 import {
   Send,
   Zap,
@@ -23,7 +29,17 @@ import { Conversation, Message } from '../../../../types/crm';
 import { CANNED_RESPONSES } from '../../constants/chatConstants';
 import { useAuthStore, isAdminUser } from '../../../../store/useAuthStore';
 
-const COMPOSER_EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '❤️', '🎉', '✨'];
+const EMOJI_CATEGORIES = [
+  { category: Categories.SUGGESTED, name: 'Recent · الأخيرة' },
+  { category: Categories.SMILEYS_PEOPLE, name: 'Smileys & People · الوجوه والأشخاص' },
+  { category: Categories.ANIMALS_NATURE, name: 'Animals & Nature · الحيوانات والطبيعة' },
+  { category: Categories.FOOD_DRINK, name: 'Food & Drink · الطعام والشراب' },
+  { category: Categories.TRAVEL_PLACES, name: 'Travel & Places · السفر والأماكن' },
+  { category: Categories.ACTIVITIES, name: 'Activities · الأنشطة' },
+  { category: Categories.OBJECTS, name: 'Objects · الأشياء' },
+  { category: Categories.SYMBOLS, name: 'Symbols · الرموز' },
+  { category: Categories.FLAGS, name: 'Flags · الأعلام' },
+];
 
 export interface StagedMediaItem {
   file: File;
@@ -84,6 +100,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   // Textarea Refs for auto-focus restoration
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const caretPositionRef = useRef({ start: 0, end: 0 });
 
   // File Inputs Refs
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +128,26 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   }, [editingMessage]);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowEmojiPicker(false);
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsideClick, true);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick, true);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showEmojiPicker]);
 
   const startRecording = async () => {
     try {
@@ -316,17 +354,30 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
   const insertEmoji = (emoji: string) => {
     const textarea = textareaRef.current;
-    const selectionStart = textarea?.selectionStart ?? localDraftText.length;
-    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const selectionStart = Math.min(
+      textarea?.selectionStart ?? caretPositionRef.current.start,
+      localDraftText.length,
+    );
+    const selectionEnd = Math.min(
+      textarea?.selectionEnd ?? caretPositionRef.current.end,
+      localDraftText.length,
+    );
     const nextDraft = `${localDraftText.slice(0, selectionStart)}${emoji}${localDraftText.slice(selectionEnd)}`;
     const nextCursorPosition = selectionStart + emoji.length;
 
     setLocalDraftText(nextDraft);
-    setShowEmojiPicker(false);
+    caretPositionRef.current = { start: nextCursorPosition, end: nextCursorPosition };
     requestAnimationFrame(() => {
       textarea?.focus();
       textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
     });
+  };
+
+  const rememberCaretPosition = (textarea: HTMLTextAreaElement) => {
+    caretPositionRef.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    };
   };
 
   const toggleKeyboard = () => {
@@ -660,7 +711,13 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             <textarea
               ref={textareaRef}
               value={localDraftText}
-              onChange={(e) => setLocalDraftText(e.target.value)}
+              onChange={(e) => {
+                setLocalDraftText(e.target.value);
+                rememberCaretPosition(e.target);
+              }}
+              onClick={(e) => rememberCaretPosition(e.currentTarget)}
+              onKeyUp={(e) => rememberCaretPosition(e.currentTarget)}
+              onSelect={(e) => rememberCaretPosition(e.currentTarget)}
               onKeyDown={handleKeyDown}
               onFocus={() => setIsKeyboardActive(true)}
               onBlur={() => setIsKeyboardActive(false)}
@@ -757,7 +814,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 </button>
 
                 {/* Emoji Picker */}
-                <div className="relative">
+                <div ref={emojiPickerRef} className="relative">
                   <button
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
@@ -774,22 +831,30 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     <Smile className="w-4 h-4" />
                   </button>
 
-                  {showEmojiPicker && (
-                    <div className="absolute bottom-full right-0 z-50 mb-2 grid grid-cols-4 gap-1 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
-                      {COMPOSER_EMOJIS.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => insertEmoji(emoji)}
-                          className="emoji flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:scale-110 hover:bg-slate-100 active:scale-95"
-                          aria-label={`إضافة ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div
+                    className={`absolute bottom-full right-0 z-50 mb-3 h-[420px] w-[360px] max-w-[calc(100vw-2rem)] origin-bottom-right overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl transition-all duration-150 dark:border-slate-700 dark:bg-slate-900 ${
+                      showEmojiPicker
+                        ? 'visible scale-100 opacity-100'
+                        : 'pointer-events-none invisible scale-95 opacity-0'
+                    }`}
+                    aria-hidden={!showEmojiPicker}
+                  >
+                    <EmojiPicker
+                      open
+                      width="100%"
+                      height="100%"
+                      theme={Theme.AUTO}
+                      emojiStyle={EmojiStyle.NATIVE}
+                      categories={EMOJI_CATEGORIES}
+                      suggestedEmojisMode={SuggestionMode.RECENT}
+                      searchPlaceholder="Search emoji · بحث في الإيموجي"
+                      searchClearButtonLabel="Clear search · مسح البحث"
+                      previewConfig={{ showPreview: false }}
+                      lazyLoadEmojis
+                      onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
+                      style={{ border: 'none', borderRadius: '1rem' }}
+                    />
+                  </div>
                 </div>
 
                 {/* Mobile keyboard focus toggle */}

@@ -1,5 +1,5 @@
 from app.models.audit import ConversationAssignmentLog, UserAuditLog
-from app.models.automation import AutomationExecutionLog, AutomationRule
+from app.models.automation import AutomationExecutionLog, AutomationRule, AutomationSettings
 from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer, CustomerIdentity
@@ -37,6 +37,7 @@ __all__ = [
     "User",
     "AutomationRule",
     "AutomationExecutionLog",
+    "AutomationSettings",
     "ConversationAssignmentLog",
     "UserAuditLog",
     "SocialComment",
@@ -51,5 +52,4 @@ __all__ = [
     "RawEventStatusEnum",
     "UserRole",
 ]
-
 

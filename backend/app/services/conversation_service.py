@@ -425,12 +425,15 @@ class ConversationService:
         customer_id: Optional[uuid.UUID] = None,
         provider: Optional[ProviderEnum | str] = None,
         channel: Optional[ChannelEnum] = None,
+        channels: Optional[list[ChannelEnum]] = None,
         status: Optional[ConversationStatusEnum] = None,
         include_archived: bool = False,
         search: Optional[str] = None,
         brand: Optional[str] = None,
+        brands: Optional[list[str]] = None,
         location: Optional[str] = None,
         country: Optional[str] = None,
+        countries: Optional[list[str]] = None,
         sla_status: Optional[str] = None,
         assigned_agent_id: Optional[str] = None,
         allowed_brands: Optional[list[str]] = None,
@@ -460,48 +463,19 @@ class ConversationService:
             stmt = stmt.where(Conversation.channel.in_(enum_channels))
             count_stmt = count_stmt.where(Conversation.channel.in_(enum_channels))
 
-        target_country = country if country is not None else location
-        if target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]:
+        raw_countries = countries if countries is not None else ([country if country is not None else location] if (country is not None or location is not None) else [])
+        target_countries = [str(value).strip() for value in raw_countries if value and str(value).strip().lower() not in ["all", "الكل"]]
+        if target_countries:
             stmt = stmt.join(Conversation.customer)
             count_stmt = count_stmt.join(Conversation.customer)
-            clean_c = target_country.strip().lower()
-            if clean_c in ["unspecified", "none", "غير محدد", "غير ذلك"]:
-                loc_filter = (
-                    Customer.country.is_(None) |
-                    (Customer.country == "") |
-                    (Customer.location == "غير ذلك") |
-                    Customer.location.is_(None) |
-                    (Customer.location == "")
-                )
-                stmt = stmt.where(loc_filter)
-                count_stmt = count_stmt.where(loc_filter)
-            else:
-                clean_search = target_country.strip().split()[0]
-                loc_filter = (
-                    (Customer.country == target_country.strip()) |
-                    Customer.country.ilike(f"%{clean_search}%") |
-                    Customer.location.ilike(f"%{clean_search}%")
-                )
-                stmt = stmt.where(loc_filter)
-                count_stmt = count_stmt.where(loc_filter)
+            country_filter = or_(*[func.lower(Customer.country) == value.lower() for value in target_countries])
+            stmt = stmt.where(country_filter)
+            count_stmt = count_stmt.where(country_filter)
 
-        if brand and hasattr(Conversation, "brand") and brand.strip().lower() not in ["all", "الكل", "none", ""]:
-            clean_b = brand.strip().lower()
-            brand_filter = (
-                (func.lower(Conversation.brand) == clean_b) |
-                Conversation.brand.ilike(f"%{clean_b}%")
-            )
-            if clean_b in ["luxira", "liora"]:
-                brand_filter = brand_filter | Conversation.brand.ilike("%liora%") | Conversation.brand.ilike("%luxira%")
-            elif "lotus" in clean_b:
-                brand_filter = brand_filter | Conversation.brand.ilike("%lotus%")
-            elif "hayat" in clean_b:
-                brand_filter = brand_filter | Conversation.brand.ilike("%hayat%")
-            elif "loxx" in clean_b:
-                brand_filter = brand_filter | Conversation.brand.ilike("%loxx%")
-            elif "lavva" in clean_b or "lava" in clean_b:
-                brand_filter = brand_filter | Conversation.brand.ilike("%lavva%") | Conversation.brand.ilike("%lava%")
-
+        raw_brands = brands if brands is not None else ([brand] if brand is not None else [])
+        target_brands = [str(value).strip().lower() for value in raw_brands if value and str(value).strip().lower() not in ["all", "الكل", "none"]]
+        if target_brands and hasattr(Conversation, "brand"):
+            brand_filter = func.lower(Conversation.brand).in_(target_brands)
             stmt = stmt.where(brand_filter)
             count_stmt = count_stmt.where(brand_filter)
 
@@ -570,10 +544,11 @@ class ConversationService:
             stmt = stmt.join(subq, Conversation.id == subq.c.conv_id).where(subq.c.rn == 1)
             count_stmt = count_stmt.join(subq, Conversation.id == subq.c.conv_id).where(subq.c.rn == 1)
 
-        if channel:
-            stmt = stmt.where(Conversation.channel == channel)
-            count_stmt = count_stmt.where(Conversation.channel == channel)
-            unread_count_stmt = unread_count_stmt.where(Conversation.channel == channel)
+        target_channels = channels if channels is not None else ([channel] if channel is not None else [])
+        if target_channels:
+            stmt = stmt.where(Conversation.channel.in_(target_channels))
+            count_stmt = count_stmt.where(Conversation.channel.in_(target_channels))
+            unread_count_stmt = unread_count_stmt.where(Conversation.channel.in_(target_channels))
 
         # Archive / Status Filter
         if status is not None:
@@ -595,7 +570,7 @@ class ConversationService:
 
         if search and search.strip():
             term = f"%{search.strip()}%"
-            if not (target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]):
+            if not target_countries:
                 stmt = stmt.outerjoin(Conversation.customer)
                 count_stmt = count_stmt.outerjoin(Conversation.customer)
                 unread_count_stmt = unread_count_stmt.outerjoin(Conversation.customer)

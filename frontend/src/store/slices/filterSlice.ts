@@ -6,9 +6,12 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
   selectedProvider: 'all',
   selectedBrand: null,
   selectedBrandId: 'all',
+  selectedBrandIds: [],
   showArchived: false,
   selectedChannel: 'all',
+  selectedChannels: [],
   selectedCountry: 'all',
+  selectedCountries: [],
   availableCountries: [],
   selectedEmployeeId: null,
   availableEmployees: [],
@@ -27,13 +30,24 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
 
   setSelectedBrand: (brand) => {
     const cleanBrand = !brand || brand === 'all' || brand === 'الكل' ? null : brand;
-    set({ selectedBrand: cleanBrand, selectedBrandId: cleanBrand || 'all', conversationsPage: 1 });
+    set({ selectedBrand: cleanBrand, selectedBrandId: cleanBrand || 'all', selectedBrandIds: cleanBrand ? [cleanBrand] : [], conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedBrandId: (brandId) => {
     const cleanBrand = !brandId || brandId === 'all' || brandId === 'الكل' ? null : brandId;
-    set({ selectedBrandId: brandId, selectedBrand: cleanBrand, conversationsPage: 1 });
+    set({ selectedBrandId: brandId, selectedBrand: cleanBrand, selectedBrandIds: cleanBrand ? [cleanBrand] : [], conversationsPage: 1 });
+    get().fetchConversations();
+  },
+
+  setSelectedBrandIds: (brandIds) => {
+    const cleanBrands = Array.from(new Set(brandIds.map((brand) => brand.trim()).filter((brand) => brand && !['all', 'الكل'].includes(brand.toLowerCase()))));
+    set({
+      selectedBrandIds: cleanBrands,
+      selectedBrandId: cleanBrands[0] || 'all',
+      selectedBrand: cleanBrands[0] || null,
+      conversationsPage: 1,
+    });
     get().fetchConversations();
   },
 
@@ -43,12 +57,25 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
   },
 
   setSelectedChannel: (channel) => {
-    set({ selectedChannel: channel, conversationsPage: 1 });
+    set({ selectedChannel: channel, selectedChannels: channel === 'all' ? [] : [channel], conversationsPage: 1 });
+    get().fetchConversations();
+  },
+
+  setSelectedChannels: (channels) => {
+    const cleanChannels = Array.from(new Set(channels));
+    set({ selectedChannels: cleanChannels, selectedChannel: cleanChannels[0] || 'all', conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedCountry: (country) => {
-    set({ selectedCountry: country, conversationsPage: 1 });
+    const cleanCountry = !country || country === 'all' || country === 'الكل' ? null : country;
+    set({ selectedCountry: cleanCountry || 'all', selectedCountries: cleanCountry ? [cleanCountry] : [], conversationsPage: 1 });
+    get().fetchConversations();
+  },
+
+  setSelectedCountries: (countries) => {
+    const cleanCountries = Array.from(new Set(countries.map((country) => country.trim()).filter(Boolean)));
+    set({ selectedCountries: cleanCountries, selectedCountry: cleanCountries[0] || 'all', conversationsPage: 1 });
     get().fetchConversations();
   },
 

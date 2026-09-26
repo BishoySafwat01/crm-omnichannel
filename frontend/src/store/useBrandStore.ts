@@ -2,8 +2,6 @@ import { create } from 'zustand';
 import { Brand } from '../types/crm';
 import { getBrandMetadata } from '../constants/brands';
 import { useCrmStore } from './useCrmStore';
-import { useChannelsStore } from './useChannelsStore';
-import { useAuthStore } from './useAuthStore';
 import { fetchActiveBrandsDirect } from '../services/api';
 
 interface BrandState {
@@ -19,7 +17,7 @@ const cachedBackendBrandNames = new Set<string>();
 
 const computeDynamicBrands = (): Brand[] => {
   const list: Brand[] = [
-    { id: 'all', name: 'كل الماركات', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
+    { id: 'all', name: 'المتاجر', avatar: 'ALL', color: 'from-slate-700 to-slate-800', page_id: '' },
   ];
   const seen = new Set<string>(['all', 'الكل']);
 
@@ -42,43 +40,8 @@ const computeDynamicBrands = (): Brand[] => {
     });
   };
 
-  // 0. Ingest cached brands from backend /conversations/brands
+  // Active connected pages are the sole source of store filter options.
   cachedBackendBrandNames.forEach(addBrand);
-
-  // 1. Ingest connected pages from useChannelsStore
-  try {
-    const connectedPages = useChannelsStore.getState().connectedPages || [];
-    connectedPages.forEach((page) => {
-      if ((page as any).brand) addBrand((page as any).brand);
-      else if (page.name) addBrand(page.name);
-    });
-  } catch {}
-
-  // 2. Ingest unreadSummary brands from useCrmStore
-  try {
-    const unreadSummary = useCrmStore.getState().unreadSummary;
-    if (unreadSummary?.brands) {
-      Object.keys(unreadSummary.brands).forEach(addBrand);
-    }
-  } catch {}
-
-  // 3. Ingest active conversation brands from useCrmStore
-  try {
-    const conversations = useCrmStore.getState().conversations || [];
-    conversations.forEach((c) => {
-      addBrand(c.brand || c.brand_name);
-    });
-  } catch {}
-
-  // 4. Ingest user assigned brand_access from useAuthStore
-  try {
-    const user = useAuthStore.getState().user;
-    if (user?.brand_access && Array.isArray(user.brand_access)) {
-      user.brand_access.forEach((b: string) => {
-        if (b && b !== 'ALL' && b !== 'all') addBrand(b);
-      });
-    }
-  } catch {}
 
   return list;
 };
@@ -118,19 +81,6 @@ export const useBrandStore = create<BrandState>((set, get) => ({
     }
   },
 }));
-
-// Automatic reactivity: whenever channels or CRM stores update, refresh the dynamic brand list
-try {
-  useChannelsStore.subscribe(() => {
-    useBrandStore.getState().refreshBrands();
-  });
-} catch {}
-
-try {
-  useCrmStore.subscribe(() => {
-    useBrandStore.getState().refreshBrands();
-  });
-} catch {}
 
 // Initialize backend brands on application load
 try {

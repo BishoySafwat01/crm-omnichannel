@@ -75,6 +75,25 @@ class AutomationKeywordsUpdate(BaseModel):
         )
 
 
+class RestrictedAutomationRuleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    brand_id: str = Field(..., min_length=1, max_length=100)
+    keywords: list[str] = Field(..., min_length=1)
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def deduplicate_keywords(cls, v: Any) -> list[str]:
+        if not isinstance(v, list):
+            return v
+        return list(
+            dict.fromkeys(
+                keyword.strip()
+                for keyword in v
+                if isinstance(keyword, str) and keyword.strip()
+            )
+        )
+
+
 class AutomationRuleResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -116,3 +135,22 @@ class GlobalAutomationToggleRequest(BaseModel):
 class GlobalAutomationToggleResponse(BaseModel):
     is_global_automation_enabled: bool
     status: str = "ok"
+
+
+class AutomationSettingsUpdate(BaseModel):
+    location_bot_enabled: bool
+    location_prompt_1: str = Field(..., min_length=1, max_length=1000)
+    location_prompt_2: str = Field(..., min_length=1, max_length=1000)
+    order_completion_bot_enabled: bool
+
+    @field_validator("location_prompt_1", "location_prompt_2")
+    @classmethod
+    def clean_prompt(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Location prompts cannot be empty.")
+        return cleaned
+
+
+class AutomationSettingsResponse(AutomationSettingsUpdate):
+    model_config = ConfigDict(from_attributes=True)

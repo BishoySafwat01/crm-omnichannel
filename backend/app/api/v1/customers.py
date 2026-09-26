@@ -45,6 +45,28 @@ async def list_customers(
 
 
 @router.get(
+    "/countries",
+    summary="Get Distinct Customer Countries",
+)
+async def get_customer_countries(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return only distinct, non-empty country values stored on customers."""
+    stmt = (
+        select(distinct(Customer.country))
+        .where(
+            Customer.country.isnot(None),
+            Customer.country != "",
+        )
+        .order_by(Customer.country.asc())
+    )
+    result = await db.execute(stmt)
+    countries = [str(country).strip() for country in result.scalars().all() if str(country or "").strip()]
+    return {"countries": countries}
+
+
+@router.get(
     "/locations",
     summary="Get Distinct Customer Countries / Locations",
 )
@@ -362,4 +384,3 @@ async def unblock_customer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
-

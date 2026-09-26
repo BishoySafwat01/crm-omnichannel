@@ -90,31 +90,32 @@ async def get_active_brands(
                 "page_id": p_id,
             })
 
-    # 2. Also query active brands from non-deleted conversations
-    conv_brand_stmt = (
-        select(Conversation.brand)
-        .where(
-            Conversation.deleted_at.is_(None),
-            Conversation.brand.isnot(None),
-        )
-        .distinct()
-    )
-    conv_brands = (await db.execute(conv_brand_stmt)).scalars().all()
-    for c_brand in conv_brands:
-        clean_name = str(c_brand or "").strip()
-        if clean_name and not clean_name.startswith("Page ") and clean_name.lower() not in seen_brands:
-            seen_brands.add(clean_name.lower())
-            brands_list.append({
-                "id": clean_name,
-                "name": clean_name,
-                "page_id": "",
-            })
-
-    # Fallback if no connected pages are active
-    if not brands_list:
-        brands_list.append({"id": "LUXIRA", "name": "LUXIRA", "page_id": ""})
-
     return brands_list
+
+
+@router.get(
+    "/channels",
+    summary="Get Active Conversation Channels from Connected Pages",
+)
+async def get_active_channels(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Derive available page types strictly from active, non-deleted connected pages."""
+    page_stmt = select(
+        ConnectedPage.page_id,
+        ConnectedPage.instagram_business_account_id,
+    ).where(
+        ConnectedPage.status == "ACTIVE",
+        ConnectedPage.deleted_at.is_(None),
+    )
+    pages = (await db.execute(page_stmt)).all()
+    channels: list[str] = []
+    if any(str(page_id or "").strip() for page_id, _ in pages):
+        channels.append(ChannelEnum.MESSENGER.value)
+    if any(str(instagram_id or "").strip() for _, instagram_id in pages):
+        channels.append(ChannelEnum.INSTAGRAM.value)
+    return {"channels": channels}
 
 
 @router.get(
@@ -276,7 +277,7 @@ async def list_conversations(
     page_size: int = Query(50, ge=1, le=100, description="Page size"),
     customer_id: Optional[uuid.UUID] = Query(None, description="Filter by customer ID"),
     provider: Optional[str] = Query(None, description="Filter by provider: beon, meta, all"),
-    channel: Optional[str] = Query(None, description="Filter by channel"),
+    channel: Optional[list[str]] = Query(None, description="Filter by one or more channels"),
     status_filter: Optional[ConversationStatusEnum] = Query(
         None, alias="status", description="Filter by status"
     ),
@@ -284,10 +285,10 @@ async def list_conversations(
         None,
         description="Search by customer name, phone, external ID, subject, brand, or message contents",
     ),
-    brand: Optional[str] = Query(None, description="Filter by brand"),
+    brand: Optional[list[str]] = Query(None, description="Filter by one or more brands"),
     include_archived: bool = Query(False, description="Filter archived conversations"),
-    location: Optional[str] = Query(None, description="Filter by customer location"),
-    country: Optional[str] = Query(None, description="Filter by customer country"),
+    location: Optional[list[str]] = Query(None, description="Filter by one or more customer locations"),
+    country: Optional[list[str]] = Query(None, description="Filter by one or more customer countries"),
     sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
     assigned_agent_id: Optional[str] = Query(None, description="Filter by assigned agent ID or name"),
     filter: Optional[str] = Query(None, description="Conversation filter: unread"),
@@ -297,21 +298,21 @@ async def list_conversations(
 ):
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
     # Fallback/alias location to country if location not provided
-    effective_country = country if country is not None else location
+    effective_countries = country if country is not None else location
 
     parsed_provider: Optional[str] = provider
 
-    parsed_channel: Optional[ChannelEnum] = None
+    parsed_channels: list[ChannelEnum] = []
     if channel:
-        if isinstance(channel, ChannelEnum):
-            parsed_channel = channel
-        elif isinstance(channel, str):
-            norm_ch = channel.strip().lower()
+        for raw_channel in channel:
+            norm_ch = str(raw_channel).strip().lower()
             if norm_ch not in ["all", "none", "", "الكل"]:
                 try:
                     parsed_channel = ChannelEnum(norm_ch)
+                    if parsed_channel not in parsed_channels:
+                        parsed_channels.append(parsed_channel)
                 except ValueError:
-                    parsed_channel = None
+                    continue
 
     # Compute authorized brand and channel scoping for non-admin users
     allowed_brands = None
@@ -335,13 +336,12 @@ async def list_conversations(
         page_size=page_size,
         customer_id=customer_id,
         provider=parsed_provider,
-        channel=parsed_channel,
+        channels=parsed_channels,
         status=status_filter,
         include_archived=include_archived,
         search=search,
-        brand=brand,
-        location=effective_country,
-        country=effective_country,
+        brands=brand or [],
+        countries=effective_countries or [],
         sla_status=sla_status,
         assigned_agent_id=assigned_agent_id,
         allowed_brands=allowed_brands,

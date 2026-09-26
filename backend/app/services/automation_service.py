@@ -6,7 +6,12 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.automation import AutomationExecutionLog, AutomationRule
+from app.models.automation import (
+    AutomationExecutionLog,
+    AutomationRule,
+    AutomationSettings,
+)
+from app.models.connected_page import ConnectedPage
 from app.models.conversation import Conversation
 from app.models.customer import Customer
 from app.models.enums import UserRole
@@ -14,6 +19,10 @@ from app.models.message import Message
 from app.models.user import User
 
 logger = logging.getLogger("AutomationEngine")
+
+
+class AutomationAuthorizationError(ValueError):
+    """Raised when a user attempts an unauthorized automation mutation."""
 
 
 def normalize_arabic(text: Optional[str]) -> str:
@@ -71,6 +80,160 @@ async def set_global_automation_enabled(enabled: bool) -> bool:
 
 
 class AutomationService:
+    RESTRICTED_ROLES = {"agent", "call_center"}
+
+    @staticmethod
+    async def get_settings(session: AsyncSession) -> AutomationSettings:
+        """Return persisted singleton settings or an unsaved default record."""
+        automation_settings = await session.get(AutomationSettings, 1)
+        if automation_settings is None:
+            automation_settings = AutomationSettings(id=1)
+        return automation_settings
+
+    @classmethod
+    async def update_settings(
+        cls,
+        session: AsyncSession,
+        *,
+        location_bot_enabled: bool,
+        location_prompt_1: str,
+        location_prompt_2: str,
+        order_completion_bot_enabled: bool,
+    ) -> AutomationSettings:
+        automation_settings = await cls.get_settings(session)
+        session.add(automation_settings)
+        automation_settings.location_bot_enabled = location_bot_enabled
+        automation_settings.location_prompt_1 = location_prompt_1.strip()
+        automation_settings.location_prompt_2 = location_prompt_2.strip()
+        automation_settings.order_completion_bot_enabled = (
+            order_completion_bot_enabled
+        )
+        await session.commit()
+        await session.refresh(automation_settings)
+        return automation_settings
+
+    @staticmethod
+    def _role_name(user: User) -> str:
+        role = user.role.value if hasattr(user.role, "value") else str(user.role)
+        return str(role).strip().lower()
+
+    @classmethod
+    def is_restricted_operator(cls, user: User) -> bool:
+        return cls._role_name(user) in cls.RESTRICTED_ROLES
+
+    @staticmethod
+    def _clean_keywords(keywords: list[str]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                keyword.strip()
+                for keyword in keywords
+                if isinstance(keyword, str) and keyword.strip()
+            )
+        )
+
+    @classmethod
+    def validate_keyword_update(
+        cls,
+        user: User,
+        rule: AutomationRule,
+        submitted_keywords: list[str],
+    ) -> None:
+        """Prevent operators from removing keywords they did not create."""
+        if not cls.is_restricted_operator(user) or rule.created_by == user.id:
+            return
+
+        existing_keywords = set(cls._clean_keywords(rule.keywords or []))
+        updated_keywords = set(cls._clean_keywords(submitted_keywords))
+        removed_keywords = existing_keywords - updated_keywords
+        if removed_keywords:
+            raise AutomationAuthorizationError(
+                "Agents cannot delete pre-existing rule keywords."
+            )
+
+    @classmethod
+    async def create_restricted_keyword_rule(
+        cls,
+        session: AsyncSession,
+        user: User,
+        name: str,
+        brand_id: str,
+        keywords: list[str],
+    ) -> AutomationRule:
+        """Create the fixed-shape keyword rule available to call-center operators."""
+        if not cls.is_restricted_operator(user):
+            raise AutomationAuthorizationError(
+                "Simplified rule creation is only available to call-center operators."
+            )
+
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Rule name is required.")
+
+        selected_store = brand_id.strip()
+        if not selected_store or selected_store.casefold() in {"all", "الكل"}:
+            raise AutomationAuthorizationError("A specific authorized store is required.")
+
+        allowed_stores = {
+            str(value).strip().casefold()
+            for value in (user.brand_access or [])
+            if str(value).strip()
+        }
+        if not allowed_stores:
+            raise AutomationAuthorizationError("No authorized stores are assigned to this user.")
+
+        has_all_access = bool(allowed_stores.intersection({"all", "الكل"}))
+        if not has_all_access and selected_store.casefold() not in allowed_stores:
+            raise AutomationAuthorizationError("Access denied for the selected store.")
+
+        pages = list(
+            (
+                await session.execute(
+                    select(ConnectedPage).where(
+                        ConnectedPage.deleted_at.is_(None),
+                        ConnectedPage.status == "ACTIVE",
+                    )
+                )
+            ).scalars().all()
+        )
+        selected_normalized = selected_store.casefold()
+        page = next(
+            (
+                candidate
+                for candidate in pages
+                if selected_normalized == str(candidate.page_id).strip().casefold()
+                or selected_normalized == str(candidate.name).strip().casefold()
+            ),
+            None,
+        )
+        if page is None:
+            raise AutomationAuthorizationError("The selected store is not connected.")
+
+        clean_keywords = cls._clean_keywords(keywords)
+        if not clean_keywords:
+            raise ValueError("At least one keyword is required.")
+
+        rule = AutomationRule(
+            name=clean_name,
+            brand_id=page.name,
+            page_id=page.page_id,
+            channels=["all"],
+            trigger_type="keyword_match",
+            match_type="contains",
+            keywords=clean_keywords,
+            response_text="",
+            page_responses={},
+            split_lines=True,
+            delay_seconds=0,
+            human_typing_simulation=False,
+            cooldown_minutes=0,
+            is_active=True,
+            created_by=user.id,
+        )
+        session.add(rule)
+        await session.commit()
+        await session.refresh(rule)
+        return rule
+
     @staticmethod
     async def is_global_enabled() -> bool:
         return await is_global_automation_enabled()

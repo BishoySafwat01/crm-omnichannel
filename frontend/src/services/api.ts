@@ -105,9 +105,9 @@ export const authApi = {
 };
 
 export const getConversationsDirect = async (
-  brand_id?: string,
-  channel?: string,
-  country?: string,
+  brand_id?: string | string[],
+  channel?: string | string[],
+  country?: string | string[],
   assigned_agent_id?: string,
   page: number = 1,
   pageSize: number = 50,
@@ -117,17 +117,18 @@ export const getConversationsDirect = async (
   filter?: string
 ): Promise<any> => {
   const params = new URLSearchParams();
+  const appendFilters = (key: string, values?: string | string[]) => {
+    const items = Array.isArray(values) ? values : values ? [values] : [];
+    items
+      .map((value) => value.trim())
+      .filter((value) => value && value.toLowerCase() !== 'all' && value !== 'الكل')
+      .forEach((value) => params.append(key, value));
+  };
   params.set('page', String(page));
   params.set('page_size', String(pageSize));
-  if (brand_id && brand_id.toLowerCase() !== 'all' && brand_id !== 'الكل') {
-    params.set('brand', brand_id);
-  }
-  if (channel && channel.toLowerCase() !== 'all') {
-    params.set('channel', channel);
-  }
-  if (country && country.toLowerCase() !== 'all') {
-    params.set('country', country);
-  }
+  appendFilters('brand', brand_id);
+  appendFilters('channel', channel);
+  appendFilters('country', country);
   if (assigned_agent_id && assigned_agent_id.toLowerCase() !== 'all') {
     params.set('assigned_agent_id', assigned_agent_id);
   }
@@ -198,6 +199,22 @@ export const fetchActiveBrandsDirect = async (): Promise<{ id: string; name: str
     }
   } catch (e) {
     console.warn('[API] fetchActiveBrandsDirect error:', e);
+  }
+  return [];
+};
+
+export const fetchActiveChannelsDirect = async (): Promise<string[]> => {
+  try {
+    const res = await safeFetch('/conversations/channels', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (res?.ok) {
+      const data = await res.json();
+      return Array.isArray(data?.channels) ? data.channels : [];
+    }
+  } catch (e) {
+    console.warn('[API] fetchActiveChannelsDirect error:', e);
   }
   return [];
 };
@@ -440,7 +457,38 @@ export interface AutomationExecutionLog {
   rule_name?: string | null;
 }
 
+export interface AutomationSettings {
+  location_bot_enabled: boolean;
+  location_prompt_1: string;
+  location_prompt_2: string;
+  order_completion_bot_enabled: boolean;
+}
+
 export const automationApi = {
+  async getSettings(): Promise<AutomationSettings> {
+    const res = await safeFetch('/admin/automations/settings', {
+      method: 'GET',
+      headers: getAuthHeaders({ Accept: 'application/json' }),
+    });
+    if (!res || !res.ok) {
+      throw new Error('فشل في تحميل إعدادات الأتمتة');
+    }
+    return await res.json();
+  },
+
+  async updateSettings(payload: AutomationSettings): Promise<AutomationSettings> {
+    const res = await safeFetch('/admin/automations/settings', {
+      method: 'PUT',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في حفظ إعدادات الأتمتة' }));
+      throw new Error(err?.detail || 'فشل في حفظ إعدادات الأتمتة');
+    }
+    return await res.json();
+  },
+
   async getGlobalToggle(): Promise<boolean> {
     const res = await safeFetch('/admin/automations/global-toggle', {
       method: 'GET',
@@ -505,6 +553,28 @@ export const automationApi = {
     if (!res || !res.ok) {
       const err = await res?.json().catch(() => ({ detail: 'فشل في تحديث الكلمات المفتاحية' }));
       throw new Error(err?.detail || 'فشل في تحديث الكلمات المفتاحية');
+    }
+    const rule = await res.json();
+    return {
+      ...rule,
+      channels: [],
+      trigger_type: '',
+      match_type: '',
+      response_text: '',
+      page_responses: null,
+      cooldown_minutes: 0,
+    } as AutomationRule;
+  },
+
+  async createKeywordRule(payload: { name: string; brand_id: string; keywords: string[] }): Promise<AutomationRule> {
+    const res = await safeFetch('/admin/automations/keywords', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!res || !res.ok) {
+      const err = await res?.json().catch(() => ({ detail: 'فشل في إنشاء قاعدة الكلمات المفتاحية' }));
+      throw new Error(err?.detail || 'فشل في إنشاء قاعدة الكلمات المفتاحية');
     }
     const rule = await res.json();
     return {
@@ -778,13 +848,13 @@ export interface CustomerTimelineEvent {
 
 export const customerApi = {
   async getLocations(): Promise<string[]> {
-    const res = await safeFetch(`/customers/locations`, {
+    const res = await safeFetch(`/customers/countries`, {
       method: 'GET',
       headers: getAuthHeaders({ 'Accept': 'application/json' }),
     });
     if (res && res.ok) {
       const data = await res.json();
-      return data.locations || [];
+      return data.countries || [];
     }
     return [];
   },

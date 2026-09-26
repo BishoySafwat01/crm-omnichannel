@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
-import { Sparkles, Pin, Users } from 'lucide-react';
+import { Pin, Users } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { MetaMessageTag } from '../../../types/crm';
@@ -410,7 +410,16 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({
       <main className="flex-1 bg-[#ECE5DD] flex items-center justify-center p-6 dir-rtl text-right h-full min-h-0 rounded-2xl border border-white/70 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.03)]">
         <div className="bg-white/80 backdrop-blur-xl border border-white/80 shadow-xl rounded-3xl p-8 max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#1A73E8]/10 to-teal-500/10 text-[#1A73E8] flex items-center justify-center mx-auto shadow-inner border border-[#1A73E8]/20">
-            <Sparkles className="w-8 h-8" />
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 32"
+              className="h-8 w-8 fill-none stroke-current"
+              strokeWidth="1.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M8 10h8v15H8zM6 25h12v5H6zM9 10V6l3-4 3 4v4M8 20h8" />
+            </svg>
           </div>
           <div className="space-y-1.5">
             <h3 className="text-base font-extrabold text-slate-900">لا توجد محادثة محددة</h3>

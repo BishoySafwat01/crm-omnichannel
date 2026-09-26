@@ -39,6 +39,36 @@ logger = logging.getLogger("app.services.meta_import_service")
 
 class MetaImportService:
     @staticmethod
+    def _extract_imported_customer_location(
+        messages: list[Any],
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Extract the most recent coherent country/city without running bots."""
+        latest_country: Optional[str] = None
+
+        def message_timestamp(message: Any) -> float:
+            created_at = message.created_at
+            if created_at is None:
+                return 0.0
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            return created_at.timestamp()
+
+        ordered_messages = sorted(
+            messages,
+            key=message_timestamp,
+            reverse=True,
+        )
+        for message in ordered_messages:
+            if message.sender_type != SenderTypeEnum.CUSTOMER:
+                continue
+            country, city = ConversationService.extract_arab_location(message.text)
+            if country and latest_country is None:
+                latest_country = country
+            if city and country and (latest_country is None or country == latest_country):
+                return country, city
+        return latest_country, None
+
+    @staticmethod
     def _sanitize_error(err_str: str) -> str:
         token = settings.META_PAGE_ACCESS_TOKEN
         if token and len(token) > 0:
@@ -532,13 +562,26 @@ class MetaImportService:
                     await session.commit()
 
 
-                # Fetch Messages for this conversation (time-bounded to last 7 days)
+                # Fetch messages for this conversation within the requested window.
                 norm_messages = await adapter.get_all_messages(
                     conversation_id=norm_conv.external_conversation_id,
                     page_id=target_page_id,
                     since_days=since_days,
                 )
                 job.total_messages += len(norm_messages)
+
+                # Historical imports must only persist evidence. Calling the
+                # live inbound pipeline here would dispatch location prompts.
+                imported_country, imported_city = (
+                    MetaImportService._extract_imported_customer_location(
+                        norm_messages
+                    )
+                )
+                if imported_country:
+                    customer.country = imported_country
+                    customer.location = imported_city or imported_country
+                if imported_city:
+                    customer.city = imported_city
                 await session.commit()
 
                 # Upsert Messages idempotently
