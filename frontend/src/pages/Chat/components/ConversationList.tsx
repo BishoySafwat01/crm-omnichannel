@@ -384,13 +384,15 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     return conversations.filter((c) => Boolean(c.customer?.is_blocked)).length;
   }, [conversations]);
 
+  const unreadTotal = filteredUnreadConversationCount;
+
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
     { id: 'all', label: 'الكل', icon: <MessageCircle className="w-3.5 h-3.5" /> },
     {
       id: 'unread',
       label: 'غير مقروء',
       icon: <Clock className="w-3.5 h-3.5" />,
-      badgeCount: filteredUnreadConversationCount > 0 ? filteredUnreadConversationCount : undefined,
+      badgeCount: unreadTotal > 0 ? unreadTotal : undefined,
     },
     { id: 'completed', label: 'طلبات مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
     { id: 'incomplete', label: 'طلبات غير مكتملة', icon: <Clock className="w-3.5 h-3.5" /> },
@@ -571,7 +573,10 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
           {filterTabs.map((tab) => {
             const isActive = activeFilterTab === tab.id;
             const hasBadge = tab.badgeCount !== undefined && tab.badgeCount > 0;
-            const formattedBadge = tab.badgeCount && tab.badgeCount > 99 ? '99+' : tab.badgeCount;
+            const formattedBadge =
+              tab.id !== 'unread' && tab.badgeCount && tab.badgeCount > 99
+                ? '99+'
+                : tab.badgeCount;
 
             return (
               <button

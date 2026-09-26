@@ -290,6 +290,7 @@ async def list_conversations(
     country: Optional[str] = Query(None, description="Filter by customer country"),
     sla_status: Optional[str] = Query(None, description="Filter by SLA status: pending, met, breached"),
     assigned_agent_id: Optional[str] = Query(None, description="Filter by assigned agent ID or name"),
+    filter: Optional[str] = Query(None, description="Conversation filter: unread"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -345,6 +346,7 @@ async def list_conversations(
         assigned_agent_id=assigned_agent_id,
         allowed_brands=allowed_brands,
         allowed_channels=allowed_channels,
+        conversation_filter=filter,
         include_unread_total=True,
     )
     items = [ConversationResponse.model_validate(c) for c in items_raw]

@@ -194,6 +194,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       const selectedCountry = get().selectedCountry;
       const selectedProvider = get().selectedProvider;
       const searchQuery = get().searchQuery;
+      const conversationFilter = get().activeFilterTab === 'unread' ? 'unread' : undefined;
       const isCompletedTab = get().activeFilterTab === 'completed';
       const isBlockedTab = get().activeFilterTab === 'blocked';
       const showArchived = isCompletedTab || isBlockedTab || Boolean(get().showArchived);
@@ -206,7 +207,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         50,
         selectedProvider,
         showArchived,
-        searchQuery
+        searchQuery,
+        conversationFilter
       );
 
       let items: Conversation[] = [];
@@ -299,6 +301,7 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
       showArchived,
       conversations,
       searchQuery,
+      activeFilterTab,
     } = get();
 
     if (!hasMoreConversations || isLoadingMoreConversations) return;
@@ -307,7 +310,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
     try {
       const nextPage = conversationsPage + 1;
       const targetBrand = selectedBrand || selectedBrandId;
-      const isCompletedTab = get().activeFilterTab === 'completed';
+      const isCompletedTab = activeFilterTab === 'completed';
+      const conversationFilter = activeFilterTab === 'unread' ? 'unread' : undefined;
       const effectiveShowArchived = isCompletedTab || Boolean(showArchived);
       const raw = await getConversationsDirect(
         targetBrand,
@@ -318,7 +322,8 @@ export const createChatSlice: StateCreator<CrmState, [], [], ChatSlice> = (set, 
         50,
         selectedProvider,
         effectiveShowArchived,
-        searchQuery
+        searchQuery,
+        conversationFilter
       );
 
       let newItems: Conversation[] = [];

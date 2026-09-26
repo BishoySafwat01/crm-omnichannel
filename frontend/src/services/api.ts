@@ -113,7 +113,8 @@ export const getConversationsDirect = async (
   pageSize: number = 50,
   provider?: string,
   include_archived?: boolean,
-  search?: string
+  search?: string,
+  filter?: string
 ): Promise<any> => {
   const params = new URLSearchParams();
   params.set('page', String(page));
@@ -138,6 +139,9 @@ export const getConversationsDirect = async (
   }
   if (search && search.trim()) {
     params.set('search', search.trim());
+  }
+  if (filter && filter.trim()) {
+    params.set('filter', filter.trim());
   }
   const query = params.toString() ? `?${params.toString()}` : '';
 

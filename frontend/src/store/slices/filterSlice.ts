@@ -107,9 +107,9 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
     const previousTab = get().activeFilterTab;
     set({ activeFilterTab: tab });
 
-    // Automatically re-fetch conversations when switching between active inbox, completed archive, or blocked list
-    const wasSpecial = previousTab === 'completed' || previousTab === 'blocked';
-    const isSpecial = tab === 'completed' || tab === 'blocked';
+    // Re-fetch tabs whose dataset is filtered by the backend.
+    const wasSpecial = previousTab === 'completed' || previousTab === 'blocked' || previousTab === 'unread';
+    const isSpecial = tab === 'completed' || tab === 'blocked' || tab === 'unread';
     if (wasSpecial !== isSpecial || (wasSpecial && isSpecial && previousTab !== tab)) {
       set({ conversationsPage: 1 });
       get().fetchConversations();

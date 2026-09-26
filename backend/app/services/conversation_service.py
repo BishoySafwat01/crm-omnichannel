@@ -284,6 +284,7 @@ class ConversationService:
         assigned_agent_id: Optional[str] = None,
         allowed_brands: Optional[list[str]] = None,
         allowed_channels: Optional[list[str]] = None,
+        conversation_filter: Optional[str] = None,
         include_unread_total: bool = False,
     ) -> tuple[list[dict], int] | tuple[list[dict], int, int]:
         stmt = (
@@ -291,7 +292,9 @@ class ConversationService:
             .options(selectinload(Conversation.customer))
             .where(Conversation.deleted_at.is_(None))
         )
-        count_stmt = select(func.count(Conversation.id)).where(Conversation.deleted_at.is_(None))
+        count_stmt = select(func.count(func.distinct(Conversation.id))).where(
+            Conversation.deleted_at.is_(None)
+        )
 
         # Enforce user authorization scoping for brands
         if allowed_brands is not None:
@@ -368,23 +371,37 @@ class ConversationService:
             stmt = stmt.where(Conversation.customer_id == customer_id)
             count_stmt = count_stmt.where(Conversation.customer_id == customer_id)
 
+        unread_only = (conversation_filter or "").strip().lower() == "unread"
+        if unread_only:
+            stmt = stmt.where(Conversation.unread_count > 0)
+            count_stmt = count_stmt.where(Conversation.unread_count > 0)
+
+        # Keep the unread badge count independent from the normal inbox's
+        # customer-level deduplication: it represents distinct conversations.
+        unread_count_stmt = count_stmt
+        if not unread_only:
+            unread_count_stmt = unread_count_stmt.where(Conversation.unread_count > 0)
+
         # Provider filtering & Deduplication
         if provider is not None and str(provider).strip().lower() not in ["all", "none", "", "الكل"]:
             p_val = provider.value if hasattr(provider, "value") else str(provider).strip().lower()
             if p_val in ["beon", "مزود beon", "beon gateway"]:
                 stmt = stmt.where(Conversation.provider == ProviderEnum.BEON)
                 count_stmt = count_stmt.where(Conversation.provider == ProviderEnum.BEON)
+                unread_count_stmt = unread_count_stmt.where(Conversation.provider == ProviderEnum.BEON)
             elif p_val in ["meta", "direct_meta", "ميتا مباشر", "direct meta"]:
                 stmt = stmt.where(Conversation.provider == ProviderEnum.META)
                 count_stmt = count_stmt.where(Conversation.provider == ProviderEnum.META)
+                unread_count_stmt = unread_count_stmt.where(Conversation.provider == ProviderEnum.META)
             else:
                 try:
                     p_enum = ProviderEnum(p_val)
                     stmt = stmt.where(Conversation.provider == p_enum)
                     count_stmt = count_stmt.where(Conversation.provider == p_enum)
+                    unread_count_stmt = unread_count_stmt.where(Conversation.provider == p_enum)
                 except ValueError:
                     pass
-        else:
+        elif not unread_only:
             # "ALL" Mode: Deduplicate conversations per customer using Window Function
             subq = (
                 select(
@@ -405,23 +422,32 @@ class ConversationService:
         if channel:
             stmt = stmt.where(Conversation.channel == channel)
             count_stmt = count_stmt.where(Conversation.channel == channel)
+            unread_count_stmt = unread_count_stmt.where(Conversation.channel == channel)
 
         # Archive / Status Filter
         if status is not None:
             stmt = stmt.where(Conversation.status == status)
             count_stmt = count_stmt.where(Conversation.status == status)
+            unread_count_stmt = unread_count_stmt.where(Conversation.status == status)
         elif not include_archived:
             stmt = stmt.where(Conversation.status != ConversationStatusEnum.CLOSED)
             count_stmt = count_stmt.where(Conversation.status != ConversationStatusEnum.CLOSED)
+            unread_count_stmt = unread_count_stmt.where(
+                Conversation.status != ConversationStatusEnum.CLOSED
+            )
         else:
             stmt = stmt.where(Conversation.status == ConversationStatusEnum.CLOSED)
             count_stmt = count_stmt.where(Conversation.status == ConversationStatusEnum.CLOSED)
+            unread_count_stmt = unread_count_stmt.where(
+                Conversation.status == ConversationStatusEnum.CLOSED
+            )
 
         if search and search.strip():
             term = f"%{search.strip()}%"
             if not (target_country and target_country.strip() and target_country.lower() not in ["all", "الكل", ""]):
                 stmt = stmt.outerjoin(Conversation.customer)
                 count_stmt = count_stmt.outerjoin(Conversation.customer)
+                unread_count_stmt = unread_count_stmt.outerjoin(Conversation.customer)
             matching_customer_identity = (
                 select(CustomerIdentity.id)
                 .where(
@@ -450,27 +476,10 @@ class ConversationService:
             )
             stmt = stmt.where(search_filter)
             count_stmt = count_stmt.where(search_filter)
+            unread_count_stmt = unread_count_stmt.where(search_filter)
 
         total_unread_conversations = 0
         if include_unread_total:
-            latest_sender_type = (
-                select(Message.sender_type)
-                .where(
-                    Message.conversation_id == Conversation.id,
-                    Message.deleted_at.is_(None),
-                )
-                .order_by(Message.created_at.desc(), Message.id.desc())
-                .limit(1)
-                .correlate(Conversation)
-                .scalar_subquery()
-            )
-            unread_count_stmt = count_stmt.where(
-                Conversation.unread_count > 0,
-                or_(
-                    latest_sender_type == SenderTypeEnum.CUSTOMER,
-                    Conversation.last_read_at >= Conversation.last_message_at,
-                ),
-            )
             unread_total_res = await session.execute(unread_count_stmt)
             total_unread_conversations = int(unread_total_res.scalar() or 0)
 
@@ -625,7 +634,8 @@ class ConversationService:
                 and conv.last_read_at >= conv.last_message_at
             )
             if (
-                last_sender_type != SenderTypeEnum.CUSTOMER.value
+                not unread_only
+                and last_sender_type != SenderTypeEnum.CUSTOMER.value
                 and not was_explicitly_toggled
             ):
                 unread_cnt = 0
