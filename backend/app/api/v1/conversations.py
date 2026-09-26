@@ -299,6 +299,11 @@ async def list_conversations(
     """Retrieve paginated inbox conversations ordered by last_message_at desc with optional filtering."""
     # Fallback/alias location to country if location not provided
     effective_countries = country if country is not None else location
+    selected_stores = list(dict.fromkeys(
+        str(value).strip()
+        for value in (brand or [])
+        if value and str(value).strip().lower() not in ("all", "none", "الكل")
+    ))
 
     parsed_provider: Optional[str] = provider
 
@@ -323,7 +328,7 @@ async def list_conversations(
             user_b = current_user.brand_access or []
             norm_b = [str(x).strip().lower() for x in user_b]
             if "all" not in norm_b and "الكل" not in norm_b:
-                allowed_brands = user_b
+                allowed_brands = [str(value).strip() for value in user_b if str(value).strip()]
             user_c = getattr(current_user, "channel_access", None)
             if user_c is not None:
                 norm_c = [str(x).strip().lower() for x in user_c]
@@ -340,7 +345,7 @@ async def list_conversations(
         status=status_filter,
         include_archived=include_archived,
         search=search,
-        brands=brand or [],
+        brands=selected_stores,
         countries=effective_countries or [],
         sla_status=sla_status,
         assigned_agent_id=assigned_agent_id,

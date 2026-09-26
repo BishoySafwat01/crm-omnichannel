@@ -2,6 +2,11 @@ import { StateCreator } from 'zustand';
 import { customerApi, teamApi } from '../../services/api';
 import { CrmState, FilterSlice } from './types';
 
+const normalizeStore = (store?: string | null): string | null => {
+  const cleanStore = String(store || '').trim();
+  return !cleanStore || ['all', 'الكل'].includes(cleanStore.toLowerCase()) ? null : cleanStore;
+};
+
 export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (set, get) => ({
   selectedProvider: 'all',
   selectedBrand: null,
@@ -29,19 +34,19 @@ export const createFilterSlice: StateCreator<CrmState, [], [], FilterSlice> = (s
   },
 
   setSelectedBrand: (brand) => {
-    const cleanBrand = !brand || brand === 'all' || brand === 'الكل' ? null : brand;
+    const cleanBrand = normalizeStore(brand);
     set({ selectedBrand: cleanBrand, selectedBrandId: cleanBrand || 'all', selectedBrandIds: cleanBrand ? [cleanBrand] : [], conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedBrandId: (brandId) => {
-    const cleanBrand = !brandId || brandId === 'all' || brandId === 'الكل' ? null : brandId;
-    set({ selectedBrandId: brandId, selectedBrand: cleanBrand, selectedBrandIds: cleanBrand ? [cleanBrand] : [], conversationsPage: 1 });
+    const cleanBrand = normalizeStore(brandId);
+    set({ selectedBrandId: cleanBrand || 'all', selectedBrand: cleanBrand, selectedBrandIds: cleanBrand ? [cleanBrand] : [], conversationsPage: 1 });
     get().fetchConversations();
   },
 
   setSelectedBrandIds: (brandIds) => {
-    const cleanBrands = Array.from(new Set(brandIds.map((brand) => brand.trim()).filter((brand) => brand && !['all', 'الكل'].includes(brand.toLowerCase()))));
+    const cleanBrands = Array.from(new Set(brandIds.map(normalizeStore).filter((brand): brand is string => Boolean(brand))));
     set({
       selectedBrandIds: cleanBrands,
       selectedBrandId: cleanBrands[0] || 'all',

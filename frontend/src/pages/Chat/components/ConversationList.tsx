@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store, Ban } from 'lucide-react';
+import { Search, Filter, MessageCircle, Clock, CheckCheck, MapPin, Globe, AlertTriangle, User, Users, ChevronDown, X, Check, Store, Ban, Tags } from 'lucide-react';
 import { useCrmStore } from '../../../store/useCrmStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { FilterTab } from '../../../types/crm';
@@ -330,8 +330,17 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
 
       // 5. Brand Filter
       if (selectedBrandIds.length > 0) {
-        const convBrand = ((conv as any).brand || (conv as any).brand_name || (conv as any).brand_id || '').toLowerCase();
-        const isMatched = selectedBrandIds.some((brandId) => convBrand === brandId.toLowerCase());
+        const storeIdentifiers = [
+          conv.brand,
+          conv.brand_name,
+          conv.brand_id,
+          (conv as any).page_id,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase());
+        const isMatched = selectedBrandIds.some((brandId) =>
+          storeIdentifiers.includes(brandId.trim().toLowerCase())
+        );
         if (!isMatched) {
           return false;
         }
@@ -370,16 +379,6 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
     });
   }, [conversations, activeFilterTab, selectedBrandIds, selectedChannels, selectedCountries, selectedEmployeeId, selectedEmployeeObj, messages]);
 
-  const lateCount = useMemo(() => {
-    if (!conversations || !Array.isArray(conversations)) return 0;
-    return conversations.filter((c) => isConversationLate(c, messages[c.id])).length;
-  }, [conversations, messages]);
-
-  const blockedCount = useMemo(() => {
-    if (!conversations || !Array.isArray(conversations)) return 0;
-    return conversations.filter((c) => Boolean(c.customer?.is_blocked)).length;
-  }, [conversations]);
-
   const unreadTotal = filteredUnreadConversationCount;
 
   const filterTabs: { id: FilterTab; label: string; icon: React.ReactNode; badgeCount?: number }[] = [
@@ -391,20 +390,7 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
       badgeCount: unreadTotal > 0 ? unreadTotal : undefined,
     },
     { id: 'completed', label: 'طلبات مكتملة', icon: <CheckCheck className="w-3.5 h-3.5" /> },
-    { id: 'incomplete', label: 'طلبات غير مكتملة', icon: <Clock className="w-3.5 h-3.5" /> },
-    { id: 'offer_sent', label: 'تم إرسال عرض', icon: <Check className="w-3.5 h-3.5" /> },
-    {
-      id: 'sla_breached',
-      label: 'متأخرة',
-      icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />,
-      badgeCount: lateCount > 0 ? lateCount : undefined,
-    },
-    {
-      id: 'blocked',
-      label: 'محظورة',
-      icon: <Ban className="w-3.5 h-3.5 text-rose-500" />,
-      badgeCount: blockedCount > 0 ? blockedCount : undefined,
-    },
+    { id: 'incomplete', label: 'التصنيفات', icon: <Tags className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -584,8 +570,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                 }}
                 className={`shrink-0 flex items-center justify-center gap-1 py-1.5 px-3 text-[11px] rounded-full border transition-all duration-150 cursor-pointer select-none whitespace-nowrap ${
                   isActive
-                    ? 'bg-[#25D366] text-white border-[#25D366] font-bold shadow-sm'
-                    : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900 hover:border-[#25D366]/50 hover:bg-emerald-50 font-medium'
+                    ? 'border-theme-primary/30 bg-theme-primary-tint font-bold text-theme-primary shadow-sm'
+                    : 'border-slate-200 bg-white font-medium text-slate-600 hover:border-theme-primary/30 hover:bg-theme-primary-tint hover:text-theme-primary'
                 }`}
                 title={tab.label}
               >
@@ -595,8 +581,8 @@ export const ConversationList: React.FC<ConversationListProps> = ({ className = 
                   <span
                     className={`inline-flex items-center justify-center h-4 min-w-[18px] px-1 text-[9px] font-extrabold rounded-full transition-colors leading-none shrink-0 ${
                       isActive
-                        ? 'bg-white text-[#128C7E] shadow-2xs'
-                        : 'bg-emerald-50 text-[#128C7E]'
+                        ? 'bg-theme-primary text-white shadow-2xs'
+                        : 'bg-theme-primary-tint text-theme-primary'
                     }`}
                   >
                     {formattedBadge}
