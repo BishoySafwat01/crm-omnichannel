@@ -453,10 +453,7 @@ class ConversationService:
         # Enforce user authorization scoping for brands
         if allowed_brands is not None:
             clean_allowed_b = [str(b).strip().lower() for b in allowed_brands if str(b).strip()]
-            allowed_brand_filter = or_(
-                func.lower(func.trim(Conversation.brand)).in_(clean_allowed_b),
-                func.lower(func.trim(Conversation.page_id)).in_(clean_allowed_b),
-            )
+            allowed_brand_filter = func.trim(func.lower(Conversation.brand)).in_(clean_allowed_b)
             stmt = stmt.where(allowed_brand_filter)
             count_stmt = count_stmt.where(allowed_brand_filter)
 
@@ -477,11 +474,12 @@ class ConversationService:
             count_stmt = count_stmt.where(country_filter)
 
         raw_brands = brands if brands is not None else ([brand] if brand is not None else [])
-        target_brands = [str(value).strip().lower() for value in raw_brands if value and str(value).strip().lower() not in ["all", "الكل", "none"]]
-        if target_brands:
+        target_stores = [str(value).strip() for value in raw_brands if value and str(value).strip().lower() not in ["all", "الكل", "none"]]
+        if target_stores:
+            normalized_store_names = [value.lower() for value in target_stores]
             brand_filter = or_(
-                func.lower(func.trim(Conversation.brand)).in_(target_brands),
-                func.lower(func.trim(Conversation.page_id)).in_(target_brands),
+                func.trim(func.lower(Conversation.brand)).in_(normalized_store_names),
+                Conversation.page_id.in_(target_stores),
             )
             stmt = stmt.where(brand_filter)
             count_stmt = count_stmt.where(brand_filter)
